@@ -75,6 +75,67 @@
   </div>
 </div>
 
+<!-- Payment Attempts -->
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <span>محاولات الدفع</span>
+    <span style="font-size:.78rem;color:var(--slate-400);">آخر 5 محاولات</span>
+  </div>
+  <div class="card-body" style="padding:0;">
+    {% if payment_attempts %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>الحالة</th>
+            <th>المبلغ</th>
+            <th>المزود</th>
+            <th>معرّف الدفع</th>
+            <th>رابط الدفع</th>
+            <th>التاريخ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pa in payment_attempts %}
+          <tr>
+            <td style="font-size:.8rem;color:var(--slate-400);">{{ pa.id }}</td>
+            <td>
+              {% if pa.status == 'paid' %}
+                <span class="badge badge-green">✅ مدفوع</span>
+              {% elif pa.status == 'failed' %}
+                <span class="badge badge-red">❌ فشل</span>
+              {% elif pa.status == 'initiated' %}
+                <span class="badge badge-amber">⏳ في الانتظار</span>
+              {% else %}
+                <span class="badge badge-slate">{{ pa.status }}</span>
+              {% endif %}
+            </td>
+            <td>{{ pa.amount_sar }} ريال</td>
+            <td><span class="badge badge-navy">{{ pa.provider }}</span></td>
+            <td style="font-size:.75rem;color:var(--slate-400);">{{ pa.provider_payment_id or '—' }}</td>
+            <td>
+              {% if pa.payment_url %}
+                <a href="{{ pa.payment_url }}" target="_blank" class="btn btn-ghost btn-sm"
+                   style="font-size:.75rem;">فتح الرابط</a>
+              {% else %}—{% endif %}
+            </td>
+            <td style="white-space:nowrap;font-size:.82rem;">
+              {{ pa.created_at.strftime('%Y/%m/%d %H:%M') if pa.created_at else '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p style="color:var(--slate-400);text-align:center;padding:20px;font-size:.9rem;">
+      لا توجد محاولات دفع مسجّلة.
+    </p>
+    {% endif %}
+  </div>
+</div>
+
 <!-- Evidences -->
 <div class="card">
   <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">

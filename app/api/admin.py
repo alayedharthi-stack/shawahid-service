@@ -31,9 +31,20 @@ from app.services.subscriptions import (
     list_subscriptions,
     LAUNCH_AMOUNT_SAR,
 )
+from app.services.payments import (
+    create_payment_attempt,
+    get_latest_payment_attempt,
+    list_payment_attempts,
+)
+from app.services import moyasar as moyasar_svc
 from app.services.teachers import get_teacher_by_id
-from app.services.whatsapp import send_whatsapp_message, build_subscription_required_reply
+from app.services.whatsapp import (
+    send_whatsapp_message,
+    build_subscription_required_reply,
+    build_payment_link_message,
+)
 from app.services import exporter as exporter_svc
+from app.core.config import settings
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="app/templates")
@@ -147,6 +158,7 @@ def admin_teacher_detail(
 
     evidences = get_teacher_evidences(db, teacher_id, limit=500)
     sub = next(iter(teacher.subscriptions), None) if teacher.subscriptions else None
+    payment_attempts = list_payment_attempts(db, teacher_id, limit=5)
 
     flash_success = request.query_params.get("success")
     flash_error = request.query_params.get("error")
@@ -155,6 +167,7 @@ def admin_teacher_detail(
         "request": request, "active": "teachers",
         "teacher": teacher, "evidences": evidences,
         "subscription": sub,
+        "payment_attempts": payment_attempts,
         "flash_success": flash_success, "flash_error": flash_error,
     })
 
@@ -200,11 +213,33 @@ async def admin_send_payment_link(
     teacher = get_teacher_by_id(db, teacher_id)
     if not teacher:
         raise HTTPException(status_code=404, detail="المعلم غير موجود")
-    link = get_payment_link(teacher_id)
-    msg = build_subscription_required_reply(link)
+
+    # Try to create a real Moyasar invoice; fall back to static template link
+    if settings.MOYASAR_SECRET_KEY:
+        try:
+            result = await moyasar_svc.create_invoice(
+                teacher_id=teacher_id,
+                teacher_name=teacher.name or "",
+            )
+            payment_url = result["payment_url"]
+            create_payment_attempt(
+                db=db,
+                teacher_id=teacher_id,
+                provider_payment_id=result["provider_payment_id"],
+                payment_url=payment_url,
+                raw_response=result["raw_response"],
+            )
+        except Exception as exc:
+            logger.error("Moyasar invoice creation failed for teacher %d: %s", teacher_id, exc)
+            payment_url = get_payment_link(teacher_id)
+    else:
+        payment_url = get_payment_link(teacher_id)
+
+    msg = build_payment_link_message(payment_url, teacher.name or "")
     await send_whatsapp_message(teacher.phone, msg)
+
     return RedirectResponse(
-        url=f"/admin/teachers/{teacher_id}?success=تم+إرسال+رابط+الدفع+بنجاح",
+        url=f"/admin/teachers/{teacher_id}?success=تم+إنشاء+وإرسال+رابط+الدفع+بنجاح",
         status_code=303,
     )
 

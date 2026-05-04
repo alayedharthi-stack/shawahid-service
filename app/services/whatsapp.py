@@ -142,3 +142,21 @@ def build_export_ready_reply(pdf_url: str) -> str:
 
 def build_evidence_saved_reply() -> str:
     return "✅ تم حفظ الشاهد بنجاح!"
+
+
+def build_payment_link_message(payment_url: str, teacher_name: str = "") -> str:
+    greeting = f"مرحبًا {teacher_name}،\n" if teacher_name else "مرحبًا،\n"
+    return (
+        f"{greeting}"
+        f"لتفعيل اشتراك شواهد AI السنوي ضمن عرض الإطلاق بقيمة *{LAUNCH_PRICE_SAR} ريال فقط*، "
+        f"يرجى الدفع عبر الرابط التالي:\n\n"
+        f"{payment_url}\n\n"
+        f"بعد الدفع سيتم تفعيل اشتراكك تلقائيًا ✅"
+    )
+
+
+def build_subscription_activated_message() -> str:
+    return (
+        "تم تفعيل اشتراكك في شواهد AI بنجاح ✅\n"
+        "يمكنك الآن إنشاء ملف الشواهد PDF عبر إرسال كلمة: *تصدير*"
+    )

@@ -26,9 +26,16 @@ class Settings(BaseSettings):
     OPENAI_TIMEOUT_SECONDS: int = 30
     OPENAI_MODEL: str = "gpt-4o-mini"  # legacy alias
 
-    # ── Payment ───────────────────────────────────────────────────────────────
+    # ── Moyasar Payment Gateway ───────────────────────────────────────────────
+    MOYASAR_SECRET_KEY: str = ""
+    MOYASAR_WEBHOOK_SECRET: str = ""
+    MOYASAR_API_BASE: str = "https://api.moyasar.com/v1"
+    SHAWAHID_LAUNCH_PRICE_HALALAH: int = 2900   # 29 SAR × 100
+    SHAWAHID_LAUNCH_PRICE_SAR: int = 29
+
+    # ── Payment (legacy / fallback) ───────────────────────────────────────────
     PAYMENT_LINK_TEMPLATE: str = "https://paylink.example.com/teacher/{teacher_id}"
-    PAYMENT_PROVIDER: str = "manual"
+    PAYMENT_PROVIDER: str = "moyasar"
     PAYMENT_SUCCESS_SECRET: str = ""
 
     # ── WhatsApp Cloud API ────────────────────────────────────────────────────

@@ -20,3 +20,4 @@ class Teacher(Base):
     evidences = relationship("Evidence", back_populates="teacher", cascade="all, delete-orphan")
     exports = relationship("PortfolioExport", back_populates="teacher", cascade="all, delete-orphan")
     subscriptions = relationship("TeacherSubscription", back_populates="teacher", cascade="all, delete-orphan")
+    payment_attempts = relationship("PaymentAttempt", back_populates="teacher", cascade="all, delete-orphan", order_by="PaymentAttempt.id.desc()")
