@@ -1,4 +1,4 @@
-fastapi==0.111.0
+﻿fastapi==0.111.0
 uvicorn[standard]==0.29.0
 sqlalchemy==2.0.30
 alembic==1.13.1
@@ -14,5 +14,3 @@ openai==1.54.0
 playwright==1.44.0
 python-dotenv==1.0.1
 Pillow==10.3.0
-
-# build trigger 2026-05-04 21:48
