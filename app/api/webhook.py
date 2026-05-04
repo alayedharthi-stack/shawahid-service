@@ -6,8 +6,7 @@ POST /webhook/whatsapp  — Incoming messages (Meta Cloud API format OR simple t
 POST /webhook/payment   — Payment gateway callback to activate subscriptions
 """
 import logging
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.db.base import get_db
@@ -43,31 +42,16 @@ logger = logging.getLogger(__name__)
 # ─── Meta Webhook Verification (GET) ─────────────────────────────────────────
 
 @router.get("/webhook/whatsapp")
-async def whatsapp_verify(
-    hub_mode: str | None = Query(None, alias="hub.mode"),
-    hub_verify_token: str | None = Query(None, alias="hub.verify_token"),
-    hub_challenge: str | None = Query(None, alias="hub.challenge"),
-):
-    """
-    Meta requires a GET endpoint to verify ownership of the webhook URL.
-    Responds with hub.challenge as plain text when hub.verify_token matches
-    WHATSAPP_VERIFY_TOKEN.
-    """
-    if (
-        hub_mode == "subscribe"
-        and hub_verify_token
-        and hub_verify_token == settings.WHATSAPP_VERIFY_TOKEN
-        and hub_challenge
-    ):
-        logger.info("WhatsApp webhook verified successfully")
-        return PlainTextResponse(hub_challenge)
+async def verify_webhook(request: Request):
+    params = request.query_params
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
 
-    logger.warning(
-        "Webhook verify failed: mode=%s token_match=%s",
-        hub_mode,
-        hub_verify_token == settings.WHATSAPP_VERIFY_TOKEN,
-    )
-    raise HTTPException(status_code=403, detail="Forbidden")
+    if mode == "subscribe" and token == "shawahid_verify_2026":
+        return int(challenge)
+
+    return {"error": "verification failed"}
 
 
 # ─── Payload parsing helpers ─────────────────────────────────────────────────
