@@ -29,10 +29,11 @@ from app.services.payments import (
     update_payment_attempt_status,
 )
 from app.services import moyasar as moyasar_svc
-from app.services.gpt_brain import ask_gpt
+from app.services.gpt_brain import ask_gpt, build_teacher_context
 from app.services.whatsapp import (
     get_meta_media_url,
     send_whatsapp_message,
+    send_whatsapp_button,
     build_my_files_reply,
     build_my_data_reply,
     build_edit_data_template,
@@ -187,9 +188,16 @@ async def whatsapp_webhook(
     db: Session = Depends(get_db),
 ):
     """
-    GPT-driven message handler.
-    Flow: parse → get teacher → (download image) → ask_gpt → execute decision.
-    GPT decides everything. Code only executes.
+    GPT-driven conversational handler.
+
+    Flow:
+      parse → get teacher → load profile → (download image) → ask_gpt(context) → execute
+      GPT decides everything. Code only executes what GPT returns.
+
+    Logs:
+      [WA INBOUND] [USER PROFILE LOADED] [GPT MODEL] [GPT DECISION]
+      [PROFILE UPDATED] [EVIDENCE SAVED] [EVIDENCE SKIPPED]
+      [PAYMENT BUTTON SENT]
     """
     try:
         body = await request.json()
@@ -221,7 +229,22 @@ async def whatsapp_webhook(
         teacher.id, evidence_type, bool(media_id), (text or "")[:60],
     )
 
-    # ── Download media (images need local path for GPT Vision base64) ────────
+    # ── Load user profile / subscription status ───────────────────────────────
+    from app.services.teachers import update_teacher
+    sub_active = is_subscription_active(db, teacher.id)
+    teacher_context = build_teacher_context(
+        phone=teacher.phone,
+        name=teacher.name,
+        subject=teacher.subject,
+        stage=teacher.stage,
+        sub_active=sub_active,
+    )
+    logger.info(
+        "[USER PROFILE LOADED] teacher_id=%d name=%r sub_active=%s",
+        teacher.id, teacher.name, sub_active,
+    )
+
+    # ── Download media (images need local path for GPT Vision) ───────────────
     storage_path: str | None = None
     safe_filename: str | None = None
     if media_url:
@@ -236,9 +259,10 @@ async def whatsapp_webhook(
         except Exception as exc:
             logger.error("Media download failed for teacher %d: %s", teacher.id, exc)
 
-    # ── Ask GPT — GPT is the brain, it decides everything ────────────────────
+    # ── Ask GPT — GPT is the brain ────────────────────────────────────────────
     decision = await ask_gpt(
         text=text,
+        teacher_context=teacher_context,
         storage_path=storage_path if evidence_type == "image" else None,
         image_url=media_url if (evidence_type == "image" and not storage_path) else None,
         mime_type=mime_type,
@@ -254,11 +278,22 @@ async def whatsapp_webhook(
     intent = decision["intent"]
     reply  = decision["reply"]
 
-    # ── Intent routing: code executes what GPT decided ────────────────────────
+    # ── Intent routing ────────────────────────────────────────────────────────
 
-    if intent == "my_files":
+    if intent == "update_profile":
+        # GPT detected name / profile info — save to teacher record, never as evidence
+        profile_data = decision.get("profile_update") or {}
+        # Only update fields GPT explicitly set (non-null values)
+        clean = {k: v for k, v in profile_data.items() if v}
+        if clean:
+            update_teacher(db, teacher, clean)
+            logger.info(
+                "[PROFILE UPDATED] teacher_id=%d fields=%s",
+                teacher.id, list(clean.keys()),
+            )
+
+    elif intent == "my_files":
         evidences = get_teacher_evidences(db, teacher.id)
-        sub_active = is_subscription_active(db, teacher.id)
         reply = build_my_files_reply(len(evidences), sub_active)
 
     elif intent == "my_data":
@@ -268,7 +303,8 @@ async def whatsapp_webhook(
         reply = build_edit_data_template()
 
     elif intent == "payment":
-        if not is_subscription_active(db, teacher.id):
+        if not sub_active:
+            # Build Moyasar link
             try:
                 payment_url = await _create_moyasar_link(
                     db, teacher.id, teacher.name or "", teacher.phone or ""
@@ -277,17 +313,27 @@ async def whatsapp_webhook(
                 logger.error("Moyasar invoice creation failed: %s", exc)
                 payment_url = get_payment_link(teacher.id)
 
-            from app.services.moyasar import _teacher_display_name as _dn
-            display = _dn(teacher.name or "", teacher.phone or "")
-            reply = build_payment_link_message(payment_url, display)
+            # Compose short body text personalised with teacher's name
+            display_name = teacher.name or teacher.phone or ""
+            greeting = f"يا {display_name}، " if display_name else ""
+            body_text = (
+                f"{greeting}هذا رابط سداد اشتراك شواهد AI السنوي بقيمة "
+                f"{LAUNCH_AMOUNT_SAR} ريال."
+            )
+
+            # Send as interactive button (not plain text URL)
             background_tasks.add_task(
-                send_whatsapp_message, teacher.phone, reply,
-                teacher_id=teacher.id, context="payment_link",
+                send_whatsapp_button,
+                teacher.phone,
+                body_text,
+                "سداد الاشتراك",
+                payment_url,
+                teacher_id=teacher.id,
             )
             return {
                 "ok": False,
                 "teacher_id": teacher.id,
-                "reply": reply,
+                "intent": intent,
                 "reason": "subscription_required",
                 "payment_url": payment_url,
             }
@@ -302,7 +348,7 @@ async def whatsapp_webhook(
         reply = "جارٍ إنشاء ملف الشواهد... سيصلك رابط التحميل قريبًا. ⏳"
 
     elif decision["should_save"]:
-        # ── GPT decided this is evidence worth saving ─────────────────────────
+        # GPT decided this is evidence worth saving
         evidence = create_evidence(
             db=db,
             teacher_id=teacher.id,
@@ -323,13 +369,10 @@ async def whatsapp_webhook(
             teacher.id, evidence.id, decision["category"], decision["confidence"],
         )
 
-    else:
-        # GPT said: not evidence, don't save
-        logger.info(
-            "[EVIDENCE SKIPPED] teacher_id=%d intent=%s", teacher.id, intent
-        )
+    elif intent != "failure":
+        logger.info("[EVIDENCE SKIPPED] teacher_id=%d intent=%s", teacher.id, intent)
 
-    # ── Always send GPT's reply back to the teacher ───────────────────────────
+    # ── Send reply ────────────────────────────────────────────────────────────
     background_tasks.add_task(
         send_whatsapp_message, teacher.phone, reply, teacher_id=teacher.id
     )

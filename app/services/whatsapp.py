@@ -160,6 +160,91 @@ async def send_whatsapp_message(
         return False
 
 
+# ── Interactive button sender ─────────────────────────────────────────────────
+
+async def send_whatsapp_button(
+    to_phone: str,
+    body_text: str,
+    button_label: str,
+    url: str,
+    *,
+    teacher_id: int | None = None,
+) -> bool:
+    """
+    Send a WhatsApp CTA-URL interactive button message (in-session).
+    Shows as: body text + tappable [button_label] button that opens `url`.
+    Falls back to plain text if credentials are missing.
+
+    Returns True on success, False on error (never raises).
+    """
+    if not settings.WHATSAPP_ACCESS_TOKEN or not settings.WHATSAPP_PHONE_NUMBER_ID:
+        logger.info(
+            "[WhatsApp button stub] teacher_id=%s To=%s | %s → %s",
+            teacher_id, to_phone, body_text[:60], url[:60],
+        )
+        return True
+
+    api_url = (
+        f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}"
+        f"/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+    )
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_phone,
+        "type": "interactive",
+        "interactive": {
+            "type": "cta_url",
+            "body": {"text": body_text},
+            "action": {
+                "name": "cta_url",
+                "parameters": {
+                    "display_text": button_label,
+                    "url": url,
+                },
+            },
+        },
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(api_url, json=payload, headers=headers)
+
+        if resp.status_code == 200:
+            logger.info(
+                "[PAYMENT BUTTON SENT] teacher_id=%s phone=%s", teacher_id, to_phone
+            )
+            return True
+
+        try:
+            resp_data = resp.json()
+        except Exception:
+            resp_data = {}
+
+        if _is_outside_window_error(resp_data):
+            logger.warning(
+                "[PAYMENT WHATSAPP SEND FAILED] teacher_id=%s reason=outside_24h_window "
+                "context=payment_button code=%s",
+                teacher_id,
+                resp_data.get("error", {}).get("code"),
+            )
+        else:
+            logger.error(
+                "WhatsApp button send failed | teacher_id=%s status=%d body=%s",
+                teacher_id, resp.status_code, resp.text[:300],
+            )
+        return False
+
+    except Exception as exc:
+        logger.error(
+            "WhatsApp button send exception | teacher_id=%s: %s", teacher_id, exc
+        )
+        return False
+
+
 # ── Payment message builders ──────────────────────────────────────────────────
 
 def build_payment_link_message(payment_url: str, teacher_display_name: str = "") -> str:

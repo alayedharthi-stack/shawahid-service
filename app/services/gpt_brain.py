@@ -1,15 +1,18 @@
 """
-GPT Brain — the sole decision-maker for every inbound WhatsApp message.
+GPT Brain — conversational AI engine for every inbound WhatsApp message.
 
-Flow:  WhatsApp inbound → ask_gpt() → GPTDecision → execute
+Flow:  WhatsApp inbound → ask_gpt(text, context) → GPTDecision → execute
 
-GPT decides:
-  - Is this evidence or smalltalk?
-  - Should it be saved?
-  - What title / category?
-  - What reply to send?
+GPT decides everything:
+  - Is this evidence, smalltalk, a greeting, a profile update?
+  - Should it be saved? What title/category?
+  - What reply to send (using the teacher's name)?
 
-No rules. No fallback heuristics. GPT leads, code executes.
+Model chain: OPENAI_MODEL (env) → gpt-4.1 → gpt-4o
+  - Only skips to next model when the current one is unavailable (404/invalid).
+  - Any other failure → polite apology, nothing saved.
+
+No rule-based fallback. GPT leads, code executes.
 """
 from __future__ import annotations
 
@@ -23,54 +26,107 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# ── Model fallback chain ──────────────────────────────────────────────────────
+
+_MODEL_NOT_FOUND_HINTS = (
+    "model_not_found", "invalid_model", "does not exist",
+    "no such model", "404", "model not found",
+)
+
+
+def _get_model_chain() -> list[str]:
+    """Primary model from env, then hardcoded fallbacks."""
+    primary = settings.OPENAI_MODEL or settings.OPENAI_CLASSIFIER_MODEL or "gpt-4.1"
+    chain: list[str] = [primary]
+    for fb in ("gpt-4.1", "gpt-4o"):
+        if fb not in chain:
+            chain.append(fb)
+    return chain
+
+
+def _is_model_unavailable(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(hint in msg for hint in _MODEL_NOT_FOUND_HINTS)
+
+
 # ── Decision schema ───────────────────────────────────────────────────────────
 
 class GPTDecision(TypedDict):
-    intent: str        # evidence | smalltalk | help | payment | my_files | my_data | edit_data
+    intent: str          # evidence|smalltalk|help|payment|my_files|my_data|edit_data|update_profile|failure
     should_save: bool
     reply: str
     title: str | None
     category: str | None
     confidence: float
+    profile_update: dict | None   # {"name": "تركي", "subject": "..."}  — only for update_profile
 
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """\
-أنت عقل شواهد AI.
-أنت المسؤول عن الفهم الكامل للمحادثة.
-لا تنتظر أن يقول المستخدم "هذا شاهد".
-افهم السياق بنفسك.
+_SYSTEM_BASE = """\
+أنت عقل شواهد AI — مساعد شخصي ذكي للمعلم.
+أنت المسؤول عن الفهم الكامل للمحادثة وإدارتها بذكاء واحترافية.
 
-إذا كانت الرسالة أو الصورة مرتبطة ببيئة تعليمية أو موقف يستحق التوثيق، فاعتبرها شاهدًا.
-إذا كانت مجرد تحية أو حديث عابر، فلا تحفظ.
-
-تحدث بلغة عربية طبيعية، ذكية، ومهنية.
-ولا تُرجع إلا JSON.
-
-الـ intents المتاحة:
-- evidence   → شاهد يستحق الحفظ في الملف
-- smalltalk  → تحية أو كلام عابر
-- help       → سؤال عن الخدمة
-- payment    → طلب "تصدير" أو استفسار عن الاشتراك
-- my_files   → "ملفي" أو استفسار عن الشواهد المحفوظة
-- my_data    → "بياناتي" أو استفسار عن البيانات
-- edit_data  → "تعديل بياناتي" أو طلب تعديل البيانات
+قواعد أساسية:
+• تحدث بالعربية الطبيعية المهنية، وناد المستخدم باسمه إن كان معروفًا.
+• التحيات والأسئلة الشخصية والحديث العابر ← ليست شواهد، لا تحفظها.
+• "اسمي ..." أو "أنا فلان" أو أي معلومة شخصية ← نوع update_profile، لا تحفظها كشاهد.
+• الصور والمواقف المدرسية والوثائق التعليمية ← GPT يقرر حفظها كشاهد.
+• لا تُقرر الحفظ إلا إذا كنت متأكدًا أن المحتوى يستحق التوثيق في ملف الشواهد.
 
 تصنيفات الشواهد المتاحة:
 التخطيط، التنفيذ داخل الصف، التعلم التعاوني، التعلم بالممارسة، التقويم، التحفيز،
 التواصل مع أولياء الأمور، سجل المتابعة، الدورات والشهادات، المبادرات والأنشطة، أخرى.
 
-أرجع JSON بهذا الشكل فقط:
+الـ intents المتاحة:
+- evidence      → شاهد يستحق الحفظ (should_save=true)
+- smalltalk     → تحية أو حديث عابر (should_save=false)
+- help          → سؤال عن الخدمة
+- payment       → "تصدير" أو طلب الاشتراك
+- my_files      → "ملفي" أو استفسار عن الشواهد المحفوظة
+- my_data       → "بياناتي" أو استفسار عن الحساب
+- edit_data     → "تعديل بياناتي"
+- update_profile → المستخدم يذكر اسمه أو معلومات شخصية عن نفسه
+
+أرجع JSON فقط بهذا الشكل:
 {
   "intent": "...",
-  "should_save": true,
-  "reply": "رد عربي طبيعي",
+  "should_save": false,
+  "reply": "رد عربي طبيعي يخاطب المستخدم باسمه",
   "title": "عنوان الشاهد أو null",
-  "category": "أحد التصنيفات أو null",
-  "confidence": 0.95
+  "category": "التصنيف أو null",
+  "confidence": 0.95,
+  "profile_update": {"name": "...", "subject": "...", "stage": "...", "school_name": "...", "grades": "..."} 
 }\
 """
+
+
+def _build_system_prompt(teacher_context: str) -> str:
+    """Inject the live user context into the system prompt."""
+    return f"{_SYSTEM_BASE}\n\n{teacher_context}"
+
+
+def build_teacher_context(
+    phone: str,
+    name: str | None,
+    subject: str | None,
+    stage: str | None,
+    sub_active: bool,
+) -> str:
+    """Build a short context block about the current teacher for GPT."""
+    lines = ["=== سياق المستخدم ==="]
+    lines.append(f"رقم الهاتف: {phone}")
+    if name:
+        lines.append(f"الاسم: {name}")
+    else:
+        lines.append("الاسم: غير معروف بعد")
+    if subject:
+        lines.append(f"المادة: {subject}")
+    if stage:
+        lines.append(f"المرحلة الدراسية: {stage}")
+    lines.append(f"حالة الاشتراك: {'نشط ✅' if sub_active else 'غير مشترك'}")
+    lines.append("===================")
+    return "\n".join(lines)
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -78,48 +134,23 @@ SYSTEM_PROMPT = """\
 async def ask_gpt(
     text: str | None,
     *,
-    storage_path: str | None = None,   # local image path → base64 vision
-    image_url: str | None = None,      # fallback if no storage_path
+    teacher_context: str = "",
+    storage_path: str | None = None,
+    image_url: str | None = None,
     mime_type: str | None = None,
     file_name: str | None = None,
 ) -> GPTDecision:
     """
     Send any inbound WhatsApp message to GPT for a decision.
-    Images are passed as base64 (local storage) or URL for GPT Vision.
-    Non-image files are described in text context only.
-    Returns a GPTDecision — code just executes what GPT decides.
+    Tries models in order: primary (OPENAI_MODEL) → gpt-4.1 → gpt-4o.
+    On total failure: returns a polite apology — nothing is saved.
     """
     if not settings.OPENAI_API_KEY:
-        logger.warning("OPENAI_API_KEY not set — defaulting to no-op decision")
-        return _default_decision(text)
+        logger.warning("OPENAI_API_KEY not set — returning failure decision")
+        return _failure_decision()
 
-    content: list[dict] = []
-
-    # Text / metadata part
-    parts: list[str] = []
-    if text:
-        parts.append(text)
-    if file_name:
-        parts.append(f"(اسم الملف: {file_name})")
-    if mime_type and not (mime_type or "").startswith("image/"):
-        parts.append(f"(نوع الملف: {mime_type})")
-
-    if parts:
-        content.append({"type": "text", "text": "\n".join(parts)})
-
-    # Image part — base64 from local storage has priority, then URL
-    if storage_path:
-        img = _encode_local_image(storage_path, mime_type)
-        if img:
-            content.append(img)
-    if not any(p.get("type") == "image_url" for p in content) and image_url:
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": image_url, "detail": "high"},
-        })
-
-    if not content:
-        content.append({"type": "text", "text": "(لا يوجد محتوى)"})
+    content = _build_content(text, storage_path, image_url, mime_type, file_name)
+    system  = _build_system_prompt(teacher_context)
 
     from openai import AsyncOpenAI
 
@@ -128,31 +159,74 @@ async def ask_gpt(
         timeout=float(settings.OPENAI_TIMEOUT_SECONDS),
     )
 
-    try:
-        response = await client.chat.completions.create(
-            model=settings.OPENAI_CLASSIFIER_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": content},
-            ],
-            response_format={"type": "json_object"},
-            max_tokens=500,
-            temperature=0.2,
-        )
-        raw = response.choices[0].message.content or "{}"
-        data = json.loads(raw)
-        decision = _coerce(data)
-        return decision
+    for model in _get_model_chain():
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user",   "content": content},
+                ],
+                response_format={"type": "json_object"},
+                max_tokens=600,
+                temperature=0.3,
+            )
+            logger.info("[GPT MODEL] model=%s", model)
+            raw  = response.choices[0].message.content or "{}"
+            data = json.loads(raw)
+            return _coerce(data)
 
-    except Exception as exc:
-        logger.error("GPT brain call failed: %s", exc)
-        return _default_decision(text)
+        except Exception as exc:
+            if _is_model_unavailable(exc):
+                logger.warning("Model %s unavailable, trying next in chain: %s", model, exc)
+                continue
+            # Non-model error (network, timeout, quota…) — stop and apologise
+            logger.error("GPT brain call failed with model=%s: %s", model, exc)
+            break
+
+    return _failure_decision()
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Content builder ───────────────────────────────────────────────────────────
+
+def _build_content(
+    text: str | None,
+    storage_path: str | None,
+    image_url: str | None,
+    mime_type: str | None,
+    file_name: str | None,
+) -> list[dict]:
+    parts: list[dict] = []
+
+    # Text / metadata
+    text_parts: list[str] = []
+    if text:
+        text_parts.append(text)
+    if file_name:
+        text_parts.append(f"(اسم الملف: {file_name})")
+    if mime_type and not (mime_type or "").startswith("image/"):
+        text_parts.append(f"(نوع الملف: {mime_type})")
+    if text_parts:
+        parts.append({"type": "text", "text": "\n".join(text_parts)})
+
+    # Image — base64 from local storage first, URL as fallback
+    if storage_path:
+        img = _encode_local_image(storage_path, mime_type)
+        if img:
+            parts.append(img)
+    if not any(p.get("type") == "image_url" for p in parts) and image_url:
+        parts.append({
+            "type": "image_url",
+            "image_url": {"url": image_url, "detail": "high"},
+        })
+
+    if not parts:
+        parts.append({"type": "text", "text": "(لا يوجد محتوى)"})
+
+    return parts
+
 
 def _encode_local_image(storage_path: str, mime_type: str | None) -> dict | None:
-    """Base64-encode a local image file for GPT Vision."""
     try:
         p = Path(storage_path)
         if not p.exists() or p.stat().st_size == 0:
@@ -173,33 +247,39 @@ def _encode_local_image(storage_path: str, mime_type: str | None) -> dict | None
         return None
 
 
+# ── Response normalisation ────────────────────────────────────────────────────
+
 def _coerce(data: dict) -> GPTDecision:
     """Normalise raw GPT JSON into a typed GPTDecision."""
+    intent = str(data.get("intent", "smalltalk"))
+    should_save = bool(data.get("should_save", False))
+
+    # Guard: profile updates and smalltalk must never be saved as evidence
+    if intent in ("update_profile", "smalltalk", "help"):
+        should_save = False
+
     return {
-        "intent":      str(data.get("intent", "smalltalk")),
-        "should_save": bool(data.get("should_save", False)),
-        "reply":       str(data.get("reply", "تم استلام رسالتك.")),
-        "title":       data.get("title") or None,
-        "category":    data.get("category") or None,
-        "confidence":  float(data.get("confidence", 0.5)),
+        "intent":         intent,
+        "should_save":    should_save,
+        "reply":          str(data.get("reply", "تم استلام رسالتك.")),
+        "title":          data.get("title") or None,
+        "category":       data.get("category") or None,
+        "confidence":     float(data.get("confidence", 0.5)),
+        "profile_update": data.get("profile_update") or None,
     }
 
 
-def _default_decision(text: str | None) -> GPTDecision:
+def _failure_decision() -> GPTDecision:
     """
-    Used only when OPENAI_API_KEY is absent.
-    Treats non-empty messages as evidence so nothing is silently lost.
+    Returned when GPT is completely unavailable.
+    No evidence saved, no rule-based guess — just a polite apology.
     """
-    has_content = bool((text or "").strip())
     return {
-        "intent":      "evidence" if has_content else "smalltalk",
-        "should_save": has_content,
-        "reply": (
-            "✅ تم استلام رسالتك وسيتم معالجتها قريبًا."
-            if has_content else
-            "أهلاً! أرسل لي أي شاهد أو صورة من عملك لأحفظه لك."
-        ),
-        "title":    None,
-        "category": "أخرى" if has_content else None,
-        "confidence": 0.0,
+        "intent":         "failure",
+        "should_save":    False,
+        "reply":          "عذرًا، واجهت مشكلة تقنية مؤقتة. أعد المحاولة بعد لحظات. 🙏",
+        "title":          None,
+        "category":       None,
+        "confidence":     0.0,
+        "profile_update": None,
     }
