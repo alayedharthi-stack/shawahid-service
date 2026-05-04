@@ -98,7 +98,7 @@
         </thead>
         <tbody>
           {% for pa in payment_attempts %}
-          {% set pa_meta = pa.metadata or {} %}
+          {% set pa_meta = pa.payment_metadata or {} %}
           <tr>
             {# Teacher name: prefer metadata.teacher_name, then teacher relation, then phone #}
             <td style="font-size:.85rem;">

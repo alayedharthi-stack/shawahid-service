@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -24,8 +25,9 @@ async def lifespan(app: FastAPI):
     storage_root.mkdir(parents=True, exist_ok=True)
     (storage_root / "teachers").mkdir(exist_ok=True)
     logger.info(
-        "Shawahid service started | env=%s | storage=%s",
+        "Shawahid service started | env=%s | port=%s | storage=%s",
         settings.APP_ENV,
+        os.environ.get("PORT", "unknown"),
         storage_root.resolve(),
     )
     yield
@@ -59,8 +61,14 @@ app.include_router(evidences.router)
 app.include_router(admin.router)
 
 
-# ── Health check ───────────────────────────────────────────────────────────────
-# Must NOT depend on DB or OpenAI so Railway health probe never fails spuriously.
+# ── Health endpoints ───────────────────────────────────────────────────────────
+# CRITICAL: these must NOT touch DB, OpenAI, WhatsApp, or Moyasar so the
+# Railway healthcheck never fails spuriously. Keep them dependency-free.
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "shawahid-service"}
+
+
 @app.get("/health")
 def health():
-    return {"ok": True, "service": "shawahid-service", "env": settings.APP_ENV}
+    return {"status": "healthy", "service": "shawahid-service"}

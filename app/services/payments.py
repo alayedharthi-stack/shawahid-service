@@ -22,7 +22,7 @@ def create_payment_attempt(
         amount_sar=amount_sar,
         payment_url=payment_url,
         raw_response=raw_response,
-        metadata=metadata,
+        payment_metadata=metadata,  # DB column is `metadata`; Python attr renamed
     )
     db.add(attempt)
     db.commit()
