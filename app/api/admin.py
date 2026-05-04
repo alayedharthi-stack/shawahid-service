@@ -238,8 +238,14 @@ async def admin_send_payment_link(
     else:
         payment_url = get_payment_link(teacher_id)
 
-    msg = build_payment_link_message(payment_url, teacher.name or "")
-    await send_whatsapp_message(teacher.phone, msg)
+    from app.services.moyasar import _teacher_display_name as _dn
+    display = _dn(teacher.name or "", teacher.phone or "")
+    msg = build_payment_link_message(payment_url, display)
+    await send_whatsapp_message(
+        teacher.phone, msg,
+        teacher_id=teacher_id, context="payment_link",
+    )
+    logger.info("[PAYMENT LINK SENT] teacher_id=%d channel=whatsapp (admin)", teacher_id)
 
     return RedirectResponse(
         url=f"/admin/teachers/{teacher_id}?success=تم+إنشاء+وإرسال+رابط+الدفع+بنجاح",

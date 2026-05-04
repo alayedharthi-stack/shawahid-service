@@ -36,6 +36,7 @@ from app.services.whatsapp import (
     build_edit_data_template,
     build_subscription_required_reply,
     build_payment_link_message,
+    build_payment_receipt_message,
     build_subscription_activated_message,
     build_evidence_saved_reply,
 )
@@ -167,6 +168,7 @@ async def _create_moyasar_link(
         raw_response=result["raw_response"],
         metadata=result["metadata"],
     )
+    logger.info("[PAYMENT LINK SENT] teacher_id=%d channel=whatsapp", teacher_id)
     return result["payment_url"]
 
 
@@ -234,8 +236,13 @@ async def whatsapp_webhook(
                 logger.error("Moyasar invoice creation failed: %s", exc)
                 payment_url = get_payment_link(teacher.id)
 
-            reply = build_payment_link_message(payment_url, teacher.name or "")
-            background_tasks.add_task(send_whatsapp_message, teacher.phone, reply)
+            from app.services.moyasar import _teacher_display_name as _dn
+            display = _dn(teacher.name or "", teacher.phone or "")
+            reply = build_payment_link_message(payment_url, display)
+            background_tasks.add_task(
+                send_whatsapp_message, teacher.phone, reply,
+                teacher_id=teacher.id, context="payment_link",
+            )
             return {
                 "ok": False,
                 "teacher_id": teacher.id,
@@ -319,10 +326,16 @@ async def _process_moyasar_payment(
     raw_data: dict,
 ) -> None:
     """
-    Background task: validate → activate subscription → notify teacher.
+    Background task: validate → activate subscription → send receipt via WhatsApp.
     Opens its own DB session to avoid DetachedInstanceError.
     Always returns (never raises) so the webhook caller gets 200 fast.
+
+    Notification strategy (no email, no Moyasar notifications, no WA templates):
+      1. Build a full text receipt with invoice details.
+      2. Send via session WhatsApp message.
+      3. If send fails (e.g. 24h window expired) → log [PAYMENT WHATSAPP SEND FAILED].
     """
+    from datetime import datetime, timezone
     from app.db.base import SessionLocal
 
     db = SessionLocal()
@@ -341,9 +354,7 @@ async def _process_moyasar_payment(
 
         # ── Guard 2: status ───────────────────────────────────────────────────
         if status != "paid":
-            logger.info(
-                "Moyasar payment %s status=%s — no action", payment_id, status
-            )
+            logger.info("Moyasar payment %s status=%s — no action", payment_id, status)
             return
 
         # ── Guard 3: amount ───────────────────────────────────────────────────
@@ -361,6 +372,7 @@ async def _process_moyasar_payment(
             return
 
         # ── Activate subscription ─────────────────────────────────────────────
+        paid_at = datetime.now(timezone.utc)
         activate_subscription(
             db=db,
             teacher_id=teacher_id,
@@ -370,19 +382,42 @@ async def _process_moyasar_payment(
             plan_slug=plan_slug,
         )
         logger.info(
-            "Subscription activated: teacher_id=%d payment_id=%s service=%s",
+            "[PAYMENT ACTIVATED] teacher_id=%d payment_id=%s service=%s",
             teacher_id, payment_id, service,
         )
 
-        # ── WhatsApp confirmation ─────────────────────────────────────────────
-        try:
-            await send_whatsapp_message(
-                teacher.phone,
-                build_subscription_activated_message(),
+        # ── Build receipt ─────────────────────────────────────────────────────
+        # Use name from DB; fall back to "معلم رقم {phone}"
+        from app.services.moyasar import _teacher_display_name
+        display_name = _teacher_display_name(teacher.name or "", teacher.phone or "")
+
+        receipt_msg = build_payment_receipt_message(
+            teacher_display_name=display_name,
+            teacher_phone=teacher.phone or "",
+            provider_payment_id=payment_id,
+            paid_at=paid_at,
+            amount_sar=settings.SHAWAHID_LAUNCH_PRICE_SAR,
+            plan_slug=plan_slug,
+        )
+
+        # ── Send receipt via WhatsApp (session message — no template needed) ──
+        sent = await send_whatsapp_message(
+            teacher.phone,
+            receipt_msg,
+            teacher_id=teacher_id,
+            context="payment_receipt",
+        )
+
+        if sent:
+            logger.info(
+                "[PAYMENT RECEIPT SENT] teacher_id=%d provider_payment_id=%s",
+                teacher_id, payment_id,
             )
-        except Exception as exc:
-            logger.error(
-                "WhatsApp notification failed for teacher %d: %s", teacher_id, exc
+        else:
+            logger.warning(
+                "[PAYMENT WHATSAPP SEND FAILED] teacher_id=%d "
+                "provider_payment_id=%s reason=see_above",
+                teacher_id, payment_id,
             )
 
     except Exception as exc:
