@@ -10,6 +10,7 @@ def create_payment_attempt(
     provider_payment_id: str | None,
     payment_url: str | None,
     raw_response: dict | None = None,
+    metadata: dict | None = None,
     provider: str = "moyasar",
     amount_sar: float = 29.00,
 ) -> PaymentAttempt:
@@ -21,6 +22,7 @@ def create_payment_attempt(
         amount_sar=amount_sar,
         payment_url=payment_url,
         raw_response=raw_response,
+        metadata=metadata,
     )
     db.add(attempt)
     db.commit()

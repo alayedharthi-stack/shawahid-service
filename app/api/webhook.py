@@ -138,18 +138,25 @@ def _parse_simple_payload(body: dict) -> dict | None:
 
 # ─── Moyasar helper — create invoice and save attempt ───────────────────────
 
-async def _create_moyasar_link(db: Session, teacher_id: int, teacher_name: str = "") -> str:
+async def _create_moyasar_link(
+    db: Session,
+    teacher_id: int,
+    teacher_name: str = "",
+    teacher_phone: str = "",
+) -> str:
     """
-    Creates a Moyasar invoice, saves a payment_attempt record, and returns
-    the payment URL.  Falls back to the static PAYMENT_LINK_TEMPLATE if
-    Moyasar is not configured (dev / testing).
+    Creates a Moyasar invoice with full Shawahid metadata, saves a
+    payment_attempt record, and returns the payment URL.
+    Falls back to the static PAYMENT_LINK_TEMPLATE when Moyasar is not configured.
     """
     if not settings.MOYASAR_SECRET_KEY:
         logger.warning("MOYASAR_SECRET_KEY not set — using fallback payment link")
         return get_payment_link(teacher_id)
 
     result = await moyasar_svc.create_invoice(
+        service="shawahid",
         teacher_id=teacher_id,
+        teacher_phone=teacher_phone,
         teacher_name=teacher_name,
     )
     create_payment_attempt(
@@ -158,6 +165,7 @@ async def _create_moyasar_link(db: Session, teacher_id: int, teacher_name: str =
         provider_payment_id=result["provider_payment_id"],
         payment_url=result["payment_url"],
         raw_response=result["raw_response"],
+        metadata=result["metadata"],
     )
     return result["payment_url"]
 
@@ -220,7 +228,7 @@ async def whatsapp_webhook(
         if not is_subscription_active(db, teacher.id):
             try:
                 payment_url = await _create_moyasar_link(
-                    db, teacher.id, teacher.name or ""
+                    db, teacher.id, teacher.name or "", teacher.phone or ""
                 )
             except Exception as exc:
                 logger.error("Moyasar invoice creation failed: %s", exc)
@@ -305,26 +313,40 @@ async def _process_moyasar_payment(
     payment_id: str,
     status: str,
     amount_halalah: int,
+    service: str,
     teacher_id: int,
     plan_slug: str,
     raw_data: dict,
 ) -> None:
     """
-    Background task: activate subscription or mark failed, then notify teacher.
+    Background task: validate → activate subscription → notify teacher.
     Opens its own DB session to avoid DetachedInstanceError.
-    Always returns — never raises — to ensure webhook caller gets 200 fast.
+    Always returns (never raises) so the webhook caller gets 200 fast.
     """
     from app.db.base import SessionLocal
 
     db = SessionLocal()
     try:
-        # Update payment attempt record
+        # ── Update payment attempt record ─────────────────────────────────────
         update_payment_attempt_status(db, payment_id, status, raw_data)
 
-        if status != "paid":
-            logger.info("Moyasar payment %s status=%s — no action", payment_id, status)
+        # ── Guard 1: service must be "shawahid" ───────────────────────────────
+        if service and service != moyasar_svc.SHAWAHID_SERVICE_ID:
+            logger.warning(
+                "Moyasar webhook: service='%s' is not '%s' — skipping activation "
+                "| payment_id=%s teacher_id=%d",
+                service, moyasar_svc.SHAWAHID_SERVICE_ID, payment_id, teacher_id,
+            )
             return
 
+        # ── Guard 2: status ───────────────────────────────────────────────────
+        if status != "paid":
+            logger.info(
+                "Moyasar payment %s status=%s — no action", payment_id, status
+            )
+            return
+
+        # ── Guard 3: amount ───────────────────────────────────────────────────
         if amount_halalah < settings.SHAWAHID_LAUNCH_PRICE_HALALAH:
             logger.warning(
                 "Moyasar payment %s amount=%d halalah < required %d — skipping",
@@ -332,11 +354,13 @@ async def _process_moyasar_payment(
             )
             return
 
+        # ── Guard 4: teacher exists ───────────────────────────────────────────
         teacher = get_teacher_by_id(db, teacher_id)
         if not teacher:
             logger.error("Moyasar webhook: teacher_id=%d not found", teacher_id)
             return
 
+        # ── Activate subscription ─────────────────────────────────────────────
         activate_subscription(
             db=db,
             teacher_id=teacher_id,
@@ -346,10 +370,11 @@ async def _process_moyasar_payment(
             plan_slug=plan_slug,
         )
         logger.info(
-            "Subscription activated: teacher_id=%d payment_id=%s", teacher_id, payment_id
+            "Subscription activated: teacher_id=%d payment_id=%s service=%s",
+            teacher_id, payment_id, service,
         )
 
-        # Notify teacher via WhatsApp
+        # ── WhatsApp confirmation ─────────────────────────────────────────────
         try:
             await send_whatsapp_message(
                 teacher.phone,
@@ -398,6 +423,7 @@ async def payment_webhook(
         payment_id=parsed["payment_id"],
         status=parsed["status"],
         amount_halalah=parsed["amount_halalah"],
+        service=parsed["service"],
         teacher_id=parsed["teacher_id"],
         plan_slug=parsed["plan_slug"],
         raw_data=parsed["raw"],

@@ -17,6 +17,8 @@ class PaymentAttempt(Base):
     amount_sar: Mapped[float] = mapped_column(Numeric(10, 2), default=29.00)
     payment_url: Mapped[str | None] = mapped_column(Text)
     raw_response: Mapped[dict | None] = mapped_column(JSONB)
+    # Moyasar metadata dict sent at invoice creation — service, teacher_id, plan_slug, etc.
+    metadata: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -218,7 +218,9 @@ async def admin_send_payment_link(
     if settings.MOYASAR_SECRET_KEY:
         try:
             result = await moyasar_svc.create_invoice(
+                service="shawahid",
                 teacher_id=teacher_id,
+                teacher_phone=teacher.phone or "",
                 teacher_name=teacher.name or "",
             )
             payment_url = result["payment_url"]
@@ -228,6 +230,7 @@ async def admin_send_payment_link(
                 provider_payment_id=result["provider_payment_id"],
                 payment_url=payment_url,
                 raw_response=result["raw_response"],
+                metadata=result["metadata"],
             )
         except Exception as exc:
             logger.error("Moyasar invoice creation failed for teacher %d: %s", teacher_id, exc)

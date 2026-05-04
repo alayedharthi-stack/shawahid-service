@@ -87,10 +87,10 @@
       <table>
         <thead>
           <tr>
-            <th>#</th>
+            <th>المعلم</th>
             <th>الحالة</th>
             <th>المبلغ</th>
-            <th>المزود</th>
+            <th>الخطة</th>
             <th>معرّف الدفع</th>
             <th>رابط الدفع</th>
             <th>التاريخ</th>
@@ -98,8 +98,12 @@
         </thead>
         <tbody>
           {% for pa in payment_attempts %}
+          {% set pa_meta = pa.metadata or {} %}
           <tr>
-            <td style="font-size:.8rem;color:var(--slate-400);">{{ pa.id }}</td>
+            {# Teacher name: prefer metadata.teacher_name, then teacher relation, then phone #}
+            <td style="font-size:.85rem;">
+              {{ pa_meta.get('teacher_name') or teacher.name or teacher.phone }}
+            </td>
             <td>
               {% if pa.status == 'paid' %}
                 <span class="badge badge-green">✅ مدفوع</span>
@@ -111,13 +115,22 @@
                 <span class="badge badge-slate">{{ pa.status }}</span>
               {% endif %}
             </td>
-            <td>{{ pa.amount_sar }} ريال</td>
-            <td><span class="badge badge-navy">{{ pa.provider }}</span></td>
-            <td style="font-size:.75rem;color:var(--slate-400);">{{ pa.provider_payment_id or '—' }}</td>
+            <td><strong>{{ pa.amount_sar }}</strong> ريال</td>
+            <td>
+              {% set plan = pa_meta.get('plan_slug') or pa.raw_response and pa.raw_response.get('metadata', {}).get('plan_slug') %}
+              {% if plan == 'launch_annual_29' %}
+                <span class="badge badge-navy">عرض الإطلاق - سنوي</span>
+              {% elif plan %}
+                <span class="badge badge-slate">{{ plan }}</span>
+              {% else %}—{% endif %}
+            </td>
+            <td style="font-size:.72rem;color:var(--slate-400);word-break:break-all;max-width:140px;">
+              {{ pa.provider_payment_id or '—' }}
+            </td>
             <td>
               {% if pa.payment_url %}
                 <a href="{{ pa.payment_url }}" target="_blank" class="btn btn-ghost btn-sm"
-                   style="font-size:.75rem;">فتح الرابط</a>
+                   style="font-size:.75rem;">فتح الرابط ↗</a>
               {% else %}—{% endif %}
             </td>
             <td style="white-space:nowrap;font-size:.82rem;">
