@@ -118,13 +118,15 @@ def verify_webhook_signature(raw_body: bytes, signature_header: str) -> bool:
     (allows dev/testing without secret configured).
     """
     if not settings.MOYASAR_WEBHOOK_SECRET:
+        # Dev/test mode — accept without signature
         logger.warning(
-            "MOYASAR_WEBHOOK_SECRET not set — skipping webhook signature verification"
+            "MOYASAR_WEBHOOK_SECRET not set — accepting webhook without signature verification"
         )
         return True
 
     if not signature_header:
         logger.warning("Moyasar-Signature header missing from webhook request")
+        # If secret is configured but no header, reject
         return False
 
     expected = hmac.new(
