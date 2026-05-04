@@ -30,8 +30,14 @@ class Settings(BaseSettings):
     MOYASAR_SECRET_KEY: str = ""
     MOYASAR_WEBHOOK_SECRET: str = ""
     MOYASAR_API_BASE: str = "https://api.moyasar.com/v1"
+    # Set to "false" to skip signature verification (dev/testing)
+    MOYASAR_VERIFY_SIGNATURES: str = "true"
     SHAWAHID_LAUNCH_PRICE_HALALAH: int = 2900   # 29 SAR × 100
     SHAWAHID_LAUNCH_PRICE_SAR: int = 29
+
+    @property
+    def moyasar_verify_signatures(self) -> bool:
+        return self.MOYASAR_VERIFY_SIGNATURES.lower() not in ("false", "0", "no")
 
     # ── Payment (legacy / fallback) ───────────────────────────────────────────
     PAYMENT_LINK_TEMPLATE: str = "https://paylink.example.com/teacher/{teacher_id}"

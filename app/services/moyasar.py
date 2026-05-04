@@ -114,27 +114,25 @@ def verify_webhook_signature(raw_body: bytes, signature_header: str) -> bool:
     hex-encoded HMAC-SHA256 digest of the raw request body, signed with
     MOYASAR_WEBHOOK_SECRET.
 
-    If MOYASAR_WEBHOOK_SECRET is not set, logs a warning and returns True
-    (allows dev/testing without secret configured).
+    Verification can be disabled via MOYASAR_VERIFY_SIGNATURES=false (dev/testing).
+    When secret is not configured, verification is also skipped.
     """
-    if not settings.MOYASAR_WEBHOOK_SECRET:
-        # Dev/test mode — accept without signature
+    if not settings.moyasar_verify_signatures:
+        logger.info("Moyasar signature verification disabled (MOYASAR_VERIFY_SIGNATURES=false)")
+        return True
+
+    secret = (settings.MOYASAR_WEBHOOK_SECRET or "").strip()
+    if not secret:
         logger.warning(
-            "MOYASAR_WEBHOOK_SECRET not set — accepting webhook without signature verification"
+            "MOYASAR_WEBHOOK_SECRET not configured — accepting webhook without signature"
         )
         return True
 
-    if not signature_header:
-        logger.warning("Moyasar-Signature header missing from webhook request")
-        # If secret is configured but no header, reject
+    if not signature_header or not signature_header.strip():
+        logger.warning("Moyasar-Signature header missing — rejecting (secret IS configured)")
         return False
 
-    expected = hmac.new(
-        settings.MOYASAR_WEBHOOK_SECRET.encode(),
-        raw_body,
-        hashlib.sha256,
-    ).hexdigest()
-
+    expected = hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature_header.strip())
 
 
