@@ -52,13 +52,19 @@ logger = logging.getLogger(__name__)
 @router.get("/webhook/whatsapp")
 async def verify_webhook(request: Request):
     params = request.query_params
-    mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
-    challenge = params.get("hub.challenge")
+    mode      = params.get("hub.mode")
+    token     = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge", "")
 
-    if mode == "subscribe" and token == "shawahid_verify_2026":
-        return int(challenge)
+    if mode == "subscribe" and token == settings.WHATSAPP_VERIFY_TOKEN:
+        # Return challenge as plain text (Meta expects the raw string, not JSON)
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(challenge)
 
+    logger.warning(
+        "Webhook verification failed | mode=%r token_match=%s",
+        mode, token == settings.WHATSAPP_VERIFY_TOKEN,
+    )
     return {"error": "verification failed"}
 
 
