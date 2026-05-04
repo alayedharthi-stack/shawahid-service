@@ -179,6 +179,48 @@ async def _create_moyasar_link(
     return result["payment_url"]
 
 
+# ─── GPT background retry ────────────────────────────────────────────────────
+
+async def _gpt_retry_and_reply(
+    teacher_id: int,
+    phone: str,
+    text: str | None,
+    teacher_context: str,
+    storage_path: str | None,
+    image_url: str | None,
+    mime_type: str | None,
+    file_name: str | None,
+) -> None:
+    """
+    Called as a background task when the initial GPT call fails completely.
+    Waits a few seconds, retries ask_gpt(), then sends the real reply.
+    Skips evidence saving (user can resend to save).
+    """
+    import asyncio as _asyncio
+    from app.services.gpt_brain import ask_gpt as _ask_gpt
+
+    await _asyncio.sleep(4)
+    logger.info("[RETRY] Background GPT retry for teacher_id=%d", teacher_id)
+
+    decision = await _ask_gpt(
+        text=text,
+        teacher_context=teacher_context,
+        storage_path=storage_path,
+        image_url=image_url,
+        mime_type=mime_type,
+        file_name=file_name,
+    )
+
+    if decision["intent"] != "failure":
+        await send_whatsapp_message(phone, decision["reply"], teacher_id=teacher_id)
+        logger.info(
+            "[RETRY] Background retry succeeded for teacher_id=%d intent=%s",
+            teacher_id, decision["intent"],
+        )
+    else:
+        logger.warning("[RETRY] Background retry also failed for teacher_id=%d", teacher_id)
+
+
 # ─── Main Webhook (POST) ─────────────────────────────────────────────────────
 
 @router.post("/webhook/whatsapp")
@@ -369,7 +411,28 @@ async def whatsapp_webhook(
             teacher.id, evidence.id, decision["category"], decision["confidence"],
         )
 
-    elif intent != "failure":
+    elif intent == "failure":
+        # GPT failed completely after all retries:
+        # 1. Send "لحظة بس 🌿" immediately
+        # 2. Schedule a background retry that will send the real reply when ready
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone, reply, teacher_id=teacher.id
+        )
+        _img_url_for_retry = media_url if (evidence_type == "image" and not storage_path) else None
+        background_tasks.add_task(
+            _gpt_retry_and_reply,
+            teacher.id,
+            teacher.phone,
+            text,
+            teacher_context,
+            storage_path if evidence_type == "image" else None,
+            _img_url_for_retry,
+            mime_type,
+            safe_filename or file_name,
+        )
+        return {"ok": False, "teacher_id": teacher.id, "intent": "failure", "retrying": True}
+
+    else:
         logger.info("[EVIDENCE SKIPPED] teacher_id=%d intent=%s", teacher.id, intent)
 
     # ── Send reply ────────────────────────────────────────────────────────────

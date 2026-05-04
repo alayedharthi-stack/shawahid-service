@@ -3,19 +3,17 @@ GPT Brain — conversational AI engine for every inbound WhatsApp message.
 
 Flow:  WhatsApp inbound → ask_gpt(text, context) → GPTDecision → execute
 
-GPT decides everything:
-  - Is this evidence, smalltalk, a greeting, a profile update?
-  - Should it be saved? What title/category?
-  - What reply to send (using the teacher's name)?
+Retry strategy per model:
+  attempt 1 → fails → wait 1.5s → attempt 2 → fails → try next model
+  If ALL models exhausted → return _failure_decision() ("لحظة بس 🌿")
+  Caller (webhook) then sends interim msg + schedules background retry.
 
-Model chain: OPENAI_MODEL (env) → gpt-4.1 → gpt-4o
-  - Only skips to next model when the current one is unavailable (404/invalid).
-  - Any other failure → polite apology, nothing saved.
-
+Logs: [GPT REQUEST] [GPT SUCCESS] [GPT ERROR] [RETRY]
 No rule-based fallback. GPT leads, code executes.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -26,19 +24,22 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# ── Model fallback chain ──────────────────────────────────────────────────────
+_MAX_ATTEMPTS_PER_MODEL = 2   # 2 tries per model before moving to the next
+_RETRY_DELAY_SECONDS    = 1.5  # wait between retries
 
 _MODEL_NOT_FOUND_HINTS = (
     "model_not_found", "invalid_model", "does not exist",
-    "no such model", "404", "model not found",
+    "no such model", "model not found",
 )
 
 
+# ── Model chain ───────────────────────────────────────────────────────────────
+
 def _get_model_chain() -> list[str]:
     """Primary model from env, then hardcoded fallbacks."""
-    primary = settings.OPENAI_MODEL or settings.OPENAI_CLASSIFIER_MODEL or "gpt-4.1"
+    primary = settings.OPENAI_MODEL or "gpt-4o"
     chain: list[str] = [primary]
-    for fb in ("gpt-4.1", "gpt-4o"):
+    for fb in ("gpt-4o", "gpt-4o-mini"):
         if fb not in chain:
             chain.append(fb)
     return chain
@@ -52,13 +53,13 @@ def _is_model_unavailable(exc: Exception) -> bool:
 # ── Decision schema ───────────────────────────────────────────────────────────
 
 class GPTDecision(TypedDict):
-    intent: str          # evidence|smalltalk|help|payment|my_files|my_data|edit_data|update_profile|failure
+    intent: str        # evidence|smalltalk|help|payment|my_files|my_data|edit_data|update_profile|failure
     should_save: bool
     reply: str
     title: str | None
     category: str | None
     confidence: float
-    profile_update: dict | None   # {"name": "تركي", "subject": "..."}  — only for update_profile
+    profile_update: dict | None
 
 
 # ── System prompt ─────────────────────────────────────────────────────────────
@@ -96,13 +97,12 @@ _SYSTEM_BASE = """\
   "title": "عنوان الشاهد أو null",
   "category": "التصنيف أو null",
   "confidence": 0.95,
-  "profile_update": {"name": "...", "subject": "...", "stage": "...", "school_name": "...", "grades": "..."} 
+  "profile_update": {"name": "...", "subject": "...", "stage": "...", "school_name": "...", "grades": "..."}
 }\
 """
 
 
 def _build_system_prompt(teacher_context: str) -> str:
-    """Inject the live user context into the system prompt."""
     return f"{_SYSTEM_BASE}\n\n{teacher_context}"
 
 
@@ -113,13 +113,9 @@ def build_teacher_context(
     stage: str | None,
     sub_active: bool,
 ) -> str:
-    """Build a short context block about the current teacher for GPT."""
     lines = ["=== سياق المستخدم ==="]
     lines.append(f"رقم الهاتف: {phone}")
-    if name:
-        lines.append(f"الاسم: {name}")
-    else:
-        lines.append("الاسم: غير معروف بعد")
+    lines.append(f"الاسم: {name or 'غير معروف بعد'}")
     if subject:
         lines.append(f"المادة: {subject}")
     if stage:
@@ -142,15 +138,26 @@ async def ask_gpt(
 ) -> GPTDecision:
     """
     Send any inbound WhatsApp message to GPT for a decision.
-    Tries models in order: primary (OPENAI_MODEL) → gpt-4.1 → gpt-4o.
-    On total failure: returns a polite apology — nothing is saved.
+
+    Retry strategy:
+      For each model in chain: try up to _MAX_ATTEMPTS_PER_MODEL times
+        with _RETRY_DELAY_SECONDS between attempts.
+      If model unavailable (404/invalid_model): skip to next model immediately.
+      If all models fail: return _failure_decision() → caller sends interim msg
+        and schedules a background retry.
+
+    Never uses rule-based fallback for the reply.
     """
     if not settings.OPENAI_API_KEY:
-        logger.warning("OPENAI_API_KEY not set — returning failure decision")
+        logger.error(
+            "[GPT ERROR] OPENAI_API_KEY is not set — cannot call GPT. "
+            "Set this environment variable on Railway."
+        )
         return _failure_decision()
 
     content = _build_content(text, storage_path, image_url, mime_type, file_name)
     system  = _build_system_prompt(teacher_context)
+    models  = _get_model_chain()
 
     from openai import AsyncOpenAI
 
@@ -159,31 +166,50 @@ async def ask_gpt(
         timeout=float(settings.OPENAI_TIMEOUT_SECONDS),
     )
 
-    for model in _get_model_chain():
-        try:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user",   "content": content},
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=600,
-                temperature=0.3,
-            )
-            logger.info("[GPT MODEL] model=%s", model)
-            raw  = response.choices[0].message.content or "{}"
-            data = json.loads(raw)
-            return _coerce(data)
+    for model in models:
+        for attempt in range(1, _MAX_ATTEMPTS_PER_MODEL + 1):
+            logger.info("[GPT REQUEST] model=%s attempt=%d/%d", model, attempt, _MAX_ATTEMPTS_PER_MODEL)
+            try:
+                response = await client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user",   "content": content},
+                    ],
+                    response_format={"type": "json_object"},
+                    max_tokens=600,
+                    temperature=0.3,
+                )
+                raw  = response.choices[0].message.content or "{}"
+                data = json.loads(raw)
+                decision = _coerce(data)
+                logger.info(
+                    "[GPT SUCCESS] model=%s attempt=%d intent=%s",
+                    model, attempt, decision["intent"],
+                )
+                return decision
 
-        except Exception as exc:
-            if _is_model_unavailable(exc):
-                logger.warning("Model %s unavailable, trying next in chain: %s", model, exc)
-                continue
-            # Non-model error (network, timeout, quota…) — stop and apologise
-            logger.error("GPT brain call failed with model=%s: %s", model, exc)
-            break
+            except Exception as exc:
+                if _is_model_unavailable(exc):
+                    logger.warning(
+                        "[GPT ERROR] model=%s not available — skipping to next model. %s",
+                        model, exc,
+                    )
+                    break  # don't retry this model
 
+                logger.error(
+                    "[GPT ERROR] model=%s attempt=%d/%d: %s",
+                    model, attempt, _MAX_ATTEMPTS_PER_MODEL, exc,
+                )
+                if attempt < _MAX_ATTEMPTS_PER_MODEL:
+                    logger.info(
+                        "[RETRY] model=%s waiting %.1fs before attempt %d",
+                        model, _RETRY_DELAY_SECONDS, attempt + 1,
+                    )
+                    await asyncio.sleep(_RETRY_DELAY_SECONDS)
+                # else: fall through to next model
+
+    logger.error("[GPT ERROR] All models and retries exhausted — returning failure decision")
     return _failure_decision()
 
 
@@ -198,7 +224,6 @@ def _build_content(
 ) -> list[dict]:
     parts: list[dict] = []
 
-    # Text / metadata
     text_parts: list[str] = []
     if text:
         text_parts.append(text)
@@ -209,7 +234,7 @@ def _build_content(
     if text_parts:
         parts.append({"type": "text", "text": "\n".join(text_parts)})
 
-    # Image — base64 from local storage first, URL as fallback
+    # Image: base64 from local storage first, URL as fallback
     if storage_path:
         img = _encode_local_image(storage_path, mime_type)
         if img:
@@ -231,7 +256,7 @@ def _encode_local_image(storage_path: str, mime_type: str | None) -> dict | None
         p = Path(storage_path)
         if not p.exists() or p.stat().st_size == 0:
             return None
-        ext = p.suffix.lower().lstrip(".")
+        ext  = p.suffix.lower().lstrip(".")
         mime = mime_type or {
             "jpg": "image/jpeg", "jpeg": "image/jpeg",
             "png": "image/png",  "gif": "image/gif",
@@ -250,18 +275,23 @@ def _encode_local_image(storage_path: str, mime_type: str | None) -> dict | None
 # ── Response normalisation ────────────────────────────────────────────────────
 
 def _coerce(data: dict) -> GPTDecision:
-    """Normalise raw GPT JSON into a typed GPTDecision."""
-    intent = str(data.get("intent", "smalltalk"))
+    """Normalise raw GPT JSON into a typed GPTDecision. Use GPT reply as-is."""
+    intent      = str(data.get("intent", "smalltalk"))
     should_save = bool(data.get("should_save", False))
 
-    # Guard: profile updates and smalltalk must never be saved as evidence
-    if intent in ("update_profile", "smalltalk", "help"):
+    # Guard: these intents must never trigger evidence saving
+    if intent in ("update_profile", "smalltalk", "help", "failure"):
         should_save = False
+
+    # Use GPT's reply directly — never replace it with a canned string
+    reply = (data.get("reply") or "").strip()
+    if not reply:
+        reply = "..."   # only if GPT returned empty (very rare)
 
     return {
         "intent":         intent,
         "should_save":    should_save,
-        "reply":          str(data.get("reply", "تم استلام رسالتك.")),
+        "reply":          reply,
         "title":          data.get("title") or None,
         "category":       data.get("category") or None,
         "confidence":     float(data.get("confidence", 0.5)),
@@ -271,13 +301,13 @@ def _coerce(data: dict) -> GPTDecision:
 
 def _failure_decision() -> GPTDecision:
     """
-    Returned when GPT is completely unavailable.
-    No evidence saved, no rule-based guess — just a polite apology.
+    Returned only when ALL models and retries are exhausted.
+    Webhook sends a short interim message and schedules a background retry.
     """
     return {
         "intent":         "failure",
         "should_save":    False,
-        "reply":          "عذرًا، واجهت مشكلة تقنية مؤقتة. أعد المحاولة بعد لحظات. 🙏",
+        "reply":          "لحظة بس 🌿",
         "title":          None,
         "category":       None,
         "confidence":     0.0,

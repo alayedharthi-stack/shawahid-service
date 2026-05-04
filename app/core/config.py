@@ -21,10 +21,10 @@ class Settings(BaseSettings):
 
     # ── OpenAI ───────────────────────────────────────────────────────────────
     OPENAI_API_KEY: str = ""
-    OPENAI_CLASSIFIER_MODEL: str = "gpt-4o-mini"
-    OPENAI_EXPORT_MODEL: str = "gpt-4o-mini"
+    OPENAI_CLASSIFIER_MODEL: str = "gpt-4o"
+    OPENAI_EXPORT_MODEL: str = "gpt-4o"
     OPENAI_TIMEOUT_SECONDS: int = 30
-    OPENAI_MODEL: str = "gpt-4o-mini"  # legacy alias
+    OPENAI_MODEL: str = "gpt-4o"   # GPT brain primary model (override via env)
 
     # ── Moyasar Payment Gateway ───────────────────────────────────────────────
     MOYASAR_SECRET_KEY: str = ""
