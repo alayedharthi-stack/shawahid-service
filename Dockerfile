@@ -31,9 +31,10 @@ COPY . .
 # Storage directory — overridden by Railway Volume at /app/storage
 RUN mkdir -p /app/storage/teachers
 
-# Make start script executable
-RUN chmod +x /app/start.sh
+# Fix line endings (in case of Windows CRLF) and make executable
+RUN sed -i 's/\r//' /app/start.sh && chmod +x /app/start.sh
 
 EXPOSE 8010
 
-CMD ["/app/start.sh"]
+# Using sh -c avoids CRLF issues with the script on Windows-created repos
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8010} --workers 1"]
