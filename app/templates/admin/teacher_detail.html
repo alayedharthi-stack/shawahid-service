@@ -9,6 +9,10 @@
     <p dir="ltr">{{ teacher.phone }}</p>
   </div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <form method="post" action="/admin/teachers/{{ teacher.id }}/activate-subscription"
+          onsubmit="return confirm('تفعيل اشتراك يدوي (29 ريال / عرض إطلاق) لهذا المعلم؟');">
+      <button type="submit" class="btn btn-ghost">✅ تفعيل اشتراك يدوي</button>
+    </form>
     <form method="post" action="/admin/teachers/{{ teacher.id }}/send-payment-link">
       <button type="submit" class="btn btn-secondary">📤 إرسال رابط الدفع</button>
     </form>
@@ -55,13 +59,17 @@
           {% endif %}
         </div>
         <table style="width:100%;border-collapse:collapse;">
-          <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">الباقة</td><td>{{ subscription.plan_slug }}</td></tr>
-          <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">المبلغ</td><td>{{ subscription.amount_sar }} ريال</td></tr>
+          <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">الباقة</td>
+              <td>{% if subscription.plan_slug == 'launch_annual_29' %}عرض الإطلاق - سنوي{% else %}{{ subscription.plan_slug }}{% endif %}</td></tr>
+          <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">المبلغ</td><td><strong>{{ subscription.amount_sar }}</strong> ريال</td></tr>
           <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">يبدأ</td><td>{{ subscription.starts_at or '—' }}</td></tr>
           <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">ينتهي</td><td>{{ subscription.ends_at or '—' }}</td></tr>
         </table>
       {% else %}
-        <p style="color:var(--slate-400);font-size:.9rem;">لا يوجد اشتراك مسجّل.</p>
+        <p style="color:var(--slate-400);font-size:.9rem;margin-bottom:12px;">لا يوجد اشتراك مسجّل.</p>
+        <div style="background:#fef9c3;border-radius:8px;padding:10px 14px;font-size:.85rem;color:#92400e;">
+          💡 عرض الإطلاق: <strong>29 ريال</strong> للسنة الدراسية الكاملة
+        </div>
       {% endif %}
     </div>
   </div>

@@ -29,6 +29,7 @@ from app.services.subscriptions import (
     activate_subscription,
     get_payment_link,
     list_subscriptions,
+    LAUNCH_AMOUNT_SAR,
 )
 from app.services.teachers import get_teacher_by_id
 from app.services.whatsapp import send_whatsapp_message, build_subscription_required_reply
@@ -156,6 +157,36 @@ def admin_teacher_detail(
         "subscription": sub,
         "flash_success": flash_success, "flash_error": flash_error,
     })
+
+
+# ─── Manual subscription activation ─────────────────────────────────────────
+
+@router.post("/teachers/{teacher_id}/activate-subscription")
+def admin_activate_subscription(
+    teacher_id: int,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    """
+    Manually activate a 29 SAR launch subscription for testing/manual payment scenarios.
+    Sets plan_slug=launch_annual_29, payment_provider=manual, ends_at=now+365d.
+    """
+    teacher = get_teacher_by_id(db, teacher_id)
+    if not teacher:
+        raise HTTPException(status_code=404, detail="المعلم غير موجود")
+
+    sub = activate_subscription(
+        db=db,
+        teacher_id=teacher_id,
+        payment_provider="manual",
+        payment_reference=f"admin-manual-{teacher_id}",
+        amount_sar=29.00,
+        plan_slug="launch_annual_29",
+    )
+    return RedirectResponse(
+        url=f"/admin/teachers/{teacher_id}?success=تم+تفعيل+الاشتراك+يدويًا+حتى+{sub.ends_at.strftime('%Y/%m/%d') if sub.ends_at else ''}",
+        status_code=303,
+    )
 
 
 # ─── Send payment link ───────────────────────────────────────────────────────

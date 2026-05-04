@@ -26,19 +26,25 @@ async def download_and_save(
     media_url: str,
     original_filename: str | None = None,
     mime_type: str | None = None,
+    auth_token: str | None = None,
 ) -> tuple[str, str]:
     """
     Download media from media_url and save under teacher's isolated folder.
     Returns (storage_path, safe_filename).
     Never stores files outside the teacher's own directory.
+    Pass auth_token for Meta Cloud API media URLs that require Authorization.
     """
     safe_name = _safe_filename(original_filename, mime_type)
     dest_dir = settings.evidence_storage(teacher_id)
     dest_path = dest_dir / safe_name
 
+    headers = {}
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            resp = await client.get(media_url)
+            resp = await client.get(media_url, headers=headers)
             resp.raise_for_status()
             dest_path.write_bytes(resp.content)
     except Exception as exc:

@@ -21,18 +21,24 @@ def is_subscription_active(db: Session, teacher_id: int) -> bool:
     return get_active_subscription(db, teacher_id) is not None
 
 
+LAUNCH_PLAN_SLUG = "launch_annual_29"
+LAUNCH_AMOUNT_SAR = 29.00
+SUBSCRIPTION_DAYS = 365
+
+
 def activate_subscription(
     db: Session,
     teacher_id: int,
     payment_provider: str | None = None,
     payment_reference: str | None = None,
-    amount_sar: float = 49.00,
+    amount_sar: float = LAUNCH_AMOUNT_SAR,
+    plan_slug: str = LAUNCH_PLAN_SLUG,
 ) -> TeacherSubscription:
-    """Activate or extend annual subscription for teacher."""
+    """Activate or extend annual subscription for teacher (launch offer: 29 SAR)."""
     now = datetime.now(timezone.utc)
     existing = get_active_subscription(db, teacher_id)
     if existing:
-        existing.ends_at = existing.ends_at + timedelta(days=365)
+        existing.ends_at = existing.ends_at + timedelta(days=SUBSCRIPTION_DAYS)
         existing.payment_provider = payment_provider or existing.payment_provider
         existing.payment_reference = payment_reference or existing.payment_reference
         existing.updated_at = now
@@ -43,10 +49,10 @@ def activate_subscription(
     sub = TeacherSubscription(
         teacher_id=teacher_id,
         status="active",
-        plan_slug="annual_49",
+        plan_slug=plan_slug,
         amount_sar=amount_sar,
         starts_at=now,
-        ends_at=now + timedelta(days=365),
+        ends_at=now + timedelta(days=SUBSCRIPTION_DAYS),
         payment_provider=payment_provider,
         payment_reference=payment_reference,
     )

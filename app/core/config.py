@@ -31,12 +31,14 @@ class Settings(BaseSettings):
     PAYMENT_PROVIDER: str = "manual"
     PAYMENT_SUCCESS_SECRET: str = ""
 
-    # ── WhatsApp ──────────────────────────────────────────────────────────────
-    WHATSAPP_SEND_URL: str = ""
-    WHATSAPP_API_TOKEN: str = ""
+    # ── WhatsApp Cloud API ────────────────────────────────────────────────────
     WHATSAPP_VERIFY_TOKEN: str = ""
     WHATSAPP_ACCESS_TOKEN: str = ""
     WHATSAPP_PHONE_NUMBER_ID: str = ""
+    WHATSAPP_API_VERSION: str = "v20.0"
+    # Legacy stubs (kept for backward compat — no longer used by send_whatsapp_message)
+    WHATSAPP_SEND_URL: str = ""
+    WHATSAPP_API_TOKEN: str = ""
 
     # ── Service identity ──────────────────────────────────────────────────────
     # BASE_URL is used for building download links in API responses and PDFs.
