@@ -52,8 +52,7 @@ async def whatsapp_webhook(payload: WhatsAppWebhookIn, background_tasks: Backgro
         export_record = exporter_svc.create_export_record(db, teacher.id)
         background_tasks.add_task(
             exporter_svc.run_export_background,
-            db=db,
-            teacher=teacher,
+            teacher_id=teacher.id,
             export_id=export_record.id,
         )
         return {
@@ -93,7 +92,6 @@ async def whatsapp_webhook(payload: WhatsAppWebhookIn, background_tasks: Backgro
 
     background_tasks.add_task(
         classify_evidence,
-        db=db,
         evidence_id=evidence.id,
         message_text=payload.text,
         image_url=payload.media_url if evidence_type == "image" else None,

@@ -276,62 +276,67 @@ async def _classify_with_openai(
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 async def classify_evidence(
-    db,
     evidence_id: int,
     message_text: str | None = None,
     image_url: str | None = None,
     evidence_type: str = "text",
+    db=None,  # kept for backward compat but ignored — we open our own session
 ) -> None:
     """
     Background task: classify a single evidence record.
-    Fetches the record by ID, asserts teacher_id is set, calls OpenAI,
-    falls back gracefully on any failure.
+    Opens its own DB session to avoid DetachedInstanceError after request ends.
+    Falls back gracefully on any failure.
 
     Safety: only this evidence is sent to OpenAI — never batched with others.
     """
+    from app.db.base import SessionLocal
     from app.services.evidences import get_evidence_by_id, update_evidence_ai
     from app.models.evidence import Evidence
 
-    ev: Evidence | None = get_evidence_by_id(db, evidence_id)
-    if ev is None:
-        logger.error("classify_evidence: evidence %d not found", evidence_id)
-        return
+    db = SessionLocal()
+    try:
+        ev: Evidence | None = get_evidence_by_id(db, evidence_id)
+        if ev is None:
+            logger.error("classify_evidence: evidence %d not found", evidence_id)
+            return
 
-    # Invariant: must have a teacher
-    if not ev.teacher_id:
-        logger.error("classify_evidence: evidence %d has no teacher_id — aborting", evidence_id)
-        return
+        # Invariant: must have a teacher
+        if not ev.teacher_id:
+            logger.error("classify_evidence: evidence %d has no teacher_id — aborting", evidence_id)
+            return
 
-    logger.info(
-        "Classifying evidence %d (teacher_id=%d, type=%s)",
-        evidence_id, ev.teacher_id, ev.evidence_type or evidence_type,
-    )
+        logger.info(
+            "Classifying evidence %d (teacher_id=%d, type=%s)",
+            evidence_id, ev.teacher_id, ev.evidence_type or evidence_type,
+        )
 
-    etype = ev.evidence_type or evidence_type
-    ai_status = "completed"
-    result: EvidenceClassification
+        etype = ev.evidence_type or evidence_type
+        ai_status = "completed"
+        result: EvidenceClassification
 
-    if not settings.OPENAI_API_KEY:
-        logger.warning("OPENAI_API_KEY not set — using rule-based fallback for evidence %d", evidence_id)
-        result = fallback_classify(etype, ev.message_text, ev.file_name)
-        ai_status = "fallback"
-    else:
-        try:
-            result = await _classify_with_openai(
-                evidence_type=etype,
-                message_text=ev.message_text,
-                media_url=ev.media_url,
-                storage_path=ev.storage_path,
-                file_name=ev.file_name,
-                mime_type=ev.mime_type,
-            )
-        except Exception as exc:
-            logger.error("OpenAI classification failed for evidence %d: %s", evidence_id, exc)
+        if not settings.OPENAI_API_KEY:
+            logger.warning("OPENAI_API_KEY not set — using rule-based fallback for evidence %d", evidence_id)
             result = fallback_classify(etype, ev.message_text, ev.file_name)
             ai_status = "fallback"
+        else:
+            try:
+                result = await _classify_with_openai(
+                    evidence_type=etype,
+                    message_text=ev.message_text,
+                    media_url=ev.media_url,
+                    storage_path=ev.storage_path,
+                    file_name=ev.file_name,
+                    mime_type=ev.mime_type,
+                )
+            except Exception as exc:
+                logger.error("OpenAI classification failed for evidence %d: %s", evidence_id, exc)
+                result = fallback_classify(etype, ev.message_text, ev.file_name)
+                ai_status = "fallback"
 
-    update_evidence_ai(db, evidence_id, result.model_dump(), ai_status=ai_status)
-    logger.info(
-        "Evidence %d classified: category=%r ai_status=%s confidence=%.2f",
-        evidence_id, result.category, ai_status, result.confidence,
-    )
+        update_evidence_ai(db, evidence_id, result.model_dump(), ai_status=ai_status)
+        logger.info(
+            "Evidence %d classified: category=%r ai_status=%s confidence=%.2f",
+            evidence_id, result.category, ai_status, result.confidence,
+        )
+    finally:
+        db.close()

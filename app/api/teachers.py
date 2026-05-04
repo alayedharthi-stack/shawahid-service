@@ -52,8 +52,7 @@ async def export_portfolio(teacher_id: int, background_tasks: BackgroundTasks, d
     export_record = exporter_svc.create_export_record(db, teacher_id)
     background_tasks.add_task(
         exporter_svc.run_export_background,
-        db=db,
-        teacher=teacher,
+        teacher_id=teacher_id,
         export_id=export_record.id,
     )
 

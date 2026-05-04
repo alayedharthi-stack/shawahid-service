@@ -144,41 +144,59 @@ def create_export_record(db: Session, teacher_id: int) -> PortfolioExport:
     return record
 
 
-async def run_export_background(db: Session, teacher: Teacher, export_id: int) -> None:
+async def run_export_background(teacher_id: int, export_id: int) -> None:
     """
     Background task: generate PDF for teacher and update the export record.
+    Opens its own DB session so it isn't affected by the closed request session.
     Each teacher's files are isolated under their own directory.
     """
-    record = db.query(PortfolioExport).filter(PortfolioExport.id == export_id).first()
-    if not record:
-        return
+    from app.db.base import SessionLocal
+    from app.services.teachers import get_teacher_by_id
 
+    db: Session = SessionLocal()
     try:
+        record = db.query(PortfolioExport).filter(PortfolioExport.id == export_id).first()
+        if not record:
+            return
+
         record.status = "processing"
         db.commit()
 
-        # Build canonical portfolio JSON first — single source of truth
-        portfolio = build_portfolio_json(db, teacher.id)
-        evidences = get_teacher_evidences(db, teacher.id, limit=1000)
+        # Re-fetch teacher inside fresh session
+        teacher = get_teacher_by_id(db, teacher_id)
+        if not teacher:
+            record.status = "error"
+            record.error = f"Teacher {teacher_id} not found"
+            db.commit()
+            return
+
+        evidences = get_teacher_evidences(db, teacher_id, limit=1000)
         html = _render_html(teacher, evidences)
 
-        export_dir = settings.export_storage(teacher.id)
+        export_dir = settings.export_storage(teacher_id)
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        filename = f"shawahid_teacher_{teacher.id}_{timestamp}.pdf"
+        filename = f"shawahid_teacher_{teacher_id}_{timestamp}.pdf"
         output_path = export_dir / filename
 
         await _generate_pdf(html, output_path)
 
-        pdf_url = f"{settings.effective_base_url}/files/teachers/{teacher.id}/exports/{filename}"
+        pdf_url = f"{settings.effective_base_url}/files/teachers/{teacher_id}/exports/{filename}"
         record.storage_path = str(output_path)
         record.pdf_url = pdf_url
         record.status = "done"
         db.commit()
 
-        logger.info("Export done for teacher %d: %s", teacher.id, pdf_url)
+        logger.info("Export done for teacher %d: %s", teacher_id, pdf_url)
 
     except Exception as exc:
-        logger.error("Export failed for teacher %d: %s", teacher.id, exc)
-        record.status = "error"
-        record.error = str(exc)
-        db.commit()
+        logger.error("Export failed for teacher %d: %s", teacher_id, exc)
+        try:
+            record = db.query(PortfolioExport).filter(PortfolioExport.id == export_id).first()
+            if record:
+                record.status = "error"
+                record.error = str(exc)
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()

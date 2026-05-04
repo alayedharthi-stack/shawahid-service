@@ -194,8 +194,7 @@ async def admin_export(
     record = exporter_svc.create_export_record(db, teacher_id)
     background_tasks.add_task(
         exporter_svc.run_export_background,
-        db=db,
-        teacher=teacher,
+        teacher_id=teacher_id,
         export_id=record.id,
     )
     return RedirectResponse(
@@ -261,7 +260,6 @@ async def admin_evidence_reclassify(
 
     background_tasks.add_task(
         classify_evidence,
-        db=db,
         evidence_id=evidence_id,
         message_text=ev.message_text,
         image_url=ev.media_url if ev.evidence_type == "image" else None,
