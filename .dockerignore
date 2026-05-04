@@ -1,0 +1,27 @@
+# Never send secrets or local state to Docker build context
+.env
+.env.*
+!.env.example
+
+# Local storage — mounted as Railway Volume in production
+storage/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Git
+.git/
+.gitignore
+
+# Docs (not needed in container)
+DEPLOY.md
+README.md

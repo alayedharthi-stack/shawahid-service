@@ -1,0 +1,151 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ teacher.name or 'المعلم' }}{% endblock %}
+{% block header_title %}تفاصيل المعلم{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <h1>{{ teacher.name or 'معلم بدون اسم' }}</h1>
+    <p dir="ltr">{{ teacher.phone }}</p>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <form method="post" action="/admin/teachers/{{ teacher.id }}/send-payment-link">
+      <button type="submit" class="btn btn-secondary">📤 إرسال رابط الدفع</button>
+    </form>
+    <form method="post" action="/admin/teachers/{{ teacher.id }}/export">
+      <button type="submit" class="btn btn-primary">📄 تصدير PDF</button>
+    </form>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+  <!-- Teacher Info -->
+  <div class="card">
+    <div class="card-header">بيانات المعلم</div>
+    <div class="card-body">
+      <table style="width:100%;border-collapse:collapse;">
+        {% for label, value in [
+          ('المادة', teacher.subject),
+          ('المرحلة', teacher.stage),
+          ('الصفوف', teacher.grades),
+          ('المدرسة', teacher.school_name),
+          ('مدير المدرسة', teacher.principal_name),
+        ] %}
+        <tr>
+          <td style="color:var(--slate-500);font-weight:600;padding:8px 0;width:40%;font-size:.85rem;">{{ label }}</td>
+          <td style="padding:8px 0;font-size:.9rem;">{{ value or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+
+  <!-- Subscription Info -->
+  <div class="card">
+    <div class="card-header">حالة الاشتراك</div>
+    <div class="card-body">
+      {% if subscription %}
+        <div style="margin-bottom:12px;">
+          {% if subscription.status == 'active' %}
+            <span class="badge badge-green" style="font-size:.9rem;padding:5px 14px;">✅ نشط</span>
+          {% elif subscription.status == 'expired' %}
+            <span class="badge badge-red" style="font-size:.9rem;padding:5px 14px;">⚠️ منتهي</span>
+          {% else %}
+            <span class="badge badge-slate" style="font-size:.9rem;padding:5px 14px;">غير مفعّل</span>
+          {% endif %}
+        </div>
+        <table style="width:100%;border-collapse:collapse;">
+          <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">الباقة</td><td>{{ subscription.plan_slug }}</td></tr>
+          <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">المبلغ</td><td>{{ subscription.amount_sar }} ريال</td></tr>
+          <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">يبدأ</td><td>{{ subscription.starts_at or '—' }}</td></tr>
+          <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">ينتهي</td><td>{{ subscription.ends_at or '—' }}</td></tr>
+        </table>
+      {% else %}
+        <p style="color:var(--slate-400);font-size:.9rem;">لا يوجد اشتراك مسجّل.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Evidences -->
+<div class="card">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <span>الشواهد ({{ evidences|length }})</span>
+    <span style="font-size:.78rem;color:var(--slate-400);">
+      اضغط "إعادة التصنيف" لتحديث التصنيف بالذكاء الاصطناعي
+    </span>
+  </div>
+  <div class="card-body" style="padding:0;">
+    {% if evidences %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>العنوان</th>
+            <th>التصنيف</th>
+            <th>النوع</th>
+            <th>حالة الذكاء</th>
+            <th>الصف</th>
+            <th>المادة</th>
+            <th>التاريخ</th>
+            <th>إجراءات</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ev in evidences %}
+          <tr>
+            <td style="font-size:.8rem;color:var(--slate-400);">{{ ev.id }}</td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              {{ ev.title or '—' }}
+            </td>
+            <td>
+              {% if ev.category %}
+                <span class="badge badge-navy">{{ ev.category }}</span>
+              {% else %}
+                <span class="badge badge-slate">بدون تصنيف</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge badge-slate">{{ ev.evidence_type }}</span>
+            </td>
+            <td>
+              {% if ev.ai_status == 'completed' %}
+                <span class="badge badge-green" title="تم التصنيف بالذكاء الاصطناعي">✓ مكتمل</span>
+              {% elif ev.ai_status == 'fallback' %}
+                <span class="badge badge-amber" title="تم التصنيف بالقواعد (بدون AI)">⚡ تلقائي</span>
+              {% elif ev.ai_status == 'pending' %}
+                <span class="badge badge-slate" title="في الانتظار">⏳ معلّق</span>
+              {% else %}
+                <span class="badge badge-slate">{{ ev.ai_status or '—' }}</span>
+              {% endif %}
+            </td>
+            <td>{{ ev.grade or '—' }}</td>
+            <td>{{ ev.subject or '—' }}</td>
+            <td style="white-space:nowrap;font-size:.82rem;">
+              {{ ev.created_at.strftime('%Y/%m/%d') if ev.created_at else '—' }}
+            </td>
+            <td>
+              <div style="display:flex;gap:5px;flex-wrap:nowrap;">
+                <a href="/admin/evidences/{{ ev.id }}/edit" class="btn btn-ghost btn-sm">تعديل</a>
+                <form method="post" action="/admin/evidences/{{ ev.id }}/reclassify" style="margin:0;">
+                  <button type="submit" class="btn btn-secondary btn-sm"
+                          title="إعادة التصنيف بالذكاء الاصطناعي">🤖</button>
+                </form>
+                <form method="post" action="/admin/evidences/{{ ev.id }}/delete" style="margin:0;"
+                      onsubmit="return confirm('هل تريد حذف هذا الشاهد نهائيًا؟');">
+                  <button type="submit" class="btn btn-danger btn-sm">حذف</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p style="color:var(--slate-400);text-align:center;padding:24px;">لا توجد شواهد محفوظة بعد.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

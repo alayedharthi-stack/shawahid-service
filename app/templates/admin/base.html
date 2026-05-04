@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}لوحة شواهد{% endblock %} — إدارة شواهد</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="/static/admin.css" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="sidebar-brand-icon">📚</div>
+    <div class="sidebar-brand-text">
+      <div class="sidebar-brand-name">شواهد</div>
+      <div class="sidebar-brand-sub">لوحة الإدارة</div>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-group-label">الرئيسية</div>
+    <a href="/admin/" class="nav-item {% if active == 'dashboard' %}active{% endif %}">
+      <span class="icon">📊</span> نظرة عامة
+    </a>
+
+    <div class="nav-group-label" style="margin-top:12px;">المعلمون</div>
+    <a href="/admin/teachers" class="nav-item {% if active == 'teachers' %}active{% endif %}">
+      <span class="icon">👥</span> قائمة المعلمين
+    </a>
+    <a href="/admin/subscriptions" class="nav-item {% if active == 'subscriptions' %}active{% endif %}">
+      <span class="icon">💳</span> الاشتراكات
+    </a>
+  </nav>
+</aside>
+
+<!-- ── Main ──────────────────────────────────────────────────────────────── -->
+<div class="main-wrap">
+  <header class="top-header">
+    <span class="header-title">{% block header_title %}لوحة الإدارة{% endblock %}</span>
+    <span class="header-badge">👑 المالك</span>
+  </header>
+
+  <main class="page-content">
+    {% if flash_success %}
+    <div class="flash flash-success">✅ {{ flash_success }}</div>
+    {% endif %}
+    {% if flash_error %}
+    <div class="flash flash-error">⚠️ {{ flash_error }}</div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+</body>
+</html>

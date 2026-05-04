@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ملف الشواهد – {{ teacher.name or 'المعلم' }}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --gold:      #b8860b;
+      --gold-lt:   #f5e6b5;
+      --navy:      #1a2a4a;
+      --navy-lt:   #e8edf5;
+      --text:      #1e1e2e;
+      --muted:     #5a6474;
+      --border:    #d4d9e2;
+      --white:     #ffffff;
+      --page-w:    210mm;
+      --page-h:    297mm;
+      --margin:    18mm;
+    }
+
+    body {
+      font-family: 'Cairo', Arial, sans-serif;
+      font-size: 11pt;
+      color: var(--text);
+      background: var(--white);
+      direction: rtl;
+    }
+
+    /* ─── PAGE BREAKS ─────────────────────────────────────────────────────── */
+    .page { page-break-after: always; padding: var(--margin); min-height: var(--page-h); }
+    .page:last-child { page-break-after: avoid; }
+
+    /* ─── COVER PAGE ──────────────────────────────────────────────────────── */
+    .cover {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      background: linear-gradient(160deg, var(--navy) 0%, #263c6e 60%, #1a2a4a 100%);
+      color: var(--white);
+      min-height: var(--page-h);
+      padding: 30mm var(--margin);
+    }
+
+    .cover-emblem {
+      width: 80px; height: 80px;
+      border: 3px solid var(--gold);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 24px;
+      font-size: 36px;
+    }
+
+    .cover-badge {
+      font-size: 9pt;
+      letter-spacing: 3px;
+      color: var(--gold);
+      text-transform: uppercase;
+      border: 1px solid var(--gold);
+      padding: 4px 18px;
+      border-radius: 20px;
+      margin-bottom: 22px;
+      font-weight: 600;
+    }
+
+    .cover h1 {
+      font-size: 32pt;
+      font-weight: 900;
+      letter-spacing: -1px;
+      line-height: 1.2;
+      margin-bottom: 8px;
+    }
+
+    .cover h2 {
+      font-size: 15pt;
+      font-weight: 400;
+      color: rgba(255,255,255,0.7);
+      margin-bottom: 40px;
+    }
+
+    .cover-divider {
+      width: 70px; height: 2px;
+      background: var(--gold);
+      margin: 0 auto 36px;
+    }
+
+    .cover-info {
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px;
+      padding: 24px 36px;
+      width: 100%;
+      max-width: 360px;
+    }
+
+    .cover-info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      font-size: 10.5pt;
+    }
+
+    .cover-info-row:last-child { border-bottom: none; }
+
+    .cover-info-label { color: var(--gold); font-weight: 600; }
+    .cover-info-value { color: rgba(255,255,255,0.9); }
+
+    .cover-year {
+      margin-top: 32px;
+      font-size: 11pt;
+      color: rgba(255,255,255,0.5);
+    }
+
+    /* ─── SECTION HEADER ──────────────────────────────────────────────────── */
+    .section-header {
+      background: var(--navy);
+      color: var(--white);
+      padding: 14px 20px;
+      border-radius: 10px;
+      font-size: 14pt;
+      font-weight: 700;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .section-header .icon {
+      background: var(--gold);
+      color: var(--navy);
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    /* ─── TOC ─────────────────────────────────────────────────────────────── */
+    .toc-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px dotted var(--border);
+      font-size: 11pt;
+    }
+
+    .toc-item:last-child { border-bottom: none; }
+    .toc-title { font-weight: 600; }
+    .toc-count {
+      background: var(--navy-lt);
+      color: var(--navy);
+      font-size: 9pt;
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-weight: 700;
+    }
+
+    /* ─── TEACHER INFO TABLE ──────────────────────────────────────────────── */
+    .info-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+
+    .info-table td {
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 10.5pt;
+    }
+
+    .info-table td:first-child {
+      color: var(--muted);
+      font-weight: 600;
+      width: 36%;
+      background: var(--navy-lt);
+    }
+
+    .info-table tr:last-child td { border-bottom: none; }
+
+    /* ─── PHILOSOPHY BOX ──────────────────────────────────────────────────── */
+    .philosophy-box {
+      background: var(--gold-lt);
+      border-right: 4px solid var(--gold);
+      border-radius: 0 10px 10px 0;
+      padding: 18px 20px;
+      font-size: 10.5pt;
+      line-height: 1.8;
+      color: #3a2a00;
+    }
+
+    /* ─── CATEGORY HEADER ─────────────────────────────────────────────────── */
+    .category-header {
+      background: var(--navy-lt);
+      border-right: 4px solid var(--gold);
+      border-radius: 0 8px 8px 0;
+      padding: 10px 16px;
+      font-size: 12.5pt;
+      font-weight: 700;
+      color: var(--navy);
+      margin: 28px 0 16px;
+    }
+
+    /* ─── EVIDENCE CARD ───────────────────────────────────────────────────── */
+    .evidence-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 18px;
+      page-break-inside: avoid;
+    }
+
+    .evidence-card-header {
+      background: var(--navy-lt);
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .evidence-title {
+      font-size: 11pt;
+      font-weight: 700;
+      color: var(--navy);
+    }
+
+    .evidence-meta {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .badge {
+      font-size: 8.5pt;
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .badge-navy  { background: var(--navy); color: var(--white); }
+    .badge-gold  { background: var(--gold-lt); color: #6b4c00; border: 1px solid #d4a017; }
+    .badge-gray  { background: #f0f1f3; color: var(--muted); }
+
+    .evidence-card-body { padding: 14px 16px; }
+
+    .evidence-description {
+      font-size: 10.5pt;
+      line-height: 1.8;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    .evidence-image {
+      width: 100%;
+      max-height: 240px;
+      object-fit: contain;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      display: block;
+      margin-top: 8px;
+    }
+
+    .evidence-file-card {
+      background: var(--navy-lt);
+      border: 1px dashed var(--navy);
+      border-radius: 8px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .file-icon { font-size: 24px; }
+    .file-name { font-size: 10pt; font-weight: 600; color: var(--navy); }
+    .file-type { font-size: 9pt; color: var(--muted); }
+
+    .evidence-footer {
+      padding: 8px 16px;
+      background: #f8f9fb;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 16px;
+      font-size: 9.5pt;
+      color: var(--muted);
+    }
+
+    .evidence-footer span { display: flex; align-items: center; gap: 4px; }
+
+    /* ─── EMPTY STATE ─────────────────────────────────────────────────────── */
+    .empty-category {
+      text-align: center;
+      color: var(--muted);
+      font-size: 10pt;
+      padding: 20px;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      margin-bottom: 18px;
+    }
+
+    /* ─── CLOSING ─────────────────────────────────────────────────────────── */
+    .closing-box {
+      background: var(--navy);
+      color: var(--white);
+      border-radius: 12px;
+      padding: 32px;
+      text-align: center;
+    }
+
+    .closing-box h3 { font-size: 15pt; margin-bottom: 10px; color: var(--gold); }
+    .closing-box p { font-size: 10.5pt; color: rgba(255,255,255,0.75); line-height: 1.8; }
+
+    .closing-signature {
+      margin-top: 32px;
+      border-top: 1px solid var(--border);
+      padding-top: 24px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 10pt;
+      color: var(--muted);
+    }
+
+    /* ─── PRINT ───────────────────────────────────────────────────────────── */
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page { padding: var(--margin); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     COVER PAGE
+═══════════════════════════════════════════════════════════════════════════ -->
+<div class="cover page">
+  <div class="cover-emblem">📚</div>
+  <div class="cover-badge">TEACHER PORTFOLIO</div>
+  <h1>ملف الشواهد</h1>
+  <h2>توثيق الأداء المهني للمعلم</h2>
+  <div class="cover-divider"></div>
+
+  <div class="cover-info">
+    <div class="cover-info-row">
+      <span class="cover-info-label">اسم المعلم</span>
+      <span class="cover-info-value">{{ teacher.name or '—' }}</span>
+    </div>
+    <div class="cover-info-row">
+      <span class="cover-info-label">المادة الدراسية</span>
+      <span class="cover-info-value">{{ teacher.subject or '—' }}</span>
+    </div>
+    <div class="cover-info-row">
+      <span class="cover-info-label">المرحلة</span>
+      <span class="cover-info-value">{{ teacher.stage or '—' }}</span>
+    </div>
+    <div class="cover-info-row">
+      <span class="cover-info-label">المدرسة</span>
+      <span class="cover-info-value">{{ teacher.school_name or '—' }}</span>
+    </div>
+    <div class="cover-info-row">
+      <span class="cover-info-label">مدير المدرسة</span>
+      <span class="cover-info-value">{{ teacher.principal_name or '—' }}</span>
+    </div>
+  </div>
+
+  <div class="cover-year">العام الدراسي {{ academic_year }}</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TABLE OF CONTENTS
+═══════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="section-header">
+    <div class="icon">📋</div>
+    الفهرس
+  </div>
+
+  {% for cat in categories %}
+  <div class="toc-item">
+    <span class="toc-title">{{ cat.name }}</span>
+    <span class="toc-count">{{ cat.count }} شاهد</span>
+  </div>
+  {% endfor %}
+
+  <div class="toc-item" style="font-weight:700; margin-top:8px; border-top:2px solid var(--navy); padding-top:12px;">
+    <span class="toc-title">الإجمالي</span>
+    <span class="toc-count">{{ total_count }} شاهد</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TEACHER PROFILE
+═══════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="section-header">
+    <div class="icon">👤</div>
+    بيانات المعلم
+  </div>
+
+  <table class="info-table">
+    <tr><td>الاسم الكامل</td><td>{{ teacher.name or '—' }}</td></tr>
+    <tr><td>رقم الجوال</td><td dir="ltr" style="text-align:right;">{{ teacher.phone }}</td></tr>
+    <tr><td>المادة الدراسية</td><td>{{ teacher.subject or '—' }}</td></tr>
+    <tr><td>المرحلة</td><td>{{ teacher.stage or '—' }}</td></tr>
+    <tr><td>الصفوف</td><td>{{ teacher.grades or '—' }}</td></tr>
+    <tr><td>المدرسة</td><td>{{ teacher.school_name or '—' }}</td></tr>
+    <tr><td>مدير المدرسة</td><td>{{ teacher.principal_name or '—' }}</td></tr>
+    <tr><td>إجمالي الشواهد</td><td>{{ total_count }} شاهد</td></tr>
+  </table>
+
+  <br />
+  <div class="section-header" style="margin-top:24px;">
+    <div class="icon">💡</div>
+    الفلسفة التعليمية
+  </div>
+
+  <div class="philosophy-box">
+    يؤمن المعلم بأن التعليم الفعّال يقوم على التخطيط المحكم، والتنفيذ الإبداعي، والتقويم المستمر.
+    ويسعى دائمًا إلى تنمية مهارات التفكير الناقد لدى طلابه، وتعزيز قيم التعاون والمسؤولية،
+    مستعينًا بأساليب التعلم النشط والتقنيات الحديثة لتحقيق مخرجات تعليمية متميزة.
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     EVIDENCE SECTIONS
+═══════════════════════════════════════════════════════════════════════════ -->
+{% for cat in categories %}
+<div class="page">
+  <div class="section-header">
+    <div class="icon">📌</div>
+    {{ cat.name }}
+  </div>
+
+  {% if cat.evidences %}
+    {% for ev in cat.evidences %}
+    <div class="evidence-card">
+      <div class="evidence-card-header">
+        <div class="evidence-title">{{ ev.title or 'شاهد بدون عنوان' }}</div>
+        <div class="evidence-meta">
+          {% if ev.grade %}<span class="badge badge-navy">{{ ev.grade }}</span>{% endif %}
+          {% if ev.subject %}<span class="badge badge-gold">{{ ev.subject }}</span>{% endif %}
+          <span class="badge badge-gray">{{ ev.evidence_type }}</span>
+        </div>
+      </div>
+
+      <div class="evidence-card-body">
+        {% if ev.description %}
+        <p class="evidence-description">{{ ev.description }}</p>
+        {% endif %}
+
+        {% if ev.message_text and not ev.description %}
+        <p class="evidence-description" style="color: var(--muted); font-style: italic;">{{ ev.message_text }}</p>
+        {% endif %}
+
+        {% if ev.evidence_type == 'image' and ev.storage_path %}
+        <img
+          class="evidence-image"
+          src="file://{{ ev.storage_path }}"
+          alt="{{ ev.title or 'صورة شاهد' }}"
+          onerror="this.style.display='none'"
+        />
+        {% elif ev.evidence_type in ['pdf', 'document'] and ev.file_name %}
+        <div class="evidence-file-card">
+          <div class="file-icon">{% if ev.evidence_type == 'pdf' %}📄{% else %}📝{% endif %}</div>
+          <div>
+            <div class="file-name">{{ ev.file_name }}</div>
+            <div class="file-type">{{ ev.evidence_type | upper }}</div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="evidence-footer">
+        <span>📅 {{ ev.created_at.strftime('%Y/%m/%d') if ev.created_at else '—' }}</span>
+        {% if ev.grade %}<span>🎓 {{ ev.grade }}</span>{% endif %}
+        {% if ev.subject %}<span>📖 {{ ev.subject }}</span>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="empty-category">لا توجد شواهد مسجّلة في هذا المحور بعد.</div>
+  {% endif %}
+</div>
+{% endfor %}
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     CLOSING
+═══════════════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="closing-box">
+    <h3>خاتمة الملف</h3>
+    <p>
+      يُعدّ هذا الملف توثيقًا أمينًا لجهود المعلم {{ teacher.name or '' }} خلال العام الدراسي {{ academic_year }}.
+      وقد حرص على تنويع شواهد أدائه المهني لتشمل التخطيط والتنفيذ والتقويم والأنشطة الثرائية،
+      سعيًا نحو تحقيق الجودة التعليمية ورفع مستوى التحصيل الدراسي لطلابه.
+    </p>
+  </div>
+
+  <div class="closing-signature">
+    <div>
+      <strong>المعلم:</strong><br />
+      {{ teacher.name or '—' }}<br />
+      التوقيع: _______________________
+    </div>
+    <div style="text-align:left;">
+      <strong>مدير المدرسة:</strong><br />
+      {{ teacher.principal_name or '—' }}<br />
+      التوقيع: _______________________
+    </div>
+  </div>
+
+  <p style="text-align:center; margin-top:32px; font-size:9pt; color:#aaa;">
+    تم إنشاء هذا الملف تلقائيًا عبر منصة شواهد · {{ generated_at }}
+  </p>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,78 @@
+{% extends "admin/base.html" %}
+{% block title %}الاشتراكات{% endblock %}
+{% block header_title %}الاشتراكات{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <h1>الاشتراكات</h1>
+    <p>{{ total }} اشتراك مسجّل</p>
+  </div>
+</div>
+
+<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:24px;">
+  <div class="kpi-card">
+    <div class="kpi-label">نشط</div>
+    <div class="kpi-value" style="color:var(--emerald-700);">{{ active_count }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">منتهي / غير مفعّل</div>
+    <div class="kpi-value" style="color:var(--red-700);">{{ inactive_count }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">إجمالي الإيرادات</div>
+    <div class="kpi-value" style="color:var(--brand-600);">{{ total_revenue }} ريال</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>المعلم</th>
+          <th>الجوال</th>
+          <th>الحالة</th>
+          <th>تاريخ البداية</th>
+          <th>تاريخ الانتهاء</th>
+          <th>المبلغ</th>
+          <th>وسيلة الدفع</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in subscriptions %}
+        <tr>
+          <td>{{ s.id }}</td>
+          <td>
+            <a href="/admin/teachers/{{ s.teacher_id }}" style="font-weight:600;color:var(--navy);">
+              {{ s.teacher_name or '—' }}
+            </a>
+          </td>
+          <td dir="ltr">{{ s.teacher_phone }}</td>
+          <td>
+            {% if s.status == 'active' %}
+              <span class="badge badge-green">نشط</span>
+            {% elif s.status == 'expired' %}
+              <span class="badge badge-red">منتهي</span>
+            {% else %}
+              <span class="badge badge-slate">غير مفعّل</span>
+            {% endif %}
+          </td>
+          <td>{{ s.starts_at or '—' }}</td>
+          <td>{{ s.ends_at or '—' }}</td>
+          <td>{{ s.amount_sar }} ريال</td>
+          <td>{{ s.payment_provider or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if total == 0 %}
+<div class="alert alert-info" style="margin-top:16px;">
+  لا توجد اشتراكات مسجّلة بعد.
+</div>
+{% endif %}
+{% endblock %}

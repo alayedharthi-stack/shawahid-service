@@ -1,0 +1,75 @@
+{% extends "admin/base.html" %}
+{% block title %}نظرة عامة{% endblock %}
+{% block header_title %}نظرة عامة{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <h1>نظرة عامة</h1>
+    <p>إحصائيات سريعة عن استخدام المنصة</p>
+  </div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">إجمالي المعلمين</div>
+    <div class="kpi-value">{{ total_teachers }}</div>
+    <div class="kpi-sub">مسجّل في المنصة</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">الاشتراكات النشطة</div>
+    <div class="kpi-value" style="color:var(--emerald-700);">{{ active_subs }}</div>
+    <div class="kpi-sub">اشتراك فعّال</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">إجمالي الشواهد</div>
+    <div class="kpi-value" style="color:var(--brand-600);">{{ total_evidences }}</div>
+    <div class="kpi-sub">شاهد محفوظ</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">ملفات PDF منشأة</div>
+    <div class="kpi-value">{{ total_exports }}</div>
+    <div class="kpi-sub">ملف شواهد</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">آخر المعلمين المسجّلين</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>الاسم</th>
+          <th>الجوال</th>
+          <th>المدرسة</th>
+          <th>الاشتراك</th>
+          <th>الشواهد</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in recent_teachers %}
+        <tr>
+          <td>{{ t.id }}</td>
+          <td>{{ t.name or '—' }}</td>
+          <td dir="ltr">{{ t.phone }}</td>
+          <td>{{ t.school_name or '—' }}</td>
+          <td>
+            {% if t.sub_status == 'active' %}
+              <span class="badge badge-green">نشط</span>
+            {% else %}
+              <span class="badge badge-slate">غير مفعّل</span>
+            {% endif %}
+          </td>
+          <td>{{ t.evidence_count }}</td>
+          <td>
+            <a href="/admin/teachers/{{ t.id }}" class="btn btn-ghost btn-sm">عرض</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

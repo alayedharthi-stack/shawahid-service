@@ -1,0 +1,75 @@
+{% extends "admin/base.html" %}
+{% block title %}المعلمون{% endblock %}
+{% block header_title %}قائمة المعلمين{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-text">
+    <h1>المعلمون</h1>
+    <p>إجمالي {{ total }} معلم مسجّل</p>
+  </div>
+  <form method="get" style="display:flex;gap:8px;">
+    <input type="search" name="q" value="{{ q or '' }}" placeholder="بحث بالاسم أو الجوال..." style="width:240px;" />
+    <button type="submit" class="btn btn-secondary btn-sm">بحث</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>الاسم</th>
+          <th>الجوال</th>
+          <th>المدرسة</th>
+          <th>المادة</th>
+          <th>الشواهد</th>
+          <th>الاشتراك</th>
+          <th>ينتهي</th>
+          <th>إجراءات</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in teachers %}
+        <tr>
+          <td>{{ t.id }}</td>
+          <td><strong>{{ t.name or '—' }}</strong></td>
+          <td dir="ltr">{{ t.phone }}</td>
+          <td>{{ t.school_name or '—' }}</td>
+          <td>{{ t.subject or '—' }}</td>
+          <td>{{ t.evidence_count }}</td>
+          <td>
+            {% if t.sub_status == 'active' %}
+              <span class="badge badge-green">نشط</span>
+            {% elif t.sub_status == 'expired' %}
+              <span class="badge badge-red">منتهي</span>
+            {% else %}
+              <span class="badge badge-slate">غير مفعّل</span>
+            {% endif %}
+          </td>
+          <td>{{ t.sub_ends_at or '—' }}</td>
+          <td>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <a href="/admin/teachers/{{ t.id }}" class="btn btn-ghost btn-sm">عرض</a>
+              <form method="post" action="/admin/teachers/{{ t.id }}/send-payment-link" style="margin:0;">
+                <button type="submit" class="btn btn-secondary btn-sm">رابط الدفع</button>
+              </form>
+              <form method="post" action="/admin/teachers/{{ t.id }}/export" style="margin:0;">
+                <button type="submit" class="btn btn-primary btn-sm">تصدير PDF</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if total == 0 %}
+<div class="alert alert-info" style="margin-top:16px;">
+  لا يوجد معلمون مسجّلون بعد.
+</div>
+{% endif %}
+{% endblock %}
