@@ -2,9 +2,12 @@
 WhatsApp Cloud API webhooks + Moyasar payment webhook + payment success page.
 
 GET  /webhook/whatsapp              — Meta webhook verification challenge
-POST /webhook/whatsapp              — Incoming WhatsApp messages
+POST /webhook/whatsapp              — Incoming WhatsApp messages (GPT-driven)
 POST /webhook/payment               — Moyasar payment webhook (activates subscription)
 GET  /payment/success               — Redirect page after Moyasar checkout
+
+Message flow:  WhatsApp inbound → ask_gpt() → GPTDecision → execute
+GPT is the sole decision-maker. Code only executes what GPT decides.
 """
 import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -26,19 +29,16 @@ from app.services.payments import (
     update_payment_attempt_status,
 )
 from app.services import moyasar as moyasar_svc
-from app.services.classifier import classify_evidence
+from app.services.gpt_brain import ask_gpt
 from app.services.whatsapp import (
-    detect_command,
     get_meta_media_url,
     send_whatsapp_message,
     build_my_files_reply,
     build_my_data_reply,
     build_edit_data_template,
-    build_subscription_required_reply,
     build_payment_link_message,
     build_payment_receipt_message,
     build_subscription_activated_message,
-    build_evidence_saved_reply,
 )
 from app.services import exporter as exporter_svc
 from app.core.config import settings
@@ -186,6 +186,11 @@ async def whatsapp_webhook(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
+    """
+    GPT-driven message handler.
+    Flow: parse → get teacher → (download image) → ask_gpt → execute decision.
+    GPT decides everything. Code only executes.
+    """
     try:
         body = await request.json()
     except Exception:
@@ -204,35 +209,65 @@ async def whatsapp_webhook(
     file_name: str | None = parsed.get("file_name")
     media_url: str | None = parsed.get("media_url")
 
+    # Resolve temporary Meta media URL
     if media_id and not media_url:
         media_url = await get_meta_media_url(media_id)
-        if not media_url:
-            logger.warning(
-                "Could not fetch media URL for media_id=%s — saving text only", media_id
-            )
 
     teacher = get_or_create_teacher(db, from_phone)
-    command = detect_command(text)
+    evidence_type = detect_evidence_type(mime_type, file_name, text)
 
-    # ── Commands ─────────────────────────────────────────────────────────────
-    if command == "my_files":
+    logger.info(
+        "[WA INBOUND] teacher_id=%d type=%s has_media=%s text=%r",
+        teacher.id, evidence_type, bool(media_id), (text or "")[:60],
+    )
+
+    # ── Download media (images need local path for GPT Vision base64) ────────
+    storage_path: str | None = None
+    safe_filename: str | None = None
+    if media_url:
+        try:
+            storage_path, safe_filename = await download_and_save(
+                teacher_id=teacher.id,
+                media_url=media_url,
+                original_filename=file_name,
+                mime_type=mime_type,
+                auth_token=settings.WHATSAPP_ACCESS_TOKEN or None,
+            )
+        except Exception as exc:
+            logger.error("Media download failed for teacher %d: %s", teacher.id, exc)
+
+    # ── Ask GPT — GPT is the brain, it decides everything ────────────────────
+    decision = await ask_gpt(
+        text=text,
+        storage_path=storage_path if evidence_type == "image" else None,
+        image_url=media_url if (evidence_type == "image" and not storage_path) else None,
+        mime_type=mime_type,
+        file_name=safe_filename or file_name,
+    )
+
+    logger.info(
+        "[GPT DECISION] teacher_id=%d intent=%s should_save=%s confidence=%.2f title=%r",
+        teacher.id, decision["intent"], decision["should_save"],
+        decision["confidence"], decision["title"],
+    )
+
+    intent = decision["intent"]
+    reply  = decision["reply"]
+
+    # ── Intent routing: code executes what GPT decided ────────────────────────
+
+    if intent == "my_files":
         evidences = get_teacher_evidences(db, teacher.id)
         sub_active = is_subscription_active(db, teacher.id)
         reply = build_my_files_reply(len(evidences), sub_active)
-        background_tasks.add_task(send_whatsapp_message, teacher.phone, reply)
-        return {"ok": True, "teacher_id": teacher.id, "reply": reply}
 
-    if command == "my_data":
+    elif intent == "my_data":
         reply = build_my_data_reply(teacher)
-        background_tasks.add_task(send_whatsapp_message, teacher.phone, reply)
-        return {"ok": True, "teacher_id": teacher.id, "reply": reply}
 
-    if command == "edit_data":
+    elif intent == "edit_data":
         reply = build_edit_data_template()
-        background_tasks.add_task(send_whatsapp_message, teacher.phone, reply)
-        return {"ok": True, "teacher_id": teacher.id, "reply": reply}
 
-    if command == "export":
+    elif intent == "payment":
         if not is_subscription_active(db, teacher.id):
             try:
                 payment_url = await _create_moyasar_link(
@@ -257,6 +292,7 @@ async def whatsapp_webhook(
                 "payment_url": payment_url,
             }
 
+        # Subscription active → trigger PDF export
         export_record = exporter_svc.create_export_record(db, teacher.id)
         background_tasks.add_task(
             exporter_svc.run_export_background,
@@ -264,60 +300,40 @@ async def whatsapp_webhook(
             export_id=export_record.id,
         )
         reply = "جارٍ إنشاء ملف الشواهد... سيصلك رابط التحميل قريبًا. ⏳"
-        background_tasks.add_task(send_whatsapp_message, teacher.phone, reply)
-        return {
-            "ok": True,
-            "teacher_id": teacher.id,
-            "export_id": export_record.id,
-            "reply": reply,
-        }
 
-    # ── Save evidence ─────────────────────────────────────────────────────────
-    storage_path: str | None = None
-    safe_filename: str | None = None
-    evidence_type = detect_evidence_type(mime_type, file_name, text)
+    elif decision["should_save"]:
+        # ── GPT decided this is evidence worth saving ─────────────────────────
+        evidence = create_evidence(
+            db=db,
+            teacher_id=teacher.id,
+            source_phone=teacher.phone,
+            evidence_type=evidence_type,
+            message_text=text,
+            media_url=media_url,
+            storage_path=storage_path,
+            file_name=safe_filename or file_name,
+            mime_type=mime_type,
+            category=decision["category"],
+            title=decision["title"],
+            ai_status="completed",
+            ai_raw=dict(decision),
+        )
+        logger.info(
+            "[EVIDENCE SAVED] teacher_id=%d evidence_id=%d category=%r confidence=%.2f",
+            teacher.id, evidence.id, decision["category"], decision["confidence"],
+        )
 
-    if media_url:
-        try:
-            storage_path, safe_filename = await download_and_save(
-                teacher_id=teacher.id,
-                media_url=media_url,
-                original_filename=file_name,
-                mime_type=mime_type,
-                auth_token=settings.WHATSAPP_ACCESS_TOKEN or None,
-            )
-        except Exception as exc:
-            logger.error("Media download failed for teacher %d: %s", teacher.id, exc)
+    else:
+        # GPT said: not evidence, don't save
+        logger.info(
+            "[EVIDENCE SKIPPED] teacher_id=%d intent=%s", teacher.id, intent
+        )
 
-    evidence = create_evidence(
-        db=db,
-        teacher_id=teacher.id,
-        source_phone=teacher.phone,
-        evidence_type=evidence_type,
-        message_text=text,
-        media_url=media_url,
-        storage_path=storage_path,
-        file_name=safe_filename or file_name,
-        mime_type=mime_type,
-    )
-
+    # ── Always send GPT's reply back to the teacher ───────────────────────────
     background_tasks.add_task(
-        classify_evidence,
-        evidence_id=evidence.id,
-        message_text=text,
-        image_url=media_url if evidence_type == "image" else None,
-        evidence_type=evidence_type,
+        send_whatsapp_message, teacher.phone, reply, teacher_id=teacher.id
     )
-
-    reply = build_evidence_saved_reply()
-    background_tasks.add_task(send_whatsapp_message, teacher.phone, reply)
-
-    return {
-        "ok": True,
-        "teacher_id": teacher.id,
-        "evidence_id": evidence.id,
-        "message": reply,
-    }
+    return {"ok": True, "teacher_id": teacher.id, "intent": intent, "reply": reply}
 
 
 # ─── Moyasar Payment Webhook (POST) ──────────────────────────────────────────
