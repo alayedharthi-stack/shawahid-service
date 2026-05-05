@@ -48,29 +48,72 @@
   <div class="card">
     <div class="card-header">حالة الاشتراك</div>
     <div class="card-body">
+      {# sub_status is the verified status from get_subscription_status() #}
+      <div style="margin-bottom:12px;">
+        {% if sub_status == 'active_paid' %}
+          <span class="badge badge-green" style="font-size:.9rem;padding:5px 14px;">✅ مفعّل ومدفوع</span>
+        {% elif sub_status == 'pending' %}
+          <span class="badge badge-amber" style="font-size:.9rem;padding:5px 14px;">⏳ معلّق (بدون تأكيد دفع)</span>
+        {% elif sub_status == 'expired' %}
+          <span class="badge badge-red" style="font-size:.9rem;padding:5px 14px;">⚠️ منتهي</span>
+        {% else %}
+          <span class="badge badge-slate" style="font-size:.9rem;padding:5px 14px;">غير مشترك</span>
+        {% endif %}
+      </div>
       {% if subscription %}
-        <div style="margin-bottom:12px;">
-          {% if subscription.status == 'active' %}
-            <span class="badge badge-green" style="font-size:.9rem;padding:5px 14px;">✅ نشط</span>
-          {% elif subscription.status == 'expired' %}
-            <span class="badge badge-red" style="font-size:.9rem;padding:5px 14px;">⚠️ منتهي</span>
-          {% else %}
-            <span class="badge badge-slate" style="font-size:.9rem;padding:5px 14px;">غير مفعّل</span>
-          {% endif %}
-        </div>
         <table style="width:100%;border-collapse:collapse;">
           <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">الباقة</td>
               <td>{% if subscription.plan_slug == 'launch_annual_29' %}عرض الإطلاق - سنوي{% else %}{{ subscription.plan_slug }}{% endif %}</td></tr>
           <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">المبلغ</td><td><strong>{{ subscription.amount_sar }}</strong> ريال</td></tr>
           <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">يبدأ</td><td>{{ subscription.starts_at or '—' }}</td></tr>
           <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">ينتهي</td><td>{{ subscription.ends_at or '—' }}</td></tr>
+          <tr><td style="color:var(--slate-500);font-weight:600;padding:6px 0;font-size:.85rem;">مرجع الدفع</td>
+              <td style="font-size:.75rem;word-break:break-all;color:var(--slate-400);">{{ subscription.payment_reference or '—' }}</td></tr>
         </table>
+        {% if sub_verified_payment %}
+          <div style="margin-top:10px;background:#f0fdf4;border-radius:6px;padding:8px 12px;font-size:.8rem;color:#166534;">
+            ✅ دفعة موثّقة: {{ sub_verified_payment.provider_payment_id }}
+          </div>
+        {% elif sub_status == 'pending' %}
+          <div style="margin-top:10px;background:#fff7ed;border-radius:6px;padding:8px 12px;font-size:.8rem;color:#92400e;">
+            ⚠️ لم يُعثر على دفعة موثّقة لهذا الاشتراك. استخدم "تفعيل من فاتورة" أدناه.
+          </div>
+        {% endif %}
       {% else %}
         <p style="color:var(--slate-400);font-size:.9rem;margin-bottom:12px;">لا يوجد اشتراك مسجّل.</p>
         <div style="background:#fef9c3;border-radius:8px;padding:10px 14px;font-size:.85rem;color:#92400e;">
           💡 عرض الإطلاق: <strong>29 ريال</strong> للسنة الدراسية الكاملة
         </div>
       {% endif %}
+
+      <!-- Manual activation from invoice ID -->
+      <details style="margin-top:14px;">
+        <summary style="cursor:pointer;font-size:.82rem;color:var(--slate-500);font-weight:600;padding:4px 0;">
+          🔧 تفعيل يدوي من رقم فاتورة Moyasar
+        </summary>
+        <form method="post" action="/admin/teachers/{{ teacher.id }}/activate-payment"
+              style="margin-top:10px;background:#f8fafc;border-radius:8px;padding:14px;"
+              onsubmit="return confirm('تفعيل الاشتراك يدوياً بناءً على رقم الفاتورة؟');">
+          <div style="margin-bottom:8px;">
+            <label style="font-size:.8rem;font-weight:600;color:var(--slate-600);display:block;margin-bottom:4px;">
+              رقم الفاتورة / Invoice ID (من Moyasar)
+            </label>
+            <input type="text" name="provider_payment_id" required
+                   placeholder="6763c01f-6dcd-4bcb-..."
+                   style="width:100%;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:.85rem;box-sizing:border-box;">
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+            <input type="hidden" name="amount_sar" value="29">
+            <label style="font-size:.8rem;display:flex;align-items:center;gap:5px;cursor:pointer;">
+              <input type="checkbox" name="send_whatsapp" value="1" checked>
+              إرسال رسالة واتساب للمعلم
+            </label>
+            <button type="submit" class="btn btn-primary" style="font-size:.82rem;padding:6px 14px;">
+              ✅ تفعيل الاشتراك
+            </button>
+          </div>
+        </form>
+      </details>
     </div>
   </div>
 </div>

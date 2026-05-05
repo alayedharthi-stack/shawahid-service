@@ -159,10 +159,14 @@ def admin_teacher_detail(
     flash_success = request.query_params.get("success")
     flash_error = request.query_params.get("error")
 
+    sub_status = get_subscription_status(db, teacher_id)
+
     return templates.TemplateResponse("admin/teacher_detail.html", {
         "request": request, "active": "teachers",
         "teacher": teacher, "evidences": evidences,
         "subscription": sub,
+        "sub_status": sub_status["status"],       # "active_paid" | "pending" | "expired" | "unpaid"
+        "sub_verified_payment": sub_status.get("payment"),
         "payment_attempts": payment_attempts,
         "flash_success": flash_success, "flash_error": flash_error,
     })
@@ -376,6 +380,162 @@ def admin_portfolio_json(
         return build_portfolio_json(db, teacher_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+# ─── Subscription status (JSON — for debugging & API consumers) ──────────────
+
+@router.get("/teachers/{teacher_id}/subscription-status")
+def admin_subscription_status(
+    teacher_id: int,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    """
+    Returns detailed subscription status for a teacher.
+    Use this endpoint to diagnose payment / activation issues.
+
+    Example: GET /admin/teachers/1/subscription-status
+    """
+    from app.models.subscription import TeacherSubscription as TS
+    from app.models.payment_attempt import PaymentAttempt as PA
+
+    teacher = get_teacher_by_id(db, teacher_id)
+    if not teacher:
+        raise HTTPException(status_code=404, detail="المعلم غير موجود")
+
+    status_info = get_subscription_status(db, teacher_id)
+    sub = status_info["sub"]
+    payment = status_info["payment"]
+
+    # Latest payment attempt (regardless of status)
+    latest_pa = get_latest_payment_attempt(db, teacher_id)
+
+    # All payment attempts for this teacher
+    all_pas = list_payment_attempts(db, teacher_id, limit=10)
+
+    return {
+        "teacher_id": teacher_id,
+        "teacher_name": teacher.name,
+        "teacher_phone": teacher.phone,
+        "subscription_status": status_info["status"],
+        "subscription": {
+            "id": sub.id if sub else None,
+            "status": sub.status if sub else None,
+            "plan_slug": sub.plan_slug if sub else None,
+            "amount_sar": float(sub.amount_sar) if sub and sub.amount_sar else None,
+            "starts_at": sub.starts_at.isoformat() if sub and sub.starts_at else None,
+            "ends_at": sub.ends_at.isoformat() if sub and sub.ends_at else None,
+            "payment_provider": sub.payment_provider if sub else None,
+            "payment_reference": sub.payment_reference if sub else None,
+        } if sub else None,
+        "verified_payment": {
+            "id": payment.id if payment else None,
+            "provider_payment_id": payment.provider_payment_id if payment else None,
+            "status": payment.status if payment else None,
+            "amount_sar": float(payment.amount_sar) if payment and payment.amount_sar else None,
+        } if payment else None,
+        "latest_payment_attempt": {
+            "id": latest_pa.id if latest_pa else None,
+            "provider_payment_id": latest_pa.provider_payment_id if latest_pa else None,
+            "status": latest_pa.status if latest_pa else None,
+            "amount_sar": float(latest_pa.amount_sar) if latest_pa and latest_pa.amount_sar else None,
+            "created_at": latest_pa.created_at.isoformat() if latest_pa and latest_pa.created_at else None,
+            "updated_at": latest_pa.updated_at.isoformat() if latest_pa and latest_pa.updated_at else None,
+        } if latest_pa else None,
+        "all_payment_attempts": [
+            {
+                "id": pa.id,
+                "provider_payment_id": pa.provider_payment_id,
+                "status": pa.status,
+                "amount_sar": float(pa.amount_sar) if pa.amount_sar else None,
+                "created_at": pa.created_at.isoformat() if pa.created_at else None,
+            }
+            for pa in all_pas
+        ],
+    }
+
+
+@router.post("/teachers/{teacher_id}/activate-payment")
+async def admin_activate_payment(
+    teacher_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    """
+    Manually activate subscription for a teacher using a known payment/invoice ID.
+    Use this when the Moyasar webhook was NOT received but payment was confirmed externally.
+
+    Form fields:
+        provider_payment_id : Moyasar invoice or payment ID (required)
+        amount_sar          : Amount paid (default 29)
+        plan_slug           : Plan slug (default launch_annual_29)
+        send_whatsapp       : "1" to send WhatsApp receipt
+    """
+    from app.services.payments import upsert_paid_payment_attempt
+    from app.services.whatsapp import send_whatsapp_message, build_payment_receipt_message
+    from app.services.moyasar import _teacher_display_name
+    from datetime import datetime, timezone
+
+    teacher = get_teacher_by_id(db, teacher_id)
+    if not teacher:
+        raise HTTPException(status_code=404, detail="المعلم غير موجود")
+
+    form = await request.form()
+    provider_payment_id = (form.get("provider_payment_id") or "").strip()
+    if not provider_payment_id:
+        raise HTTPException(status_code=400, detail="provider_payment_id مطلوب")
+
+    amount_sar = float(form.get("amount_sar") or 29.0)
+    plan_slug = (form.get("plan_slug") or "launch_annual_29").strip()
+    send_wa = form.get("send_whatsapp") == "1"
+
+    # Upsert PaymentAttempt as paid
+    pa = upsert_paid_payment_attempt(
+        db=db,
+        teacher_id=teacher_id,
+        provider_payment_id=provider_payment_id,
+        amount_sar=amount_sar,
+    )
+    logger.info(
+        "[ADMIN MANUAL ACTIVATE] teacher_id=%d pa_id=%d provider_payment_id=%s",
+        teacher_id, pa.id, provider_payment_id,
+    )
+
+    # Activate subscription
+    sub = activate_subscription(
+        db=db,
+        teacher_id=teacher_id,
+        payment_provider="moyasar_manual",
+        payment_reference=provider_payment_id,
+        amount_sar=amount_sar,
+        plan_slug=plan_slug,
+    )
+    logger.info(
+        "[ADMIN MANUAL ACTIVATE] subscription activated teacher_id=%d ends_at=%s",
+        teacher_id, sub.ends_at,
+    )
+
+    # Optionally send WhatsApp receipt
+    if send_wa and teacher.phone:
+        display = _teacher_display_name(teacher.name or "", teacher.phone or "")
+        paid_at = datetime.now(timezone.utc)
+        msg = build_payment_receipt_message(
+            teacher_display_name=display,
+            teacher_phone=teacher.phone,
+            provider_payment_id=provider_payment_id,
+            paid_at=paid_at,
+            amount_sar=int(amount_sar),
+            plan_slug=plan_slug,
+            starts_at=sub.starts_at,
+            ends_at=sub.ends_at,
+        )
+        await send_whatsapp_message(teacher.phone, msg, teacher_id=teacher_id, context="manual_receipt")
+
+    return RedirectResponse(
+        url=f"/admin/teachers/{teacher_id}?success=تم+تفعيل+الاشتراك+يدوياً+بنجاح",
+        status_code=303,
+    )
 
 
 # ─── Subscriptions ───────────────────────────────────────────────────────────

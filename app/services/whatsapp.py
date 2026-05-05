@@ -267,21 +267,25 @@ def build_payment_receipt_message(
     paid_at: datetime | str | None = None,
     amount_sar: int = LAUNCH_PRICE_SAR,
     plan_slug: str = "launch_annual_29",
+    starts_at: datetime | None = None,
+    ends_at: datetime | None = None,
 ) -> str:
     """
     Full receipt sent immediately after a successful payment (webhook PAYMENT_PAID).
     Combines the receipt details AND the activation confirmation in one message.
+    Includes subscription period (starts_at → ends_at).
     No template — sent as a regular session message.
     """
     plan_ar = "سنوي - عرض الإطلاق" if plan_slug == "launch_annual_29" else plan_slug
 
-    # Format payment date
-    if isinstance(paid_at, datetime):
-        date_str = paid_at.strftime("%Y/%m/%d %H:%M")
-    elif paid_at:
-        date_str = str(paid_at)
-    else:
-        date_str = datetime.now(timezone.utc).strftime("%Y/%m/%d %H:%M")
+    def _fmt(dt: datetime | str | None) -> str:
+        if isinstance(dt, datetime):
+            return dt.strftime("%Y/%m/%d")
+        return str(dt) if dt else "—"
+
+    paid_date_str = _fmt(paid_at) if paid_at else datetime.now(timezone.utc).strftime("%Y/%m/%d")
+    starts_str = _fmt(starts_at) if starts_at else paid_date_str
+    ends_str   = _fmt(ends_at)   if ends_at   else "—"
 
     return (
         f"تم استلام دفعتك بنجاح ✅\n"
@@ -292,7 +296,9 @@ def build_payment_receipt_message(
         f"الخطة: {plan_ar}\n"
         f"المبلغ: {amount_sar} ريال\n"
         f"رقم العملية: {provider_payment_id}\n"
-        f"التاريخ: {date_str}\n"
+        f"تاريخ الدفع: {paid_date_str}\n"
+        f"بداية الاشتراك: {starts_str}\n"
+        f"نهاية الاشتراك: {ends_str}\n"
         f"الحالة: ✅ مدفوع\n\n"
         f"تم تفعيل اشتراكك ويمكنك الآن استخدام الخدمة مباشرة 🙌\n"
         f"أرسل كلمة *تصدير* لإنشاء ملف الشواهد PDF."

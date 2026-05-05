@@ -93,14 +93,55 @@ def activate_subscription(
     amount_sar: float = LAUNCH_AMOUNT_SAR,
     plan_slug: str = LAUNCH_PLAN_SLUG,
 ) -> TeacherSubscription:
-    """Activate or extend annual subscription for teacher (launch offer: 29 SAR)."""
+    """
+    Activate or extend annual subscription for teacher.
+
+    Priority:
+      1. Any existing active subscription → extend by 365 days (renewal).
+      2. Any existing non-active subscription (pending/expired) → upgrade to active.
+      3. No subscription → create new.
+
+    Always sets payment_provider, payment_reference, and amount_sar from the
+    verified payment so get_subscription_status() can confirm active_paid.
+    """
     now = datetime.now(timezone.utc)
-    existing = get_active_subscription(db, teacher_id)
+
+    # Try to find any existing subscription — active or not
+    existing = (
+        db.query(TeacherSubscription)
+        .filter(TeacherSubscription.teacher_id == teacher_id)
+        .order_by(TeacherSubscription.id.desc())
+        .first()
+    )
+
     if existing:
-        existing.ends_at = existing.ends_at + timedelta(days=SUBSCRIPTION_DAYS)
+        # Check if this is a genuine renewal (already active AND already paid)
+        is_renewal = (
+            existing.status == "active"
+            and existing.ends_at
+            and existing.ends_at > now
+            and existing.payment_reference  # has a prior payment
+            and payment_reference           # incoming new payment
+            and existing.payment_reference != payment_reference  # different payment
+        )
+
+        if is_renewal:
+            # True renewal — extend from current end date
+            existing.ends_at = existing.ends_at + timedelta(days=SUBSCRIPTION_DAYS)
+        else:
+            # First activation or re-activation of a pending/expired sub
+            existing.status = "active"
+            existing.starts_at = now
+            existing.ends_at = now + timedelta(days=SUBSCRIPTION_DAYS)
+
+        existing.plan_slug = plan_slug
+        existing.amount_sar = amount_sar
         existing.payment_provider = payment_provider or existing.payment_provider
-        existing.payment_reference = payment_reference or existing.payment_reference
-        existing.updated_at = now
+        # Always update payment_reference with the latest verified payment
+        if payment_reference:
+            existing.payment_reference = payment_reference
+        if hasattr(existing, "updated_at"):
+            existing.updated_at = now
         db.commit()
         db.refresh(existing)
         return existing

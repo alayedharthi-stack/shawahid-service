@@ -271,52 +271,75 @@ def parse_webhook_payload(payload: dict) -> dict | None:
     """
     Normalise a Moyasar webhook payload to a flat dict for processing.
 
-    Handles:
-    • Wrapped format:   {"type": "payment_paid", "data": {...}}
-    • Unwrapped format: direct payment / invoice object
+    Handles TWO Moyasar event types:
 
-    Returns None if the payload has no usable Shawahid context (no teacher_id).
+    Type A — Invoice event (preferred — metadata is always present):
+        {"type": "invoice_paid", "data": {"id": "inv_xxx", "status": "paid",
+                                          "metadata": {...}}}
+
+    Type B — Payment event (metadata may be null; metadata lives on the invoice):
+        {"id": "pmt_xxx", "type": "paid", "status": "paid",
+         "invoice_id": "inv_xxx", "metadata": null}
+
+    For Type B we extract `invoice_id` so the caller can do a DB lookup to find
+    the matching PaymentAttempt by invoice ID.
+
+    Returns None if the payload contains no usable teacher context.
 
     Returned dict keys:
-        payment_id     : str
+        payment_id     : str  — ID of the data object (invoice or payment)
+        invoice_id     : str  — invoice ID (may equal payment_id for invoice events)
         status         : "paid" | "failed" | "authorized" | ...
         amount_halalah : int
-        service        : str  — from metadata.service (used to guard activation)
-        teacher_id     : int
+        service        : str  — from metadata.service
+        teacher_id     : int  — 0 if not found in metadata (caller handles fallback)
         plan_slug      : str
         raw            : dict — the raw data object
     """
-    # Unwrap event envelope if present
+    # ── Unwrap event envelope ─────────────────────────────────────────────────
     data: dict = payload.get("data", payload)
 
     status: str     = data.get("status", "")
     payment_id: str = data.get("id", "")
     amount: int     = int(data.get("amount", 0))
 
-    metadata: dict  = data.get("metadata") or {}
-    service: str    = metadata.get("service", "")
-    teacher_id_raw  = metadata.get("teacher_id")
-    plan_slug: str  = metadata.get("plan_slug", SHAWAHID_PLAN_SLUG)
+    # ── Extract invoice_id (Type B: payment event references invoice) ─────────
+    # For Type A (invoice event) invoice_id == payment_id
+    invoice_id: str = data.get("invoice_id") or payment_id
 
-    if not teacher_id_raw:
+    # ── Metadata: try multiple paths ──────────────────────────────────────────
+    # Path 1: direct on data object  (Type A — invoice event)
+    metadata: dict = data.get("metadata") or {}
+
+    # Path 2: embedded invoice object on payment (some Moyasar versions)
+    if not metadata:
+        metadata = (data.get("invoice") or {}).get("metadata") or {}
+
+    service: str   = metadata.get("service", "")
+    teacher_id_raw = metadata.get("teacher_id")
+    plan_slug: str = metadata.get("plan_slug", SHAWAHID_PLAN_SLUG)
+
+    teacher_id: int = 0
+    if teacher_id_raw:
+        try:
+            teacher_id = int(teacher_id_raw)
+        except (ValueError, TypeError):
+            logger.error("Moyasar webhook: invalid teacher_id=%r", teacher_id_raw)
+
+    if not teacher_id:
         logger.info(
-            "Moyasar webhook: no teacher_id in metadata — skipping | id=%s service=%r",
-            payment_id, service,
+            "Moyasar webhook: no teacher_id in metadata — "
+            "caller will attempt DB lookup by invoice_id=%s | payment_id=%s service=%r",
+            invoice_id, payment_id, service,
         )
-        return None
-
-    try:
-        teacher_id = int(teacher_id_raw)
-    except (ValueError, TypeError):
-        logger.error("Moyasar webhook: invalid teacher_id=%r — skipping", teacher_id_raw)
-        return None
 
     return {
         "payment_id":     payment_id,
+        "invoice_id":     invoice_id,
         "status":         status,
         "amount_halalah": amount,
         "service":        service,
-        "teacher_id":     teacher_id,
+        "teacher_id":     teacher_id,   # 0 if not resolved
         "plan_slug":      plan_slug,
         "raw":            data,
     }
