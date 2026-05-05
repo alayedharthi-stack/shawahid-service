@@ -10,6 +10,7 @@ Message flow:  WhatsApp inbound → ask_gpt() → GPTDecision → execute
 GPT is the sole decision-maker. Code only executes what GPT decides.
 """
 import logging
+from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
@@ -18,6 +19,7 @@ from app.db.base import get_db
 from app.services.teachers import get_or_create_teacher, get_teacher_by_id
 from app.services.evidences import create_evidence, get_teacher_evidences
 from app.services.storage import download_and_save, detect_evidence_type
+from app.services import transcribe as transcribe_svc
 from app.services.subscriptions import (
     get_subscription_status,
     is_subscription_active,
@@ -113,16 +115,21 @@ def _parse_meta_payload(body: dict) -> dict | None:
         elif msg_type == "audio":
             media_id = msg["audio"]["id"]
             mime_type = msg["audio"].get("mime_type", "audio/ogg")
+            # WhatsApp distinguishes voice_note from audio file via the "voice" flag
+            # We use "voice" as the msg_type for voice notes, "audio" for music/files
+            if msg["audio"].get("voice"):
+                msg_type = "voice"
         else:
             logger.info("Unsupported Meta message type: %s — ignoring", msg_type)
             return None
 
         return {
             "from_phone": from_phone,
-            "text": text,
-            "media_id": media_id,
-            "mime_type": mime_type,
-            "file_name": file_name,
+            "msg_type":   msg_type,       # text | image | document | video | audio | voice
+            "text":       text,
+            "media_id":   media_id,
+            "mime_type":  mime_type,
+            "file_name":  file_name,
         }
     except (KeyError, IndexError, TypeError) as exc:
         logger.debug("Meta payload parse error: %s", exc)
@@ -134,11 +141,12 @@ def _parse_simple_payload(body: dict) -> dict | None:
         return None
     return {
         "from_phone": body["from_phone"],
-        "text": body.get("text"),
-        "media_id": body.get("media_id"),
-        "mime_type": body.get("mime_type"),
-        "file_name": body.get("file_name"),
-        "media_url": body.get("media_url"),
+        "msg_type":   body.get("msg_type", "text"),
+        "text":       body.get("text"),
+        "media_id":   body.get("media_id"),
+        "mime_type":  body.get("mime_type"),
+        "file_name":  body.get("file_name"),
+        "media_url":  body.get("media_url"),
     }
 
 
@@ -251,11 +259,12 @@ async def whatsapp_webhook(
         return {"ok": True, "skipped": True}
 
     from_phone: str = normalize_phone(parsed["from_phone"])
-    text: str | None = parsed.get("text")
-    media_id: str | None = parsed.get("media_id")
-    mime_type: str | None = parsed.get("mime_type")
-    file_name: str | None = parsed.get("file_name")
-    media_url: str | None = parsed.get("media_url")
+    msg_type:   str        = parsed.get("msg_type") or "text"
+    text:       str | None = parsed.get("text")
+    media_id:   str | None = parsed.get("media_id")
+    mime_type:  str | None = parsed.get("mime_type")
+    file_name:  str | None = parsed.get("file_name")
+    media_url:  str | None = parsed.get("media_url")
 
     # Resolve temporary Meta media URL
     if media_id and not media_url:
@@ -296,10 +305,9 @@ async def whatsapp_webhook(
         teacher.id, teacher.name, evidence_count,
     )
 
-    # ── Download images for GPT Vision (base64 only, never pass WA URLs) ─────
-    # WhatsApp media URLs are auth-protected — GPT cannot access them directly.
-    storage_path: str | None = None
-    safe_filename: str | None = None
+    # ── Download media (WhatsApp URLs require auth — must download first) ─────
+    storage_path:   str | None = None
+    safe_filename:  str | None = None
     if media_url:
         try:
             storage_path, safe_filename = await download_and_save(
@@ -312,14 +320,97 @@ async def whatsapp_webhook(
         except Exception as exc:
             logger.error("Media download failed for teacher %d: %s", teacher.id, exc)
 
-    # ── Ask GPT — GPT is the brain, writes every reply ───────────────────────
+    # ── Audio / Video transcription ───────────────────────────────────────────
+    transcript:          str | None = None
+    thumbnail_path:      str | None = None
+    transcription_failed: bool      = False
+    is_video_msg:         bool      = msg_type == "video"
+
+    if msg_type in ("audio", "voice") and storage_path:
+        logger.info(
+            "[AUDIO RECEIVED] teacher_id=%d mime=%s file=%s",
+            teacher.id, mime_type, safe_filename,
+        )
+        transcript = await transcribe_svc.transcribe_audio(
+            Path(storage_path)
+        )
+        if transcript:
+            logger.info(
+                "[TRANSCRIBE SUCCESS] teacher_id=%d chars=%d",
+                teacher.id, len(transcript),
+            )
+        else:
+            transcription_failed = True
+            logger.warning(
+                "[TRANSCRIBE FAILED] teacher_id=%d — audio not readable",
+                teacher.id,
+            )
+
+    elif msg_type == "video" and storage_path:
+        logger.info(
+            "[VIDEO RECEIVED] teacher_id=%d mime=%s file=%s",
+            teacher.id, mime_type, safe_filename,
+        )
+        # Extract audio track for transcription
+        audio_path = transcribe_svc.extract_audio_from_video(Path(storage_path))
+        if audio_path:
+            transcript = await transcribe_svc.transcribe_audio(audio_path)
+            if transcript:
+                logger.info(
+                    "[TRANSCRIBE SUCCESS] teacher_id=%d chars=%d (from video)",
+                    teacher.id, len(transcript),
+                )
+
+        # Extract thumbnail for GPT Vision (even if transcription failed)
+        thumb = transcribe_svc.extract_video_thumbnail(Path(storage_path))
+        if thumb:
+            thumbnail_path = str(thumb)
+
+        if not transcript:
+            # Still proceed with thumbnail-only analysis if we have one
+            if not thumbnail_path:
+                transcription_failed = True
+            logger.warning(
+                "[TRANSCRIBE FAILED] teacher_id=%d — video audio not readable%s",
+                teacher.id,
+                " (thumbnail available)" if thumbnail_path else " (no thumbnail either)",
+            )
+
+    # ── Transcription failure: notify user before calling GPT ────────────────
+    # We do NOT call GPT when we have no content to classify (no text, no transcript,
+    # no thumbnail). Sending a meaningful failure message is more honest.
+    if transcription_failed and not text and not thumbnail_path:
+        failure_msg = (
+            "وصلني الملف، لكن لم أتمكن من قراءة الصوت بوضوح 🙏\n"
+            "يمكنك إرسال وصف مختصر لأحفظه معك كشاهد."
+        )
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone, failure_msg, teacher_id=teacher.id
+        )
+        logger.info("[TRANSCRIBE FAILED] sent fallback reply to teacher_id=%d", teacher.id)
+        return {"ok": True, "teacher_id": teacher.id, "intent": "transcription_failed"}
+
+    # ── Determine what to pass to GPT Vision ─────────────────────────────────
+    # - Images:    download storage_path (base64 to GPT)
+    # - Videos:    thumbnail_path (if extracted)
+    # - Audio:     no visual (transcript is the content)
+    # - Documents: no visual
+    gpt_storage_path: str | None = None
+    if evidence_type == "image":
+        gpt_storage_path = storage_path
+    elif is_video_msg and thumbnail_path:
+        gpt_storage_path = thumbnail_path
+
+    # ── Ask GPT — sole decision-maker and sole speaker ───────────────────────
     decision = await ask_gpt(
         text=text,
         teacher_context=teacher_context,
-        storage_path=storage_path if evidence_type == "image" else None,
-        image_url=None,   # NEVER pass WA URLs — they require auth GPT can't provide
-        mime_type=mime_type,
+        storage_path=gpt_storage_path,
+        image_url=None,       # NEVER pass WA URLs — they require auth GPT cannot provide
+        mime_type="image/jpeg" if (is_video_msg and thumbnail_path) else mime_type,
         file_name=safe_filename or file_name,
+        transcript=transcript,
+        is_video=is_video_msg,
     )
 
     logger.info(
@@ -410,7 +501,9 @@ async def whatsapp_webhook(
             teacher_id=teacher.id,
             source_phone=teacher.phone,
             evidence_type=evidence_type,
-            message_text=text,
+            # For audio/video: save the transcript as the primary text content.
+            # For text/image: use the original caption/text.
+            message_text=transcript or text,
             media_url=media_url,
             storage_path=storage_path,
             file_name=safe_filename or file_name,

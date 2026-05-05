@@ -65,6 +65,8 @@ def detect_evidence_type(mime_type: str | None, file_name: str | None, text: str
         return "pdf"
     if mt.startswith("video/"):
         return "video"
+    if mt.startswith("audio/") or fn.endswith((".ogg", ".mp3", ".m4a", ".wav", ".opus")):
+        return "audio"
     if mt in ("application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"):
         return "document"
     if fn.endswith((".doc", ".docx")):

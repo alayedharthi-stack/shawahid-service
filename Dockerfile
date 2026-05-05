@@ -9,12 +9,13 @@ FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
 
 WORKDIR /app
 
-# Arabic & emoji fonts for correct RTL PDF rendering
+# Arabic & emoji fonts + ffmpeg (audio/video transcription)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto \
     fonts-noto-color-emoji \
     fonts-noto-cjk \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python dependencies ───────────────────────────────────────────────────────

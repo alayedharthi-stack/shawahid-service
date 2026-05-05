@@ -83,6 +83,15 @@ _SYSTEM_BASE = """\
 
 إذا أرسل صورة: صِفها، حدد هل هي شاهد، واقترح عنوانًا وتصنيفًا في ردك.
 
+إذا وصل [تفريغ صوتي من Whisper AI 🎙]:
+• تعامل مع النص المفرَّغ كمحتوى الرسالة الأصلية.
+• قيّم هل يستحق التوثيق كشاهد.
+• في ردك: أكّد أنك استمعت للملاحظة الصوتية، واذكر موضوعها.
+• مثال رد: "استلمت ملاحظتك الصوتية 🎙 يبدو أنها تتحدث عن [موضوع]. تم حفظها كشاهد بعنوان: [عنوان]"
+
+إذا وصل [تفريغ مقطع مرئي من Whisper AI 🎬]:
+• نفس التعليمات أعلاه ولكن أشِر إلى أنه مقطع مرئي.
+
 تصنيفات الشواهد:
 التخطيط، التنفيذ داخل الصف، التعلم التعاوني، التعلم بالممارسة، التقويم، التحفيز،
 التواصل مع أولياء الأمور، سجل المتابعة، الدورات والشهادات، المبادرات والأنشطة، أخرى.
@@ -150,6 +159,8 @@ async def ask_gpt(
     image_url: str | None = None,
     mime_type: str | None = None,
     file_name: str | None = None,
+    transcript: str | None = None,  # Whisper transcript for audio/video messages
+    is_video: bool = False,          # True if media was a video (affects prompt label)
 ) -> GPTDecision:
     """
     Send any inbound WhatsApp message to GPT for a decision.
@@ -170,7 +181,8 @@ async def ask_gpt(
         )
         return _failure_decision()
 
-    content = _build_content(text, storage_path, image_url, mime_type, file_name)
+    content = _build_content(text, storage_path, image_url, mime_type, file_name,
+                             transcript=transcript, is_video=is_video)
     system  = _build_system_prompt(teacher_context)
     models  = _get_model_chain()
 
@@ -236,22 +248,38 @@ def _build_content(
     image_url: str | None,
     mime_type: str | None,
     file_name: str | None,
+    *,
+    transcript: str | None = None,
+    is_video: bool = False,
 ) -> list[dict]:
     parts: list[dict] = []
-
     text_parts: list[str] = []
+
+    # ── Transcript (audio / video) — takes the top slot ──────────────────────
+    if transcript:
+        label = "[تفريغ مقطع مرئي من Whisper AI 🎬]" if is_video else "[تفريغ صوتي من Whisper AI 🎙]"
+        text_parts.append(f"{label}\n{transcript}")
+
+    # ── Plain text / caption ──────────────────────────────────────────────────
     if text:
         text_parts.append(text)
-    if file_name:
-        text_parts.append(f"(اسم الملف: {file_name})")
-    if mime_type and not (mime_type or "").startswith("image/"):
-        text_parts.append(f"(نوع الملف: {mime_type})")
+
+    # ── File metadata (only when no transcript — avoids noise) ───────────────
+    if not transcript:
+        if file_name:
+            text_parts.append(f"(اسم الملف: {file_name})")
+        if mime_type and not (mime_type or "").startswith("image/"):
+            text_parts.append(f"(نوع الملف: {mime_type})")
+
     if text_parts:
         parts.append({"type": "text", "text": "\n".join(text_parts)})
 
-    # Image: base64 from local storage first, URL as fallback
+    # ── Image / thumbnail — base64 from local storage, URL as fallback ───────
+    # For videos: storage_path is the thumbnail (.thumb.jpg), not the video file.
+    # mime_type must be image/* for _encode_local_image to work; we override it.
     if storage_path:
-        img = _encode_local_image(storage_path, mime_type)
+        img_mime = "image/jpeg" if is_video else mime_type
+        img = _encode_local_image(storage_path, img_mime)
         if img:
             parts.append(img)
     if not any(p.get("type") == "image_url" for p in parts) and image_url:
