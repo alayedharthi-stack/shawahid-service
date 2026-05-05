@@ -504,13 +504,15 @@ async def whatsapp_webhook(
             "Forcing save with category=%r title=%r",
             teacher.id, intent, forced_cat, forced_title,
         )
-        # Patch decision so the save branch below executes
+        # Patch decision so the save branch below executes.
+        # ai_status=force_saved lets the admin panel and normaliser identify these records.
         decision = {
             **decision,
             "intent":      "evidence",
             "should_save": True,
             "category":    forced_cat,
             "title":       forced_title,
+            "_force_saved": True,       # internal marker (stored in ai_raw)
         }
         intent = "evidence"
 
@@ -608,6 +610,7 @@ async def whatsapp_webhook(
             gpt_category = fallback_cat
 
         try:
+            is_force_saved = bool(decision.get("_force_saved"))
             evidence = create_evidence(
                 db=db,
                 teacher_id=teacher.id,
@@ -625,7 +628,9 @@ async def whatsapp_webhook(
                 description=decision.get("description"),
                 grade=decision.get("grade"),
                 subject=decision.get("subject"),
-                ai_status="completed",
+                # force_saved = GPT didn't decide to save, system overrode.
+                # Exporter normalises these automatically before PDF generation.
+                ai_status="force_saved" if is_force_saved else "completed",
                 ai_raw=dict(decision),
             )
             log_tag = "[EVIDENCE SAVED]" if intent == "evidence" else f"[{intent.upper()} SAVED]"

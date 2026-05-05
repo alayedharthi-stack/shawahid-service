@@ -60,22 +60,129 @@ _CATEGORY_META: dict[str, dict] = {
 _DEFAULT_META = {"en": "", "icon": "📌", "desc": "", "value": ""}
 
 
-def _build_categories(evidences: list) -> list[dict]:
+# ── Evidence normalisation for PDF export ─────────────────────────────────────
+
+# Titles that are raw/generic and must be replaced with a meaningful default.
+_RAW_TITLE_PATTERNS: frozenset[str] = frozenset({
+    "شاهد image", "شاهد video", "شاهد audio", "شاهد document",
+    "شاهد pdf",   "شاهد url",   "شاهد text",  "شاهد voice",
+    "image", "video", "audio", "document", "pdf", "url", "text", "voice",
+    "", "شاهد",
+})
+
+# Defaults per evidence_type: title, category, description used when stored values are weak.
+_TYPE_EXPORT_DEFAULTS: dict[str, dict] = {
+    "image":    {
+        "title":    "نشاط تعليمي موثق بالصورة",
+        "category": "نشاط صفي",
+        "desc":     "صورة توثيقية تُبرز نشاطًا تعليميًا نفّذه المعلم داخل الفصل الدراسي.",
+    },
+    "video":    {
+        "title":    "مقطع مرئي تعليمي موثق",
+        "category": "نشاط صفي",
+        "desc":     "مقطع مرئي يوثّق لحظة تعليمية أو تفاعلًا مع الطلاب داخل البيئة المدرسية.",
+    },
+    "audio":    {
+        "title":    "تسجيل صوتي تعليمي",
+        "category": "نشاط صفي",
+        "desc":     "تسجيل صوتي يوثّق ملاحظة أو تعليقًا أو نشاطًا تعليميًا صوتيًا.",
+    },
+    "voice":    {
+        "title":    "ملاحظة صوتية تعليمية",
+        "category": "نشاط صفي",
+        "desc":     "رسالة صوتية تحمل توجيهًا أو ملاحظة تربوية ذات قيمة توثيقية.",
+    },
+    "document": {
+        "title":    "ملف تعليمي مرفق",
+        "category": "ملف إداري",
+        "desc":     "ملف رسمي أو وثيقة تعليمية يحتفظ بها المعلم ضمن ملف إنجازه المهني.",
+    },
+    "pdf":      {
+        "title":    "وثيقة تعليمية PDF",
+        "category": "ملف إداري",
+        "desc":     "ملف PDF يحتوي على محتوى تعليمي أو وثيقة رسمية معتمدة.",
+    },
+    "url":      {
+        "title":    "مصدر رقمي موثق",
+        "category": "رابط إثرائي",
+        "desc":     "رابط رقمي أو مصدر إلكتروني أرسله المعلم لتوثيق الإثراء والتقنية.",
+    },
+    "text":     {
+        "title":    "ملاحظة تعليمية موثقة",
+        "category": "نشاط صفي",
+        "desc":     "نص أو رسالة دوّنها المعلم لتوثيق نشاط أو موقف أو توجيه تعليمي.",
+    },
+}
+_DEFAULT_EXPORT = _TYPE_EXPORT_DEFAULTS["text"]
+
+
+def _normalize_evidence_for_export(ev) -> dict:
     """
-    Group evidences by category, ordered by count (desc).
+    Convert an Evidence ORM object to a clean export dict.
+
+    Rules:
+    • title    — replace generic/raw values with a meaningful type-based default.
+    • category — must be in ALLOWED_CATEGORIES; if not, use type-based default.
+    • description — use stored value if present; else use type-based educational default.
+
+    The returned dict is what the PDF template receives — no raw fields reach the PDF.
+    """
+    ev_type  = (ev.evidence_type or "text").lower()
+    defaults = _TYPE_EXPORT_DEFAULTS.get(ev_type, _DEFAULT_EXPORT)
+
+    # ── Title ─────────────────────────────────────────────────────────────────
+    raw_title = (ev.title or "").strip()
+    title = (
+        raw_title
+        if raw_title and raw_title.lower() not in _RAW_TITLE_PATTERNS
+        else defaults["title"]
+    )
+
+    # ── Category ──────────────────────────────────────────────────────────────
+    raw_cat  = (ev.category or "").strip()
+    category = raw_cat if raw_cat in ALLOWED_CATEGORIES else defaults["category"]
+
+    # ── Description ───────────────────────────────────────────────────────────
+    stored_desc = (ev.description or "").strip()
+    # Also try to extract from message_text if no description and it's a text evidence
+    description = stored_desc or defaults["desc"]
+
+    return {
+        "id":            ev.id,
+        "evidence_type": ev_type,
+        "title":         title,
+        "category":      category,
+        "description":   description,
+        "message_text":  ev.message_text,
+        "media_url":     ev.media_url,
+        "storage_path":  ev.storage_path,
+        "file_name":     ev.file_name,
+        "mime_type":     ev.mime_type,
+        "subject":       ev.subject,
+        "grade":         ev.grade,
+        "created_at":    ev.created_at,
+        "was_normalised": stored_desc == "" or raw_title.lower() in _RAW_TITLE_PATTERNS,
+    }
+
+
+def _build_categories(normalised_evidences: list[dict]) -> list[dict]:
+    """
+    Group normalised evidence dicts by category.
+    Every evidence passed here has already been cleaned by _normalize_evidence_for_export.
     Categories with zero evidences are excluded from the PDF.
-    Old and new categories are both handled.
     """
     grouped: dict[str, list] = {}
-    for ev in evidences:
-        cat = (ev.category or "أخرى").strip()
+    for ev in normalised_evidences:
+        cat = ev["category"]            # already validated — always in ALLOWED_CATEGORIES
         grouped.setdefault(cat, []).append(ev)
 
-    # Order: defined categories first (in canonical order), then any others
-    order = list(ALLOWED_CATEGORIES) + [c for c in grouped if c not in ALLOWED_CATEGORIES]
+    # Canonical order first, then any extra
+    order  = list(ALLOWED_CATEGORIES) + [c for c in grouped if c not in ALLOWED_CATEGORIES]
     result = []
     for name in order:
         items = grouped.get(name, [])
+        if not items:
+            continue                    # skip empty categories
         meta = _CATEGORY_META.get(name, _DEFAULT_META)
         result.append({
             "name":      name,
@@ -89,39 +196,48 @@ def _build_categories(evidences: list) -> list[dict]:
     return result
 
 
-def _build_stats(evidences: list, categories: list[dict]) -> dict:
-    """Build statistics dict for the summary page."""
-    counts = {"images": 0, "videos": 0, "audios": 0, "documents": 0, "urls": 0, "texts": 0}
-    for ev in evidences:
-        t = (ev.evidence_type or "text").lower()
-        if t == "image":            counts["images"] += 1
-        elif t == "video":          counts["videos"] += 1
-        elif t == "audio":          counts["audios"] += 1
-        elif t in ("pdf", "document"): counts["documents"] += 1
-        elif t == "url":            counts["urls"] += 1
-        else:                       counts["texts"] += 1
+def _build_stats(normalised_evidences: list[dict], categories: list[dict]) -> dict:
+    """Build statistics dict for the summary/stats page."""
+    counts: dict[str, int] = {
+        "images": 0, "videos": 0, "audios": 0, "documents": 0, "urls": 0, "texts": 0
+    }
+    for ev in normalised_evidences:
+        t = ev["evidence_type"]
+        if t == "image":                    counts["images"]    += 1
+        elif t in ("video",):               counts["videos"]    += 1
+        elif t in ("audio", "voice"):       counts["audios"]    += 1
+        elif t in ("pdf", "document"):      counts["documents"] += 1
+        elif t == "url":                    counts["urls"]      += 1
+        else:                               counts["texts"]     += 1
 
-    # Top 5 non-empty categories (for bar chart)
-    nonempty = sorted([c for c in categories if c["count"] > 0],
-                      key=lambda c: c["count"], reverse=True)[:5]
+    nonempty  = sorted([c for c in categories if c["count"] > 0],
+                       key=lambda c: c["count"], reverse=True)[:5]
     max_count = nonempty[0]["count"] if nonempty else 1
     top_categories = [
         {"name": c["name"], "count": c["count"], "pct": round(c["count"] / max_count * 100)}
         for c in nonempty
     ]
-
     return {**counts, "top_categories": top_categories}
 
 
 def _render_html(teacher: Teacher, evidences: list) -> str:
-    categories = _build_categories(evidences)
-    stats      = _build_stats(evidences, categories)
+    # ── Normalise ALL evidences before any PDF rendering ─────────────────────
+    # This step guarantees every evidence has a proper title, category, and
+    # description — even if it was force-saved without GPT metadata.
+    normalised = [_normalize_evidence_for_export(ev) for ev in evidences]
+    n_fixed    = sum(1 for e in normalised if e["was_normalised"])
+    if n_fixed:
+        logger.info("[PDF NORMALISE] %d/%d evidences had missing metadata — defaults applied",
+                    n_fixed, len(normalised))
+
+    categories = _build_categories(normalised)
+    stats      = _build_stats(normalised, categories)
     template   = _jinja_env.get_template("portfolio.html")
     return template.render(
         teacher=teacher,
         categories=categories,
         stats=stats,
-        total_count=len(evidences),
+        total_count=len(normalised),
         academic_year=_academic_year(),
         generated_at=datetime.now().strftime("%Y/%m/%d %H:%M"),
     )
