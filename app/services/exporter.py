@@ -409,7 +409,17 @@ def _select_evidences_for_mode(evidences: list, export_mode: str = "full") -> li
     return selected
 
 
-def _render_html(teacher: Teacher, evidences: list) -> str:
+def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool = False) -> str:
+    """Render the portfolio HTML.
+
+    The cover page is the final design embedded in `portfolio.html`
+    (kept in sync with `app/templates/teacher_cover.html`). It is rendered
+    as a fixed A4 page with `overflow: hidden`, so it can never spill into
+    a phantom second page.
+
+    `include_intro_page` controls the optional intro/credit/separator page.
+    Default is False — empty intro pages are never rendered automatically.
+    """
     from app.services.deduplication import deduplicate_for_export
 
     # ── Step 1: Normalise ALL evidences ──────────────────────────────────────
@@ -430,6 +440,12 @@ def _render_html(teacher: Teacher, evidences: list) -> str:
 
     categories = _build_categories(deduped)
     stats      = _build_stats(deduped, categories)
+
+    logger.info(
+        "[PDF RENDER] teacher_id=%s evidences=%d categories=%d include_intro_page=%s",
+        getattr(teacher, "id", None), len(deduped), len(categories), include_intro_page,
+    )
+
     template   = _jinja_env.get_template("portfolio.html")
     return template.render(
         teacher=teacher,
@@ -441,6 +457,7 @@ def _render_html(teacher: Teacher, evidences: list) -> str:
         ministry_logo=_ministry_logo_svg_data_uri(),
         whatsapp_phone=_SUPPORT_WHATSAPP,
         whatsapp_url=f"https://wa.me/{_SUPPORT_WHATSAPP}",
+        include_intro_page=include_intro_page,
     )
 
 
