@@ -227,7 +227,7 @@ async def _gpt_retry_and_reply(
         logger.warning("[RETRY] Background retry also failed for teacher_id=%d", teacher_id)
 
 
-_WELCOME_MESSAGE = """\
+_WELCOME_TEXT_MSG = """\
 مرحبًا 👋
 أنا شواهد AI — مساعدك الذكي لتوثيق أعمالك التعليمية.
 
@@ -246,16 +246,25 @@ _WELCOME_MESSAGE = """\
 إذا تحب التفاصيل، اكتب: ماذا تستطيع؟\
 """
 
+_WELCOME_MEDIA_MSG = (
+    "👋 سعيد ببدء توثيق شواهدك!\n"
+    "أنا هنا أساعدك في بناء ملف إنجاز احترافي بكل سهولة 📘\n"
+    "أرسل ما تشاء — صور، فيديو، ملفات، أو روابط — وسأحفظها منظمة لك."
+)
 
-async def _send_welcome_message(phone: str, teacher_id: int) -> None:
-    """Send one-time onboarding welcome. Runs as a background task after the first reply."""
+
+async def _send_welcome_message(phone: str, teacher_id: int, is_media: bool = False) -> None:
+    """
+    Send one-time onboarding welcome. Runs as a background task after the first reply.
+    - Text-first: full welcome message.
+    - Media-first: brief friendly note (don't interrupt the media flow).
+    """
+    msg = _WELCOME_MEDIA_MSG if is_media else _WELCOME_TEXT_MSG
     try:
-        await send_whatsapp_message(
-            phone, _WELCOME_MESSAGE, teacher_id=teacher_id, context="onboarding"
-        )
-        logger.info("[ONBOARDING] welcome sent to teacher_id=%d", teacher_id)
+        await send_whatsapp_message(phone, msg, teacher_id=teacher_id, context="onboarding")
+        logger.info("[ONBOARDING] welcome sent teacher_id=%d is_media=%s", teacher_id, is_media)
     except Exception as exc:
-        logger.warning("[ONBOARDING] failed to send welcome to teacher_id=%d: %s", teacher_id, exc)
+        logger.warning("[ONBOARDING] failed teacher_id=%d: %s", teacher_id, exc)
 
 
 # ─── Main Webhook (POST) ─────────────────────────────────────────────────────
@@ -609,10 +618,15 @@ async def whatsapp_webhook(
     if is_new_user and intent not in ("failure",):
         teacher.welcomed = True
         db.commit()
+        # Pass is_media so welcome message adapts:
+        # media-first → short note; text-first → full welcome
         background_tasks.add_task(
-            _send_welcome_message, teacher.phone, teacher.id
+            _send_welcome_message, teacher.phone, teacher.id, bool(media_id)
         )
-        logger.info("[ONBOARDING] welcome scheduled for teacher_id=%d", teacher.id)
+        logger.info(
+            "[ONBOARDING] welcome scheduled teacher_id=%d is_media=%s",
+            teacher.id, bool(media_id),
+        )
 
     return {"ok": True, "teacher_id": teacher.id, "intent": intent, "reply": reply}
 

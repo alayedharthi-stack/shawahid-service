@@ -27,28 +27,99 @@ def _academic_year() -> str:
     return f"{now.year - 1}/{now.year}"
 
 
-def _build_categories(evidences: list) -> list[dict]:
-    """Group evidences by category in the canonical order."""
-    grouped: dict[str, list] = {cat: [] for cat in ALLOWED_CATEGORIES}
-    for ev in evidences:
-        cat = ev.category or "أخرى"
-        if cat not in grouped:
-            cat = "أخرى"
-        grouped[cat].append(ev)
+# Category metadata: English name, icon, Arabic description
+_CATEGORY_META: dict[str, dict] = {
+    "نشاط صفي":                    {"en": "Classroom Activity",     "icon": "🏫", "desc": "يوثق هذا المحور الأنشطة الصفية المتنوعة التي تُنفَّذ داخل الفصل الدراسي وتُسهم في تفعيل بيئة التعلم."},
+    "تعلم تعاوني":                  {"en": "Cooperative Learning",   "icon": "🤝", "desc": "يوثق هذا المحور تطبيق استراتيجيات العمل الجماعي وتعاون الطلاب في تحقيق أهداف التعلم المشتركة."},
+    "حل تمارين":                    {"en": "Exercise Solving",        "icon": "✏️", "desc": "يوثق هذا المحور مشاركة الطلاب في حل التمارين والمسائل، مما يعكس مستوى الفهم والتطبيق."},
+    "مشاركة طلابية":                {"en": "Student Participation",  "icon": "🙋", "desc": "يوثق هذا المحور مستوى تفاعل الطلاب ومشاركتهم الفعّالة داخل الحصة الدراسية."},
+    "تكريم وتميز":                  {"en": "Motivation & Recognition","icon": "🏆", "desc": "يوثق هذا المحور جهود تحفيز المتميزين وتعزيز ثقافة التميز والمنافسة الإيجابية بين الطلاب."},
+    "شرح درس":                      {"en": "Lesson Delivery",         "icon": "📖", "desc": "يوثق هذا المحور أساليب شرح الدروس وتوصيل المفاهيم الأساسية للطلاب بصورة واضحة وفعّالة."},
+    "واجب منزلي":                   {"en": "Homework",                "icon": "📝", "desc": "يوثق هذا المحور الواجبات المنزلية المقدمة للطلاب ومدى استمرارية التعلم خارج الفصل."},
+    "اختبار":                       {"en": "Assessment",              "icon": "📋", "desc": "يوثق هذا المحور الاختبارات الرسمية والمهام الأدائية المُعدَّة لقياس نواتج تعلم الطلاب."},
+    "ورقة عمل":                     {"en": "Worksheet",               "icon": "📄", "desc": "يوثق هذا المحور أوراق العمل والأنشطة الكتابية التي أعدّها المعلم لتعزيز الفهم والتطبيق."},
+    "تقويم":                        {"en": "Evaluation",              "icon": "📊", "desc": "يوثق هذا المحور ممارسات التقويم المستمر وأدوات رصد مستوى الطلاب طوال الفصل الدراسي."},
+    "مصدر تعليمي":                  {"en": "Educational Resource",    "icon": "🎯", "desc": "يوثق هذا المحور المصادر والمواد التعليمية المتنوعة التي وظّفها المعلم لإثراء العملية التعليمية."},
+    "رابط إثرائي":                  {"en": "Enrichment Link",         "icon": "🔗", "desc": "يوثق هذا المحور الروابط والمحتوى الرقمي الإثرائي المُشارَك مع الطلاب لتعميق الفهم."},
+    "تواصل مع أولياء الأمور":       {"en": "Parent Communication",   "icon": "👨‍👩‍👧", "desc": "يوثق هذا المحور قنوات التواصل الفعّال مع أولياء أمور الطلاب وتعزيز الشراكة المجتمعية."},
+    "ملف إداري":                    {"en": "Administrative File",     "icon": "🗂️", "desc": "يوثق هذا المحور الوثائق والملفات الإدارية ذات الصلة بالعمل المدرسي اليومي."},
+    "إنجاز طلابي":                  {"en": "Student Achievement",     "icon": "⭐", "desc": "يوثق هذا المحور إنجازات الطلاب ومخرجاتهم التعليمية المتميزة خلال الفصل الدراسي."},
+    # Legacy (backward compat)
+    "التخطيط":                      {"en": "Planning",                "icon": "📅", "desc": "يوثق هذا المحور عناية المعلم بالتخطيط المسبق وتوزيع المنهج والخطط التعليمية الأسبوعية."},
+    "التنفيذ داخل الصف":            {"en": "Classroom Implementation","icon": "🖥️", "desc": "يوثق هذا المحور تنفيذ الدروس داخل الصف باستخدام الأساليب والتقنيات الحديثة."},
+    "التعلم التعاوني":              {"en": "Cooperative Learning",    "icon": "🤝", "desc": "يوثق هذا المحور تطبيق العمل الجماعي بين الطلاب وتبادل الخبرات التعليمية."},
+    "التعلم بالممارسة":             {"en": "Learning by Doing",       "icon": "🔬", "desc": "يوثق هذا المحور التطبيق العملي للمفاهيم وتحويل التعلم من النظري إلى العملي."},
+    "التقويم":                      {"en": "Assessment & Evaluation", "icon": "📊", "desc": "يوثق هذا المحور تنويع أدوات التقويم ودعم قياس نواتج التعلم."},
+    "التحفيز":                      {"en": "Motivation",              "icon": "🏆", "desc": "يوثق هذا المحور أساليب تحفيز الطلاب وتكريم المتميزين."},
+    "سجل المتابعة":                  {"en": "Follow-up Log",           "icon": "📋", "desc": "يوثق هذا المحور سجلات متابعة الطلاب اليومية والمتابعة المنتظمة للأداء."},
+    "الدورات والشهادات":             {"en": "Courses & Certificates",  "icon": "🎓", "desc": "يوثق هذا المحور الدورات التدريبية والشهادات المهنية التي حصل عليها المعلم."},
+    "المبادرات والأنشطة":            {"en": "Initiatives & Activities","icon": "💡", "desc": "يوثق هذا المحور المبادرات الإبداعية والأنشطة المدرسية المتنوعة."},
+    "أخرى":                         {"en": "Other",                   "icon": "📌", "desc": "شواهد متنوعة لا تنتمي لتصنيف محدد."},
+}
 
+_DEFAULT_META = {"en": "", "icon": "📌", "desc": ""}
+
+
+def _build_categories(evidences: list) -> list[dict]:
+    """
+    Group evidences by category, ordered by count (desc).
+    Categories with zero evidences are excluded from the PDF.
+    Old and new categories are both handled.
+    """
+    grouped: dict[str, list] = {}
+    for ev in evidences:
+        cat = (ev.category or "أخرى").strip()
+        grouped.setdefault(cat, []).append(ev)
+
+    # Order: defined categories first (in canonical order), then any others
+    order = list(ALLOWED_CATEGORIES) + [c for c in grouped if c not in ALLOWED_CATEGORIES]
     result = []
-    for name in ALLOWED_CATEGORIES:
-        items = grouped[name]
-        result.append({"name": name, "evidences": items, "count": len(items)})
+    for name in order:
+        items = grouped.get(name, [])
+        meta = _CATEGORY_META.get(name, _DEFAULT_META)
+        result.append({
+            "name":      name,
+            "en":        meta["en"],
+            "icon":      meta["icon"],
+            "desc":      meta["desc"],
+            "evidences": items,
+            "count":     len(items),
+        })
     return result
+
+
+def _build_stats(evidences: list, categories: list[dict]) -> dict:
+    """Build statistics dict for the summary page."""
+    counts = {"images": 0, "videos": 0, "audios": 0, "documents": 0, "urls": 0, "texts": 0}
+    for ev in evidences:
+        t = (ev.evidence_type or "text").lower()
+        if t == "image":            counts["images"] += 1
+        elif t == "video":          counts["videos"] += 1
+        elif t == "audio":          counts["audios"] += 1
+        elif t in ("pdf", "document"): counts["documents"] += 1
+        elif t == "url":            counts["urls"] += 1
+        else:                       counts["texts"] += 1
+
+    # Top 5 non-empty categories (for bar chart)
+    nonempty = sorted([c for c in categories if c["count"] > 0],
+                      key=lambda c: c["count"], reverse=True)[:5]
+    max_count = nonempty[0]["count"] if nonempty else 1
+    top_categories = [
+        {"name": c["name"], "count": c["count"], "pct": round(c["count"] / max_count * 100)}
+        for c in nonempty
+    ]
+
+    return {**counts, "top_categories": top_categories}
 
 
 def _render_html(teacher: Teacher, evidences: list) -> str:
     categories = _build_categories(evidences)
-    template = _jinja_env.get_template("portfolio.html")
+    stats      = _build_stats(evidences, categories)
+    template   = _jinja_env.get_template("portfolio.html")
     return template.render(
         teacher=teacher,
         categories=categories,
+        stats=stats,
         total_count=len(evidences),
         academic_year=_academic_year(),
         generated_at=datetime.now().strftime("%Y/%m/%d %H:%M"),
