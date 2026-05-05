@@ -40,14 +40,16 @@
     }
 
     /* ── PAGES ─────────────────────────────────────────────────────────────── */
+    /* No min-height — content is natural; each .page forces a new PDF page *before* it */
     .page {
-      min-height: 297mm;
       padding: var(--margin);
-      page-break-after: always;
+      break-before: page;
+      page-break-before: always;
       position: relative;
       background: var(--white);
     }
-    .page:last-child { page-break-after: avoid; }
+    /* First inner page (stats) immediately follows cover — cover already breaks after */
+    .page-first { break-before: avoid; page-break-before: avoid; }
 
     /* Teal accent strip on top of every inner page */
     .page-header {
@@ -63,30 +65,85 @@
     .ph-right { color: rgba(255,255,255,0.6); font-size: 8.5pt; }
 
     /* ══════════════════════════════════════════════════════════════════
-       COVER PAGE
+       COVER PAGE — 3-layer design
+       Layer 1: gradient background + SVG shapes
+       Layer 2: watermark text
+       Layer 3: content on top
     ══════════════════════════════════════════════════════════════════ */
     .cover {
       min-height: 297mm;
       padding: 0;
       display: flex;
       flex-direction: column;
-      background: linear-gradient(150deg, var(--teal-dk) 0%, var(--teal) 65%, #3d9096 100%);
+      background: linear-gradient(145deg, #1b4b4e 0%, #2F6F73 55%, #3d9096 100%);
+      break-after: page;
       page-break-after: always;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Decorative circles — layer 1 */
+    .cover::before {
+      content: '';
+      position: absolute;
+      top: -60px; left: -60px;
+      width: 260px; height: 260px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.04);
+      pointer-events: none;
+    }
+    .cover::after {
+      content: '';
+      position: absolute;
+      bottom: 40px; right: -80px;
+      width: 320px; height: 320px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.035);
+      pointer-events: none;
+    }
+
+    /* Watermark — layer 2 */
+    .cover-watermark {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%) rotate(-28deg);
+      font-size: 68pt;
+      font-weight: 900;
+      color: rgba(255,255,255,0.04);
+      white-space: nowrap;
+      pointer-events: none;
+      user-select: none;
+      z-index: 0;
     }
 
     /* Top band */
     .cover-topband {
-      background: rgba(0,0,0,0.15);
-      padding: 12px 22mm;
+      position: relative; z-index: 1;
+      background: rgba(0,0,0,0.2);
+      padding: 11px 22mm;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      color: rgba(255,255,255,0.7);
+      color: rgba(255,255,255,0.75);
       font-size: 8.5pt;
+      border-bottom: 1px solid rgba(201,166,70,0.25);
+    }
+    .cover-topband-logo {
+      display: flex; align-items: center; gap: 8px;
+      font-weight: 700;
+    }
+    .cover-topband-logo span.logo-icon {
+      font-size: 15px;
+      background: rgba(201,166,70,0.2);
+      border: 1px solid rgba(201,166,70,0.4);
+      border-radius: 50%;
+      width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
     }
 
-    /* Center content */
+    /* Center content — layer 3 */
     .cover-center {
+      position: relative; z-index: 1;
       flex: 1;
       display: flex;
       flex-direction: column;
@@ -94,87 +151,93 @@
       justify-content: center;
       text-align: center;
       padding: 0 22mm;
+      gap: 0;
     }
 
     .cover-emblem {
-      width: 74px; height: 74px;
-      border: 2px solid var(--gold);
+      width: 82px; height: 82px;
+      border: 2px solid rgba(201,166,70,0.7);
       border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      font-size: 30px;
-      margin-bottom: 20px;
-      background: rgba(255,255,255,0.07);
+      font-size: 32px;
+      margin-bottom: 18px;
+      background: rgba(255,255,255,0.06);
+      box-shadow: 0 0 0 6px rgba(201,166,70,0.08);
     }
 
     .cover-label {
-      font-size: 8pt;
-      letter-spacing: 3px;
+      font-size: 7.5pt;
+      letter-spacing: 3.5px;
       color: var(--gold);
-      border: 1px solid rgba(201,166,70,0.5);
-      padding: 3px 18px;
+      border: 1px solid rgba(201,166,70,0.45);
+      padding: 3px 16px;
       border-radius: 20px;
-      margin-bottom: 18px;
-      font-weight: 600;
+      margin-bottom: 16px;
+      font-weight: 700;
     }
 
     .cover h1 {
-      font-size: 34pt;
+      font-size: 32pt;
       font-weight: 900;
       color: #fff;
       line-height: 1.15;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
     .cover-subtitle {
-      font-size: 12pt;
-      color: rgba(255,255,255,0.6);
-      margin-bottom: 8px;
+      font-size: 11.5pt;
+      color: rgba(255,255,255,0.55);
+      margin-bottom: 6px;
     }
 
     .cover-role {
       font-size: 13pt;
       color: var(--gold);
       font-weight: 700;
-      margin-bottom: 26px;
+      margin-bottom: 22px;
     }
 
     .cover-rule {
-      width: 50px; height: 2px;
-      background: var(--gold);
-      margin: 0 auto 26px;
+      width: 60px; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+      margin: 0 auto 24px;
     }
 
-    /* Info box */
+    /* Info card — upgraded 3-column look */
     .cover-box {
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-top: 2px solid rgba(201,166,70,0.5);
       border-radius: 14px;
-      padding: 18px 28px;
+      padding: 16px 24px;
       width: 100%;
-      max-width: 360px;
+      max-width: 400px;
+      backdrop-filter: blur(4px);
     }
 
     .cbox-row {
       display: flex;
       justify-content: space-between;
       align-items: baseline;
-      padding: 8px 0;
-      border-bottom: 1px solid rgba(255,255,255,0.09);
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
       font-size: 10pt;
     }
     .cbox-row:last-child { border-bottom: none; }
-    .cbox-label { color: var(--gold); font-weight: 700; font-size: 9.5pt; }
-    .cbox-value { color: rgba(255,255,255,0.88); }
+    .cbox-label { color: var(--gold); font-weight: 700; font-size: 9pt; min-width: 100px; }
+    .cbox-value { color: rgba(255,255,255,0.88); text-align: left; flex: 1; padding-right: 6px; }
 
     /* Bottom band */
     .cover-bottom {
-      padding: 14px 22mm;
-      background: rgba(0,0,0,0.18);
+      position: relative; z-index: 1;
+      padding: 12px 22mm;
+      background: rgba(0,0,0,0.22);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      color: rgba(255,255,255,0.45);
+      color: rgba(255,255,255,0.4);
       font-size: 8.5pt;
+      border-top: 1px solid rgba(201,166,70,0.2);
     }
 
     /* ══════════════════════════════════════════════════════════════════
@@ -303,6 +366,8 @@
       border-radius: var(--radius);
       padding: 16px 20px;
       margin-bottom: 8px;
+      break-after: avoid;
+      page-break-after: avoid;
     }
 
     .sh-num {
@@ -349,6 +414,7 @@
       border-radius: var(--radius);
       overflow: hidden;
       margin-bottom: 18px;
+      break-inside: avoid;
       page-break-inside: avoid;
       box-shadow: var(--shadow);
     }
@@ -434,6 +500,18 @@
 
     /* ── Media ─────────────────────────────────────────────────────── */
     .media-wrap { margin-top: 4px; }
+
+    /* Placeholder when storage_path missing or image fails to load */
+    .media-placeholder {
+      background: var(--card);
+      border: 2px dashed var(--border-dk);
+      border-radius: 8px;
+      padding: 18px 16px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 10pt;
+      margin-bottom: 8px;
+    }
 
     /* Image Grid */
     .img-grid {
@@ -589,8 +667,15 @@
      COVER
 ══════════════════════════════════════════════════════════════════ -->
 <div class="cover">
+  <!-- Watermark layer -->
+  <div class="cover-watermark">وزارة التعليم</div>
+
+  <!-- Top band with ministry reference -->
   <div class="cover-topband">
-    <span>المملكة العربية السعودية · وزارة التعليم</span>
+    <div class="cover-topband-logo">
+      <span class="logo-icon">🎓</span>
+      <span>المملكة العربية السعودية · وزارة التعليم</span>
+    </div>
     <span>العام الدراسي {{ academic_year }}</span>
   </div>
 
@@ -618,6 +703,18 @@
         <span class="cbox-value">{{ teacher.school_name }}</span>
       </div>
       {% endif %}
+      {% if teacher.education_admin %}
+      <div class="cbox-row">
+        <span class="cbox-label">إدارة التعليم</span>
+        <span class="cbox-value">{{ teacher.education_admin }}</span>
+      </div>
+      {% endif %}
+      {% if teacher.region %}
+      <div class="cbox-row">
+        <span class="cbox-label">المنطقة</span>
+        <span class="cbox-value">{{ teacher.region }}</span>
+      </div>
+      {% endif %}
       {% if teacher.principal_name %}
       <div class="cbox-row">
         <span class="cbox-label">مدير المدرسة</span>
@@ -638,16 +735,17 @@
   </div>
 
   <div class="cover-bottom">
-    <span>إعداد وتنظيم الشواهد بصيغة PDF — شواهد AI</span>
+    <span>🎓 وزارة التعليم · إعداد بمنصة شواهد AI</span>
     <span>{{ generated_at }}</span>
   </div>
 </div>
 
 
 <!-- ══════════════════════════════════════════════════════════════════
-     STATISTICS
+     STATISTICS — shown only when portfolio is substantial (≥3 evidences)
 ══════════════════════════════════════════════════════════════════ -->
-<div class="page">
+{% if total_count >= 3 %}
+<div class="page page-first">
   <div class="page-header">
     <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
     <span class="ph-right">ملخص إحصائي</span>
@@ -707,11 +805,14 @@
   {% endfor %}
   {% endif %}
 </div>
+{% endif %}{# /stats conditional #}
 
 
 <!-- ══════════════════════════════════════════════════════════════════
-     TABLE OF CONTENTS
+     TABLE OF CONTENTS — shown only when there are multiple categories
 ══════════════════════════════════════════════════════════════════ -->
+{% set toc_count = categories | selectattr('count', '>', 0) | list | length %}
+{% if toc_count >= 2 %}
 <div class="page">
   <div class="page-header">
     <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
@@ -743,6 +844,7 @@
     <span class="toc-badge" style="font-size:10pt; padding:3px 14px;">{{ total_count }} شاهد</span>
   </div>
 </div>
+{% endif %}{# /toc conditional #}
 
 
 <!-- ══════════════════════════════════════════════════════════════════
@@ -766,6 +868,12 @@
     <tr><td class="lbl">المرحلة الدراسية</td><td>{{ teacher.stage or '—' }}</td></tr>
     <tr><td class="lbl">الصفوف</td><td>{{ teacher.grades or '—' }}</td></tr>
     <tr><td class="lbl">المدرسة</td><td>{{ teacher.school_name or '—' }}</td></tr>
+    {% if teacher.education_admin %}
+    <tr><td class="lbl">إدارة التعليم</td><td>{{ teacher.education_admin }}</td></tr>
+    {% endif %}
+    {% if teacher.region %}
+    <tr><td class="lbl">المنطقة</td><td>{{ teacher.region }}</td></tr>
+    {% endif %}
     <tr><td class="lbl">مدير المدرسة</td><td>{{ teacher.principal_name or '—' }}</td></tr>
     <tr><td class="lbl">إجمالي الشواهد</td><td>{{ total_count }} شاهد</td></tr>
     <tr><td class="lbl">العام الدراسي</td><td>{{ academic_year }}</td></tr>
@@ -867,61 +975,97 @@
       <!-- ── MEDIA ─────────────────────────────────────────────────── -->
       <div class="media-wrap">
 
-        {% if ev.evidence_type == 'image' and ev.storage_path %}
-        <div class="img-grid g1">
-          <img src="file://{{ ev.storage_path }}"
-               alt="{{ ev.title or 'صورة' }}"
-               onerror="this.style.display='none'" />
-        </div>
+        {# IMAGE — show actual image, fallback to placeholder badge #}
+        {% if ev.evidence_type == 'image' %}
+          {% if ev.storage_path %}
+          <div class="img-grid g1">
+            <img src="file://{{ ev.storage_path }}"
+                 alt="{{ ev.title }}"
+                 style="max-height:220px; width:100%; object-fit:contain; border-radius:8px; border:1px solid var(--border);"
+                 onerror="this.parentElement.innerHTML='<div class=\'media-placeholder\'>📷 صورة توثيقية — ' + '{{ ev.title | e }}' + '</div>';" />
+          </div>
+          {% else %}
+          <div class="media-placeholder">📷 صورة توثيقية — {{ ev.title }}</div>
+          {% endif %}
 
-        {% elif ev.evidence_type == 'audio' %}
+        {# AUDIO — show icon + full transcript #}
+        {% elif ev.evidence_type in ('audio', 'voice') %}
         <div class="audio-card">
           <div class="audio-icon">🎙</div>
-          <div>
-            <div class="audio-label">تسجيل صوتي — نص التفريغ</div>
-            {% if ev.message_text %}
-            <div class="audio-text">{{ ev.message_text[:700] }}{% if ev.message_text|length > 700 %}…{% endif %}</div>
+          <div style="flex:1;">
+            <div class="audio-label">
+              {% if ev.evidence_type == 'voice' %}رسالة صوتية{% else %}تسجيل صوتي{% endif %}
+              — نص التفريغ
+            </div>
+            {% if ev.message_text and ev.message_text|length > 3 %}
+            <div class="audio-text">{{ ev.message_text[:800] }}{% if ev.message_text|length > 800 %}…{% endif %}</div>
             {% else %}
-            <div class="audio-text" style="color:var(--muted);">لا يتوفر نص تفريغ لهذا التسجيل.</div>
+            <div class="audio-text" style="color:var(--muted); font-style:normal;">
+              📎 تم حفظ التسجيل الصوتي بنجاح — لم يتوفر نص تفريغ.
+            </div>
             {% endif %}
           </div>
         </div>
 
+        {# VIDEO — thumbnail + play icon, fallback to placeholder #}
         {% elif ev.evidence_type == 'video' %}
         {% if ev.storage_path %}
         <div class="video-wrap">
           <img class="video-thumb"
                src="file://{{ ev.storage_path }}"
                alt="مقطع فيديو"
-               onerror="this.style.display='none'" />
+               onerror="this.parentElement.innerHTML='<div class=\'media-placeholder\'>🎥 مقطع فيديو — {{ ev.title | e }}</div>';" />
           <div class="play-btn">▶</div>
         </div>
+        {% else %}
+        <div class="media-placeholder">🎥 مقطع فيديو — {{ ev.title }}</div>
         {% endif %}
-        {% if ev.message_text and ev.description != ev.message_text %}
-        <div class="video-caption">{{ ev.message_text[:400] }}</div>
+        {% if ev.message_text and ev.message_text|length > 3 %}
+        <div class="video-caption">{{ ev.message_text[:500] }}</div>
         {% endif %}
 
+        {# URL — link card #}
         {% elif ev.evidence_type == 'url' %}
         {% set url_text = ev.message_text or ev.media_url or '' %}
-        {% if url_text %}
         <div class="url-card">
           <div class="url-icon">🔗</div>
-          <div class="url-text">{{ url_text[:300] }}</div>
+          <div style="flex:1;">
+            <div class="file-name" style="margin-bottom:4px;">{{ ev.title }}</div>
+            {% if url_text %}
+            <div class="url-text" style="font-size:8.5pt;">{{ url_text[:200] }}{% if url_text|length > 200 %}…{% endif %}</div>
+            {% endif %}
+          </div>
         </div>
-        {% endif %}
 
+        {# DOCUMENT / PDF / FILE #}
         {% elif ev.evidence_type in ('pdf', 'document') or ev.file_name %}
         <div class="file-card">
           <div class="file-icon">
             {%- if ev.evidence_type == 'pdf' or (ev.file_name and ev.file_name.lower().endswith('.pdf')) %}📄
-            {%- elif ev.file_name and ev.file_name.lower().endswith('.docx') %}📝
+            {%- elif ev.file_name and (ev.file_name.lower().endswith('.docx') or ev.file_name.lower().endswith('.doc')) %}📝
+            {%- elif ev.file_name and ev.file_name.lower().endswith('.pptx') %}📊
             {%- else %}🗂️{%- endif %}
           </div>
-          <div>
-            <div class="file-name">{{ ev.file_name or 'ملف مرفق' }}</div>
-            <div class="file-type">{{ (ev.evidence_type or 'document') | upper }}</div>
+          <div style="flex:1;">
+            <div class="file-name">{{ ev.file_name or ev.title }}</div>
+            <div class="file-type">
+              {% if ev.mime_type %}{{ ev.mime_type.split('/')[-1] | upper }}{% else %}{{ (ev.evidence_type or 'ملف') | upper }}{% endif %}
+            </div>
           </div>
         </div>
+
+        {# TEXT — show content if meaningful (not just the title) #}
+        {% elif ev.evidence_type == 'text' and ev.message_text and ev.message_text|length > 10 %}
+        <div class="audio-card" style="background:#f5f8f5; border-color:#cde0cd;">
+          <div class="audio-icon">📝</div>
+          <div style="flex:1;">
+            <div class="audio-label" style="color:#3a6b3a;">نص موثق</div>
+            <div class="audio-text" style="font-style:normal; color:var(--body);">
+              {{ ev.message_text[:600] }}{% if ev.message_text|length > 600 %}…{% endif %}
+            </div>
+          </div>
+        </div>
+
         {% endif %}
 
       </div><!-- /media-wrap -->
