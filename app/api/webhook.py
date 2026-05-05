@@ -34,10 +34,6 @@ from app.services.whatsapp import (
     get_meta_media_url,
     send_whatsapp_message,
     send_whatsapp_button,
-    build_my_files_reply,
-    build_my_data_reply,
-    build_edit_data_template,
-    build_payment_link_message,
     build_payment_receipt_message,
     build_subscription_activated_message,
 )
@@ -271,22 +267,34 @@ async def whatsapp_webhook(
         teacher.id, evidence_type, bool(media_id), (text or "")[:60],
     )
 
-    # ── Load user profile / subscription status ───────────────────────────────
+    # ── Load profile + subscription (backend-only decision) ──────────────────
     from app.services.teachers import update_teacher
+
+    # Subscription: DB-only check. GPT never knows or decides subscription state.
     sub_active = is_subscription_active(db, teacher.id)
+    logger.info(
+        "[SUBSCRIPTION CHECK] teacher_id=%d status=%s",
+        teacher.id, "active" if sub_active else "inactive",
+    )
+
+    # Evidence count for GPT context (so it can write natural my_files replies)
+    all_evidences = get_teacher_evidences(db, teacher.id)
+    evidence_count = len(all_evidences)
+
     teacher_context = build_teacher_context(
-        phone=teacher.phone,
         name=teacher.name,
         subject=teacher.subject,
         stage=teacher.stage,
-        sub_active=sub_active,
+        school_name=teacher.school_name,
+        evidence_count=evidence_count,
     )
     logger.info(
-        "[USER PROFILE LOADED] teacher_id=%d name=%r sub_active=%s",
-        teacher.id, teacher.name, sub_active,
+        "[USER PROFILE LOADED] teacher_id=%d name=%r evidence_count=%d",
+        teacher.id, teacher.name, evidence_count,
     )
 
-    # ── Download media (images need local path for GPT Vision) ───────────────
+    # ── Download images for GPT Vision (base64 only, never pass WA URLs) ─────
+    # WhatsApp media URLs are auth-protected — GPT cannot access them directly.
     storage_path: str | None = None
     safe_filename: str | None = None
     if media_url:
@@ -301,12 +309,12 @@ async def whatsapp_webhook(
         except Exception as exc:
             logger.error("Media download failed for teacher %d: %s", teacher.id, exc)
 
-    # ── Ask GPT — GPT is the brain ────────────────────────────────────────────
+    # ── Ask GPT — GPT is the brain, writes every reply ───────────────────────
     decision = await ask_gpt(
         text=text,
         teacher_context=teacher_context,
         storage_path=storage_path if evidence_type == "image" else None,
-        image_url=media_url if (evidence_type == "image" and not storage_path) else None,
+        image_url=None,   # NEVER pass WA URLs — they require auth GPT can't provide
         mime_type=mime_type,
         file_name=safe_filename or file_name,
     )
@@ -323,9 +331,8 @@ async def whatsapp_webhook(
     # ── Intent routing ────────────────────────────────────────────────────────
 
     if intent == "update_profile":
-        # GPT detected name / profile info — save to teacher record, never as evidence
+        # GPT detected name/profile info → save to teacher record, never as evidence
         profile_data = decision.get("profile_update") or {}
-        # Only update fields GPT explicitly set (non-null values)
         clean = {k: v for k, v in profile_data.items() if v}
         if clean:
             update_teacher(db, teacher, clean)
@@ -333,16 +340,12 @@ async def whatsapp_webhook(
                 "[PROFILE UPDATED] teacher_id=%d fields=%s",
                 teacher.id, list(clean.keys()),
             )
+        # GPT already wrote the reply (e.g. "تم حفظ اسمك يا تركي 🌿")
 
-    elif intent == "my_files":
-        evidences = get_teacher_evidences(db, teacher.id)
-        reply = build_my_files_reply(len(evidences), sub_active)
-
-    elif intent == "my_data":
-        reply = build_my_data_reply(teacher)
-
-    elif intent == "edit_data":
-        reply = build_edit_data_template()
+    elif intent in ("my_files", "my_data", "edit_data", "smalltalk", "help"):
+        # GPT has all context (evidence count, teacher profile) and writes the reply.
+        # Backend does nothing extra — GPT's reply is used directly.
+        pass
 
     elif intent == "payment":
         if not sub_active:
@@ -412,13 +415,11 @@ async def whatsapp_webhook(
         )
 
     elif intent == "failure":
-        # GPT failed completely after all retries:
-        # 1. Send "لحظة بس 🌿" immediately
-        # 2. Schedule a background retry that will send the real reply when ready
+        # GPT failed after all retries.
+        # Send interim message + schedule background retry (without re-sending failure msg).
         background_tasks.add_task(
             send_whatsapp_message, teacher.phone, reply, teacher_id=teacher.id
         )
-        _img_url_for_retry = media_url if (evidence_type == "image" and not storage_path) else None
         background_tasks.add_task(
             _gpt_retry_and_reply,
             teacher.id,
@@ -426,7 +427,7 @@ async def whatsapp_webhook(
             text,
             teacher_context,
             storage_path if evidence_type == "image" else None,
-            _img_url_for_retry,
+            None,  # image_url=None — WA URLs are auth-protected, base64 only
             mime_type,
             safe_filename or file_name,
         )

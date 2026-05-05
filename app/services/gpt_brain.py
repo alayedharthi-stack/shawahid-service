@@ -65,35 +65,43 @@ class GPTDecision(TypedDict):
 # ── System prompt ─────────────────────────────────────────────────────────────
 
 _SYSTEM_BASE = """\
-أنت عقل شواهد AI — مساعد شخصي ذكي للمعلم.
-أنت المسؤول عن الفهم الكامل للمحادثة وإدارتها بذكاء واحترافية.
+أنت عقل شواهد AI — المتحدث الوحيد مع المعلم.
+أنت المسؤول عن كتابة كل رد يُرسل للمستخدم. لا يوجد ردود جاهزة غيرك.
 
 قواعد أساسية:
-• تحدث بالعربية الطبيعية المهنية، وناد المستخدم باسمه إن كان معروفًا.
-• التحيات والأسئلة الشخصية والحديث العابر ← ليست شواهد، لا تحفظها.
-• "اسمي ..." أو "أنا فلان" أو أي معلومة شخصية ← نوع update_profile، لا تحفظها كشاهد.
-• الصور والمواقف المدرسية والوثائق التعليمية ← GPT يقرر حفظها كشاهد.
-• لا تُقرر الحفظ إلا إذا كنت متأكدًا أن المحتوى يستحق التوثيق في ملف الشواهد.
+• تحدث بالعربية الطبيعية البشرية، وناد المستخدم باسمه دائمًا إن كان معروفًا.
+• ردودك ذكية، دافئة، ومختصرة. لا تعيد صياغة المعلومات بشكل جاف.
+• التحيات والحديث العابر ← رد طبيعي، لا تحفظها. (intent=smalltalk)
+• "اسمي ..." أو أي معلومة شخصية ← intent=update_profile، لا تحفظها كشاهد.
+• الصور المدرسية والمواقف التعليمية والوثائق ← قرر أنت إن كانت شاهدًا. (intent=evidence)
+• لا تُقرر الحفظ إلا إذا كان المحتوى يستحق التوثيق فعلًا.
+• لا تذكر أي شيء عن الاشتراك أو الدفع — هذا قرار النظام وليس أنت.
 
-تصنيفات الشواهد المتاحة:
+إذا كان المستخدم يسأل عن شواهده (my_files): استخدم العدد من السياق في ردك.
+إذا كان يسأل عن بياناته (my_data): استخدم البيانات من السياق في ردك.
+إذا طلب "تعديل بياناتي" (edit_data): اطلب منه إرسال البيانات بهذا الشكل.
+
+إذا أرسل صورة: صِفها، حدد هل هي شاهد، واقترح عنوانًا وتصنيفًا في ردك.
+
+تصنيفات الشواهد:
 التخطيط، التنفيذ داخل الصف، التعلم التعاوني، التعلم بالممارسة، التقويم، التحفيز،
 التواصل مع أولياء الأمور، سجل المتابعة، الدورات والشهادات، المبادرات والأنشطة، أخرى.
 
-الـ intents المتاحة:
-- evidence      → شاهد يستحق الحفظ (should_save=true)
-- smalltalk     → تحية أو حديث عابر (should_save=false)
+الـ intents:
+- evidence      → شاهد (should_save=true)
+- smalltalk     → تحية أو حديث عابر
 - help          → سؤال عن الخدمة
-- payment       → "تصدير" أو طلب الاشتراك
-- my_files      → "ملفي" أو استفسار عن الشواهد المحفوظة
-- my_data       → "بياناتي" أو استفسار عن الحساب
+- payment       → "تصدير" أو طلب الملف
+- my_files      → "ملفي" أو استفسار عن الشواهد
+- my_data       → "بياناتي"
 - edit_data     → "تعديل بياناتي"
-- update_profile → المستخدم يذكر اسمه أو معلومات شخصية عن نفسه
+- update_profile → اسم أو معلومات شخصية
 
-أرجع JSON فقط بهذا الشكل:
+أرجع JSON فقط:
 {
   "intent": "...",
   "should_save": false,
-  "reply": "رد عربي طبيعي يخاطب المستخدم باسمه",
+  "reply": "رد عربي بشري طبيعي",
   "title": "عنوان الشاهد أو null",
   "category": "التصنيف أو null",
   "confidence": 0.95,
@@ -107,20 +115,27 @@ def _build_system_prompt(teacher_context: str) -> str:
 
 
 def build_teacher_context(
-    phone: str,
     name: str | None,
     subject: str | None,
     stage: str | None,
-    sub_active: bool,
+    school_name: str | None = None,
+    evidence_count: int | None = None,
 ) -> str:
+    """
+    Build teacher context for GPT.
+    Does NOT include subscription status — that is a backend-only decision.
+    GPT should never assume or mention subscription state.
+    """
     lines = ["=== سياق المستخدم ==="]
-    lines.append(f"رقم الهاتف: {phone}")
     lines.append(f"الاسم: {name or 'غير معروف بعد'}")
     if subject:
         lines.append(f"المادة: {subject}")
     if stage:
         lines.append(f"المرحلة الدراسية: {stage}")
-    lines.append(f"حالة الاشتراك: {'نشط ✅' if sub_active else 'غير مشترك'}")
+    if school_name:
+        lines.append(f"المدرسة: {school_name}")
+    if evidence_count is not None:
+        lines.append(f"عدد الشواهد المحفوظة حتى الآن: {evidence_count}")
     lines.append("===================")
     return "\n".join(lines)
 
@@ -302,12 +317,12 @@ def _coerce(data: dict) -> GPTDecision:
 def _failure_decision() -> GPTDecision:
     """
     Returned only when ALL models and retries are exhausted.
-    Webhook sends a short interim message and schedules a background retry.
+    Webhook sends this interim message then schedules a background retry.
     """
     return {
         "intent":         "failure",
         "should_save":    False,
-        "reply":          "لحظة بس 🌿",
+        "reply":          "يبدو أن هناك ضغطًا بسيطًا الآن 🌿 جرّب بعد لحظات",
         "title":          None,
         "category":       None,
         "confidence":     0.0,
