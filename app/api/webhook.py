@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.db.base import get_db
 from app.services.teachers import get_or_create_teacher, get_teacher_by_id
 from app.services.evidences import create_evidence, get_teacher_evidences
-from app.services.storage import download_and_save, detect_evidence_type
+from app.services.storage import download_and_save, detect_evidence_type, extract_urls
 from app.services import transcribe as transcribe_svc
 from app.services.subscriptions import (
     get_subscription_status,
@@ -390,20 +390,34 @@ async def whatsapp_webhook(
         logger.info("[TRANSCRIBE FAILED] sent fallback reply to teacher_id=%d", teacher.id)
         return {"ok": True, "teacher_id": teacher.id, "intent": "transcription_failed"}
 
+    # ── Detect URLs in text (YouTube, websites, Google Drive, etc.) ──────────
+    urls_in_text: list[str] = extract_urls(text or "")
+    url_context: str | None = None
+    if urls_in_text and not media_id:
+        # Text-only message with URL(s): pass URLs explicitly so GPT can classify
+        url_lines = "\n".join(f"• {u}" for u in urls_in_text[:5])
+        url_context = f"[روابط مُرسَلة]\n{url_lines}"
+        logger.info(
+            "[URL RECEIVED] teacher_id=%d urls=%d first=%s",
+            teacher.id, len(urls_in_text), urls_in_text[0][:80],
+        )
+
     # ── Determine what to pass to GPT Vision ─────────────────────────────────
-    # - Images:    download storage_path (base64 to GPT)
-    # - Videos:    thumbnail_path (if extracted)
-    # - Audio:     no visual (transcript is the content)
-    # - Documents: no visual
+    # - Images:    storage_path in base64
+    # - Videos:    thumbnail_path if extracted
+    # - Audio/URL/Docs: no visual
     gpt_storage_path: str | None = None
     if evidence_type == "image":
         gpt_storage_path = storage_path
     elif is_video_msg and thumbnail_path:
         gpt_storage_path = thumbnail_path
 
+    # Compose text for GPT: original text + URL context if any
+    gpt_text = "\n".join(filter(None, [text, url_context])) or None
+
     # ── Ask GPT — sole decision-maker and sole speaker ───────────────────────
     decision = await ask_gpt(
-        text=text,
+        text=gpt_text,
         teacher_context=teacher_context,
         storage_path=gpt_storage_path,
         image_url=None,       # NEVER pass WA URLs — they require auth GPT cannot provide
@@ -436,9 +450,9 @@ async def whatsapp_webhook(
             )
         # GPT already wrote the reply (e.g. "تم حفظ اسمك يا تركي 🌿")
 
-    elif intent in ("my_files", "my_data", "edit_data", "smalltalk", "help"):
-        # GPT has all context (evidence count, teacher profile) and writes the reply.
-        # Backend does nothing extra — GPT's reply is used directly.
+    elif intent in ("my_files", "my_data", "edit_data", "smalltalk", "help", "batch_summary"):
+        # GPT writes the reply based on context. Backend does nothing extra.
+        # batch_summary: GPT already wrote the full batch report in its reply.
         pass
 
     elif intent == "payment":
@@ -495,15 +509,21 @@ async def whatsapp_webhook(
         reply = f"يا {teacher_name}، جارٍ إنشاء ملف شواهدك الآن ⏳ سيصلك رابط التحميل فور الانتهاء."
 
     elif decision["should_save"]:
-        # GPT decided this is evidence worth saving
+        # GPT decided to save evidence (intents: evidence | batch_save | url_link)
+        # url_link: evidence_type comes from detect_evidence_type (already "url" for URL-only msgs)
+        # batch_save: same flow as evidence, but reply is intentionally short (GPT handles it)
+        ev_type = evidence_type
+        if intent == "url_link" and ev_type == "text":
+            ev_type = "url"   # ensure URL text messages are stored as "url" type
+
         evidence = create_evidence(
             db=db,
             teacher_id=teacher.id,
             source_phone=teacher.phone,
-            evidence_type=evidence_type,
-            # For audio/video: save the transcript as the primary text content.
-            # For text/image: use the original caption/text.
-            message_text=transcript or text,
+            evidence_type=ev_type,
+            # For audio/video: save transcript. For URL: save the raw text (contains URL).
+            # For image/doc: caption/text.
+            message_text=transcript or gpt_text or text,
             media_url=media_url,
             storage_path=storage_path,
             file_name=safe_filename or file_name,
@@ -513,9 +533,11 @@ async def whatsapp_webhook(
             ai_status="completed",
             ai_raw=dict(decision),
         )
+        log_tag = "[EVIDENCE SAVED]" if intent == "evidence" else f"[{intent.upper()} SAVED]"
         logger.info(
-            "[EVIDENCE SAVED] teacher_id=%d evidence_id=%d category=%r confidence=%.2f",
-            teacher.id, evidence.id, decision["category"], decision["confidence"],
+            "%s teacher_id=%d evidence_id=%d type=%s category=%r confidence=%.2f",
+            log_tag, teacher.id, evidence.id, ev_type,
+            decision["category"], decision["confidence"],
         )
 
     elif intent == "failure":

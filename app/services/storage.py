@@ -1,9 +1,19 @@
 import logging
 import mimetypes
+import re
 import uuid
 from pathlib import Path
 
 import httpx
+
+_URL_RE = re.compile(r'https?://\S+', re.IGNORECASE)
+
+
+def extract_urls(text: str | None) -> list[str]:
+    """Return all HTTP/HTTPS URLs found in text."""
+    if not text:
+        return []
+    return _URL_RE.findall(text)
 
 from app.core.config import settings
 
@@ -56,6 +66,8 @@ async def download_and_save(
 
 def detect_evidence_type(mime_type: str | None, file_name: str | None, text: str | None) -> str:
     if not mime_type and not file_name:
+        if text and _URL_RE.search(text):
+            return "url"
         return "text"
     mt = (mime_type or "").lower()
     fn = (file_name or "").lower()
