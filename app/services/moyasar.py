@@ -182,19 +182,26 @@ async def create_invoice(
         "amount_sar":   str(amount_halalah // 100),
     }
 
-    # ── Callback URL ──────────────────────────────────────────────────────────
-    callback_url = (
-        f"{settings.effective_base_url}/payment/success"
-        f"?teacher_id={teacher_id}"
-    )
+    # ── URLs ──────────────────────────────────────────────────────────────────
+    base = settings.effective_base_url.rstrip("/")
+
+    # callback_url  → Moyasar POSTs here (server-to-server) after invoice is paid.
+    #                  This replaces the need for a globally configured Moyasar webhook.
+    # success_url   → Browser redirect after successful payment (user-facing).
+    # back_url      → Browser redirect for cancel / go-back (user-facing fallback).
+    notification_url = f"{base}/webhook/payment"
+    success_url      = f"{base}/payment/success?teacher_id={teacher_id}"
+    cancel_url       = f"{base}/payment/success?teacher_id={teacher_id}&cancelled=1"
 
     # ── Moyasar API payload ───────────────────────────────────────────────────
     payload: dict = {
-        "amount":      amount_halalah,
-        "currency":    "SAR",
-        "description": final_description,
-        "back_url":    callback_url,
-        "metadata":    metadata,
+        "amount":       amount_halalah,
+        "currency":     "SAR",
+        "description":  final_description,
+        "callback_url": notification_url,   # Server POST when paid (no dashboard webhook needed)
+        "success_url":  success_url,        # Browser redirect after success
+        "back_url":     cancel_url,         # Browser redirect on cancel / go back
+        "metadata":     metadata,
         # Moyasar supports a top-level customer object on some plans
         "customer": {
             "name": display_name,
@@ -202,8 +209,9 @@ async def create_invoice(
     }
 
     logger.info(
-        "Creating Moyasar invoice: teacher_id=%d display_name='%s' amount=%d",
-        teacher_id, display_name, amount_halalah,
+        "Creating Moyasar invoice: teacher_id=%d display_name='%s' amount=%d "
+        "callback_url=%s",
+        teacher_id, display_name, amount_halalah, notification_url,
     )
 
     async with httpx.AsyncClient(timeout=20) as client:
