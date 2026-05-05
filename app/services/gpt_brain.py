@@ -151,12 +151,20 @@ _SYSTEM_BASE = """\
 - batch_summary   → ملخص الدفعة، لا حفظ جديد (should_save=false)
 - url_link        → رابط/يوتيوب (should_save=true)
 - smalltalk       → تحية أو حديث عابر (should_save=false)
+- capabilities    → "ماذا تستطيع؟" أو "وش تسوي؟" (should_save=false)
 - help            → سؤال عن الخدمة (should_save=false)
 - payment         → "تصدير" أو "صدر ملفي" أو طلب PDF (should_save=false)
 - my_files        → "ملفي" أو استفسار عن عدد الشواهد (should_save=false)
 - my_data         → "بياناتي" (should_save=false)
 - edit_data       → "تعديل بياناتي" (should_save=false)
 - update_profile  → اسم أو معلومات شخصية (should_save=false)
+
+══ ردّ "ماذا تستطيع؟" (intent=capabilities) ══
+إذا سأل المعلم عن إمكانيات الخدمة بأي صيغة:
+اكتب ردًّا يشمل:
+• الإمكانيات الحالية: توثيق الشواهد وإنشاء ملف إنجاز PDF احترافي.
+• الإمكانيات القادمة (لا تدّعِ أنها متوفرة الآن): أوراق عمل، اختبارات جاهزة، أنشطة صفية حسب المنهج.
+• ختم بجملة تشجيعية مثل: "هدفي أكون مساعدك الكامل داخل الفصل 📚"
 
 أرجع JSON فقط (بدون أي نص خارجه):
 {
@@ -181,6 +189,7 @@ def build_teacher_context(
     stage: str | None,
     school_name: str | None = None,
     evidence_count: int | None = None,
+    is_new_user: bool = False,
 ) -> str:
     """
     Build teacher context for GPT.
@@ -189,6 +198,8 @@ def build_teacher_context(
     """
     lines = ["=== سياق المستخدم ==="]
     lines.append(f"الاسم: {name or 'غير معروف بعد'}")
+    if is_new_user:
+        lines.append("مستخدم جديد: نعم (رسالته الأولى)")
     if subject:
         lines.append(f"المادة: {subject}")
     if stage:
@@ -371,7 +382,7 @@ def _encode_local_image(storage_path: str, mime_type: str | None) -> dict | None
 
 _SAVE_INTENTS   = frozenset({"evidence", "batch_save", "url_link"})
 _NOSAVE_INTENTS = frozenset({
-    "update_profile", "smalltalk", "help", "failure",
+    "update_profile", "smalltalk", "help", "capabilities", "failure",
     "batch_summary", "my_files", "my_data", "edit_data", "payment",
 })
 

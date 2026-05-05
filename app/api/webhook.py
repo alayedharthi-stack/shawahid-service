@@ -227,6 +227,37 @@ async def _gpt_retry_and_reply(
         logger.warning("[RETRY] Background retry also failed for teacher_id=%d", teacher_id)
 
 
+_WELCOME_MESSAGE = """\
+مرحبًا 👋
+أنا شواهد AI — مساعدك الذكي لتوثيق أعمالك التعليمية.
+
+الميزة المتوفرة الآن:
+أحوّل صورك، دروسك، وروابطك إلى ملف إنجاز احترافي جاهز للتقديم 📘
+
+جرّب الآن:
+أرسل صور نشاطك أو اكتب: صدر ملفي
+
+قريبًا جدًا 🔜
+سأوفر لك:
+• أوراق عمل جاهزة باسمك
+• اختبارات (قصيرة ونهائية)
+• أنشطة تعليمية حسب المنهج
+
+إذا تحب التفاصيل، اكتب: ماذا تستطيع؟\
+"""
+
+
+async def _send_welcome_message(phone: str, teacher_id: int) -> None:
+    """Send one-time onboarding welcome. Runs as a background task after the first reply."""
+    try:
+        await send_whatsapp_message(
+            phone, _WELCOME_MESSAGE, teacher_id=teacher_id, context="onboarding"
+        )
+        logger.info("[ONBOARDING] welcome sent to teacher_id=%d", teacher_id)
+    except Exception as exc:
+        logger.warning("[ONBOARDING] failed to send welcome to teacher_id=%d: %s", teacher_id, exc)
+
+
 # ─── Main Webhook (POST) ─────────────────────────────────────────────────────
 
 @router.post("/webhook/whatsapp")
@@ -273,9 +304,12 @@ async def whatsapp_webhook(
     teacher = get_or_create_teacher(db, from_phone)
     evidence_type = detect_evidence_type(mime_type, file_name, text)
 
+    # ── Onboarding: track first-ever interaction ──────────────────────────────
+    is_new_user = not teacher.welcomed
+
     logger.info(
-        "[WA INBOUND] teacher_id=%d type=%s has_media=%s text=%r",
-        teacher.id, evidence_type, bool(media_id), (text or "")[:60],
+        "[WA INBOUND] teacher_id=%d type=%s has_media=%s is_new=%s text=%r",
+        teacher.id, evidence_type, bool(media_id), is_new_user, (text or "")[:60],
     )
 
     # ── Load profile + subscription (backend-only decision) ──────────────────
@@ -299,6 +333,7 @@ async def whatsapp_webhook(
         stage=teacher.stage,
         school_name=teacher.school_name,
         evidence_count=evidence_count,
+        is_new_user=is_new_user,
     )
     logger.info(
         "[USER PROFILE LOADED] teacher_id=%d name=%r evidence_count=%d",
@@ -566,6 +601,19 @@ async def whatsapp_webhook(
     background_tasks.add_task(
         send_whatsapp_message, teacher.phone, reply, teacher_id=teacher.id
     )
+
+    # ── Onboarding: send welcome follow-up after first reply ─────────────────
+    # Triggered only once per teacher, AFTER the main reply is queued.
+    # For text-only first messages: welcome arrives as a second message right after.
+    # For media first messages: welcome arrives after evidence ACK.
+    if is_new_user and intent not in ("failure",):
+        teacher.welcomed = True
+        db.commit()
+        background_tasks.add_task(
+            _send_welcome_message, teacher.phone, teacher.id
+        )
+        logger.info("[ONBOARDING] welcome scheduled for teacher_id=%d", teacher.id)
+
     return {"ok": True, "teacher_id": teacher.id, "intent": intent, "reply": reply}
 
 

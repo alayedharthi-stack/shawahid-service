@@ -214,6 +214,22 @@ async def run_export_background(teacher_id: int, export_id: int) -> None:
         )
         if sent:
             logger.info("[PDF SEND SUCCESS] teacher_id=%d", teacher_id)
+
+            # ── Post-export upsell nudge (one message, sent immediately after link) ──
+            upsell_msg = (
+                "قريبًا سأساعدك أيضًا في إعداد أوراق عمل واختبارات "
+                "من نفس شواهدك 📚✨"
+            )
+            try:
+                await send_whatsapp_message(
+                    teacher_phone, upsell_msg,
+                    teacher_id=teacher_id, context="export_upsell"
+                )
+                logger.info("[PDF UPSELL SENT] teacher_id=%d", teacher_id)
+            except Exception as upsell_exc:
+                logger.warning(
+                    "[PDF UPSELL FAILED] teacher_id=%d: %s", teacher_id, upsell_exc
+                )
         else:
             logger.warning(
                 "[PDF SEND FAILED] WhatsApp delivery failed for teacher_id=%d url=%s",
