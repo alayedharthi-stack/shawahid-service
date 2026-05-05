@@ -1,597 +1,583 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <title>ملف الشواهد – {{ teacher.name or 'المعلم' }}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap');
 
+    /* ── VARIABLES ─────────────────────────────────────────────────────────── */
+    :root {
+      --teal:      #2F6F73;
+      --teal-dk:   #1e4e51;
+      --teal-lt:   #e8f2f3;
+      --teal-mid:  #3d8f94;
+      --gold:      #C9A646;
+      --gold-lt:   #faf5e4;
+      --gold-dk:   #8a6f2e;
+      --white:     #ffffff;
+      --card:      #f8fafb;
+      --text:      #1f2d3d;
+      --body:      #3d4f61;
+      --muted:     #8595a6;
+      --border:    #e2eaed;
+      --border-dk: #c8d8dc;
+      --shadow:    0 1px 4px rgba(47,111,115,0.08), 0 0 0 1px rgba(47,111,115,0.06);
+      --radius:    10px;
+      --margin:    15mm;
+    }
+
+    /* ── RESET + BASE ──────────────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
-      --primary:    #2F6F73;
-      --primary-dk: #1e4e51;
-      --primary-lt: #e6f0f1;
-      --accent:     #C9A646;
-      --accent-lt:  #faf4e1;
-      --bg:         #FFFFFF;
-      --card:       #F9F9F9;
-      --text:       #333333;
-      --meta:       #888888;
-      --border:     #e0e6e7;
-      --white:      #ffffff;
-      --page-h:     297mm;
-      --margin:     16mm;
-    }
-
     body {
-      font-family: 'Cairo', 'Segoe UI', Arial, sans-serif;
-      font-size: 11pt;
-      color: var(--text);
-      background: var(--bg);
+      font-family: 'Cairo', 'Arial', sans-serif;
+      font-size: 10.5pt;
+      color: var(--body);
+      background: var(--white);
       direction: rtl;
+      line-height: 1.7;
     }
 
-    /* ── PAGE ─────────────────────────────────────────────────────────────── */
+    /* ── PAGES ─────────────────────────────────────────────────────────────── */
     .page {
-      page-break-after: always;
-      min-height: var(--page-h);
+      min-height: 297mm;
       padding: var(--margin);
+      page-break-after: always;
       position: relative;
+      background: var(--white);
     }
     .page:last-child { page-break-after: avoid; }
 
-    /* ── PAGE HEADER STRIP (for non-cover pages) ─────────────────────────── */
-    .page-strip {
-      background: var(--primary);
-      margin: calc(-1 * var(--margin)) calc(-1 * var(--margin)) 22px;
-      padding: 9px var(--margin);
+    /* Teal accent strip on top of every inner page */
+    .page-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      margin: calc(-1 * var(--margin)) calc(-1 * var(--margin)) 22px;
+      padding: 8px var(--margin);
+      background: var(--teal);
+      border-bottom: 2px solid var(--gold);
     }
-    .page-strip-title { color: var(--white); font-size: 11pt; font-weight: 700; }
-    .page-strip-sub   { color: rgba(255,255,255,0.65); font-size: 9pt; }
+    .ph-left  { color: #fff; font-size: 10pt; font-weight: 700; }
+    .ph-right { color: rgba(255,255,255,0.6); font-size: 8.5pt; }
 
-    /* ══════════════════════════════════════════════════════════════════════
+    /* ══════════════════════════════════════════════════════════════════
        COVER PAGE
-    ══════════════════════════════════════════════════════════════════════ */
+    ══════════════════════════════════════════════════════════════════ */
     .cover {
+      min-height: 297mm;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(150deg, var(--teal-dk) 0%, var(--teal) 65%, #3d9096 100%);
+      page-break-after: always;
+    }
+
+    /* Top band */
+    .cover-topband {
+      background: rgba(0,0,0,0.15);
+      padding: 12px 22mm;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: rgba(255,255,255,0.7);
+      font-size: 8.5pt;
+    }
+
+    /* Center content */
+    .cover-center {
+      flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: space-between;
-      background: linear-gradient(160deg, var(--primary-dk) 0%, var(--primary) 100%);
-      color: var(--white);
-      min-height: var(--page-h);
-      padding: 28mm 22mm 18mm;
+      justify-content: center;
       text-align: center;
+      padding: 0 22mm;
     }
 
-    .cover-top {}
-
-    .cover-logo {
-      width: 72px; height: 72px;
-      border: 2.5px solid var(--accent);
+    .cover-emblem {
+      width: 74px; height: 74px;
+      border: 2px solid var(--gold);
       border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      font-size: 32px;
-      margin: 0 auto 18px;
+      font-size: 30px;
+      margin-bottom: 20px;
+      background: rgba(255,255,255,0.07);
     }
 
-    .cover-badge {
-      display: inline-block;
-      font-size: 8.5pt;
-      letter-spacing: 2.5px;
-      color: var(--accent);
-      border: 1px solid var(--accent);
-      padding: 4px 20px;
+    .cover-label {
+      font-size: 8pt;
+      letter-spacing: 3px;
+      color: var(--gold);
+      border: 1px solid rgba(201,166,70,0.5);
+      padding: 3px 18px;
       border-radius: 20px;
-      margin-bottom: 20px;
+      margin-bottom: 18px;
       font-weight: 600;
     }
 
     .cover h1 {
-      font-size: 30pt;
+      font-size: 34pt;
       font-weight: 900;
-      line-height: 1.2;
-      margin-bottom: 6px;
+      color: #fff;
+      line-height: 1.15;
+      margin-bottom: 8px;
     }
 
-    .cover h2 {
-      font-size: 13pt;
-      font-weight: 400;
-      color: rgba(255,255,255,0.65);
-      margin-bottom: 10px;
-    }
-
-    .cover-teacher-role {
+    .cover-subtitle {
       font-size: 12pt;
-      color: var(--accent);
-      font-weight: 600;
-      margin-bottom: 28px;
+      color: rgba(255,255,255,0.6);
+      margin-bottom: 8px;
     }
 
-    .cover-divider {
-      width: 60px; height: 2px;
-      background: var(--accent);
-      margin: 0 auto 28px;
+    .cover-role {
+      font-size: 13pt;
+      color: var(--gold);
+      font-weight: 700;
+      margin-bottom: 26px;
     }
 
-    .cover-info {
+    .cover-rule {
+      width: 50px; height: 2px;
+      background: var(--gold);
+      margin: 0 auto 26px;
+    }
+
+    /* Info box */
+    .cover-box {
       background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.18);
+      border: 1px solid rgba(255,255,255,0.16);
       border-radius: 14px;
-      padding: 20px 32px;
+      padding: 18px 28px;
       width: 100%;
-      max-width: 380px;
-      margin: 0 auto 24px;
+      max-width: 360px;
     }
 
-    .cover-info-row {
+    .cbox-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.09);
+      font-size: 10pt;
+    }
+    .cbox-row:last-child { border-bottom: none; }
+    .cbox-label { color: var(--gold); font-weight: 700; font-size: 9.5pt; }
+    .cbox-value { color: rgba(255,255,255,0.88); }
+
+    /* Bottom band */
+    .cover-bottom {
+      padding: 14px 22mm;
+      background: rgba(0,0,0,0.18);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 9px 0;
-      border-bottom: 1px solid rgba(255,255,255,0.1);
-      font-size: 10.5pt;
-    }
-    .cover-info-row:last-child { border-bottom: none; }
-    .cover-info-label { color: var(--accent); font-weight: 700; }
-    .cover-info-value { color: rgba(255,255,255,0.9); }
-
-    .cover-bottom {}
-    .cover-moe {
-      font-size: 9.5pt;
       color: rgba(255,255,255,0.45);
-      border-top: 1px solid rgba(255,255,255,0.15);
-      padding-top: 14px;
-      margin-top: 8px;
+      font-size: 8.5pt;
     }
 
-    /* ══════════════════════════════════════════════════════════════════════
-       STATISTICS PAGE
-    ══════════════════════════════════════════════════════════════════════ */
-    .stats-grid {
+    /* ══════════════════════════════════════════════════════════════════
+       STATS PAGE
+    ══════════════════════════════════════════════════════════════════ */
+    .stat-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
-      margin-bottom: 28px;
+      gap: 12px;
+      margin-bottom: 26px;
     }
 
     .stat-card {
-      background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 18px 14px;
+      border-radius: var(--radius);
+      padding: 16px 12px;
       text-align: center;
+      background: var(--white);
     }
 
-    .stat-icon { font-size: 24px; margin-bottom: 8px; }
+    .stat-card-accent { border-top: 3px solid var(--teal); }
+    .stat-icon { font-size: 22px; margin-bottom: 8px; }
+    .stat-num  { font-size: 24pt; font-weight: 900; color: var(--teal); line-height: 1; margin-bottom: 4px; }
+    .stat-lbl  { font-size: 9pt; color: var(--muted); font-weight: 600; }
 
-    .stat-value {
-      font-size: 22pt;
-      font-weight: 900;
-      color: var(--primary);
-      line-height: 1;
-      margin-bottom: 4px;
-    }
-
-    .stat-label {
-      font-size: 9.5pt;
-      color: var(--meta);
-      font-weight: 600;
-    }
-
-    .top-categories { margin-top: 8px; }
-    .top-cat-title {
+    .top-cats-title {
       font-size: 11pt;
       font-weight: 700;
-      color: var(--primary);
+      color: var(--teal);
       margin-bottom: 14px;
-      padding-right: 8px;
-      border-right: 3px solid var(--accent);
+      padding-right: 10px;
+      border-right: 3px solid var(--gold);
     }
 
-    .top-cat-item {
+    .top-cat-row {
       display: flex;
       align-items: center;
       gap: 10px;
       margin-bottom: 10px;
     }
-    .top-cat-name {
-      font-size: 10.5pt;
-      color: var(--text);
-      width: 130px;
-      flex-shrink: 0;
-    }
-    .top-cat-bar-wrap {
-      flex: 1;
-      background: var(--border);
-      border-radius: 4px;
-      height: 10px;
-      overflow: hidden;
-    }
-    .top-cat-bar {
-      height: 100%;
-      background: linear-gradient(90deg, var(--primary), #3d8f94);
-      border-radius: 4px;
-    }
-    .top-cat-count {
-      font-size: 9.5pt;
-      font-weight: 700;
-      color: var(--primary);
-      width: 32px;
-      text-align: center;
-    }
+    .tc-name  { font-size: 10pt; color: var(--text); min-width: 120px; }
+    .tc-track { flex: 1; background: var(--teal-lt); border-radius: 4px; height: 9px; overflow: hidden; }
+    .tc-fill  { height: 100%; background: var(--teal); border-radius: 4px; }
+    .tc-num   { font-size: 9.5pt; font-weight: 700; color: var(--teal); min-width: 30px; text-align: center; }
 
-    /* ══════════════════════════════════════════════════════════════════════
-       TABLE OF CONTENTS
-    ══════════════════════════════════════════════════════════════════════ */
-    .toc-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 10px 12px;
-      border-bottom: 1px dotted var(--border);
-      font-size: 11pt;
-    }
-    .toc-item:last-child { border-bottom: none; }
-    .toc-name { font-weight: 600; color: var(--text); }
-    .toc-count {
-      background: var(--primary-lt);
-      color: var(--primary);
-      font-size: 9pt;
-      padding: 3px 12px;
-      border-radius: 20px;
-      font-weight: 700;
-    }
-    .toc-total-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 12px 12px 0;
-      margin-top: 8px;
-      border-top: 2px solid var(--primary);
-      font-weight: 700;
-      font-size: 11pt;
-    }
-
-    /* ══════════════════════════════════════════════════════════════════════
-       TEACHER PROFILE
-    ══════════════════════════════════════════════════════════════════════ */
-    .section-title {
+    /* ══════════════════════════════════════════════════════════════════
+       SECTION TITLE HELPER
+    ══════════════════════════════════════════════════════════════════ */
+    .sec {
       display: flex;
       align-items: center;
       gap: 10px;
       margin-bottom: 18px;
     }
-    .section-title-icon {
-      width: 34px; height: 34px;
-      background: var(--primary);
+    .sec-icon {
+      width: 32px; height: 32px;
+      background: var(--teal);
       border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 16px;
+      font-size: 15px;
       flex-shrink: 0;
+      color: #fff;
     }
-    .section-title-text {
-      font-size: 15pt;
+    .sec-title { font-size: 14pt; font-weight: 700; color: var(--teal); flex: 1; }
+    .sec-line  { height: 1px; flex: 1; background: var(--border); }
+
+    /* ══════════════════════════════════════════════════════════════════
+       TOC
+    ══════════════════════════════════════════════════════════════════ */
+    .toc-table { width: 100%; border-collapse: collapse; }
+    .toc-table tr { border-bottom: 1px solid var(--border); }
+    .toc-table tr:last-child { border-bottom: none; }
+    .toc-table td { padding: 9px 12px; font-size: 10.5pt; vertical-align: middle; }
+    .toc-num  { color: var(--teal); font-weight: 900; font-size: 11pt; width: 32px; }
+    .toc-name { font-weight: 600; color: var(--text); }
+    .toc-dot  { flex: 1; color: var(--border); letter-spacing: 2px; padding: 0 8px; }
+    .toc-badge {
+      background: var(--teal-lt);
+      color: var(--teal);
+      font-size: 8.5pt;
       font-weight: 700;
-      color: var(--primary);
-      flex: 1;
-    }
-    .section-title-line {
-      flex: 1;
-      height: 2px;
-      background: linear-gradient(90deg, var(--border), transparent);
+      padding: 2px 11px;
+      border-radius: 20px;
+      white-space: nowrap;
     }
 
-    .info-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 24px;
-    }
-    .info-table td {
-      padding: 10px 14px;
-      border-bottom: 1px solid var(--border);
-      font-size: 10.5pt;
-    }
-    .info-table td:first-child {
-      color: var(--white);
+    .toc-total {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 12px 0;
+      margin-top: 10px;
+      border-top: 2px solid var(--teal);
       font-weight: 700;
-      background: var(--primary);
-      width: 38%;
-      font-size: 10pt;
+      font-size: 11pt;
+      color: var(--teal);
     }
-    .info-table tr:last-child td { border-bottom: none; }
 
-    .philosophy-box {
-      background: var(--accent-lt);
-      border-right: 4px solid var(--accent);
-      border-radius: 0 10px 10px 0;
-      padding: 18px 20px;
+    /* ══════════════════════════════════════════════════════════════════
+       INFO TABLE (teacher profile)
+    ══════════════════════════════════════════════════════════════════ */
+    .info-table { width: 100%; border-collapse: collapse; border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; }
+    .info-table tr { border-bottom: 1px solid var(--border); }
+    .info-table tr:last-child { border-bottom: none; }
+    .info-table td { padding: 10px 14px; font-size: 10.5pt; }
+    .info-table .lbl { background: var(--teal); color: #fff; font-weight: 700; width: 38%; font-size: 10pt; }
+
+    .philosophy {
+      background: var(--gold-lt);
+      border-right: 4px solid var(--gold);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      padding: 16px 18px;
       font-size: 10.5pt;
       line-height: 1.9;
       color: #4a3800;
     }
 
-    /* ══════════════════════════════════════════════════════════════════════
-       SECTION INTRO PAGE
-    ══════════════════════════════════════════════════════════════════════ */
-    .section-intro {
+    /* ══════════════════════════════════════════════════════════════════
+       SECTION HERO BAND (replaces full-teal section pages)
+    ══════════════════════════════════════════════════════════════════ */
+    .section-hero {
       display: flex;
-      flex-direction: column;
-      justify-content: center;
       align-items: center;
-      text-align: center;
-      background: linear-gradient(135deg, var(--primary-dk), var(--primary));
-      color: var(--white);
-      min-height: var(--page-h);
-      padding: 30mm 20mm;
+      gap: 16px;
+      background: var(--teal);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 8px;
     }
 
-    .section-num {
-      font-size: 80pt;
-      font-weight: 900;
-      color: rgba(201,166,70,0.35);
-      line-height: 1;
-      margin-bottom: 16px;
-    }
-
-    .section-intro-title {
+    .sh-num {
       font-size: 28pt;
       font-weight: 900;
-      color: var(--white);
-      margin-bottom: 10px;
+      color: rgba(201,166,70,0.6);
+      line-height: 1;
+      flex-shrink: 0;
+      width: 50px;
+      text-align: center;
     }
 
-    .section-intro-en {
-      font-size: 13pt;
-      color: var(--accent);
-      font-weight: 600;
-      letter-spacing: 1px;
-      margin-bottom: 28px;
-    }
+    .sh-content { flex: 1; }
+    .sh-name { font-size: 16pt; font-weight: 900; color: #fff; line-height: 1.2; }
+    .sh-en   { font-size: 9.5pt; color: rgba(255,255,255,0.55); letter-spacing: 0.5px; margin-top: 2px; }
 
-    .section-intro-divider {
-      width: 60px; height: 2px;
-      background: var(--accent);
-      margin: 0 auto 28px;
-    }
-
-    .section-intro-desc {
-      font-size: 11.5pt;
-      line-height: 1.9;
-      color: rgba(255,255,255,0.8);
-      max-width: 480px;
-    }
-
-    .section-intro-footer {
-      margin-top: 48px;
-      font-size: 9.5pt;
-      color: rgba(255,255,255,0.45);
-    }
-
-    /* ══════════════════════════════════════════════════════════════════════
-       EVIDENCE CARD
-    ══════════════════════════════════════════════════════════════════════ */
-    .evidence-card {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      overflow: hidden;
-      margin-bottom: 20px;
-      background: var(--bg);
-      page-break-inside: avoid;
-    }
-
-    .evidence-card-header {
-      background: var(--card);
-      padding: 11px 16px 11px 52px;  /* right-padding for badge */
-      border-bottom: 1px solid var(--border);
-      position: relative;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 10px;
-    }
-
-    .evidence-badge {
-      position: absolute;
-      left: 14px;
-      top: 50%;
-      transform: translateY(-50%);
-      width: 36px; height: 36px;
-      background: var(--accent);
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      color: var(--white);
-      font-size: 8.5pt;
+    .sh-count {
+      background: var(--gold);
+      color: var(--teal-dk);
+      font-size: 9pt;
       font-weight: 900;
+      padding: 3px 14px;
+      border-radius: 20px;
+      white-space: nowrap;
       flex-shrink: 0;
     }
 
-    .evidence-title {
-      font-size: 11.5pt;
-      font-weight: 700;
-      color: var(--primary-dk);
-      flex: 1;
+    .section-desc {
+      background: var(--teal-lt);
+      border-right: 3px solid var(--teal-mid);
+      border-radius: 0 6px 6px 0;
+      padding: 9px 14px;
+      font-size: 9.5pt;
+      color: var(--teal-dk);
+      margin-bottom: 18px;
     }
 
-    .evidence-meta {
+    /* ══════════════════════════════════════════════════════════════════
+       EVIDENCE CARD
+    ══════════════════════════════════════════════════════════════════ */
+    .ev-card {
+      background: var(--white);
+      border: 1px solid var(--border-dk);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 18px;
+      page-break-inside: avoid;
+      box-shadow: var(--shadow);
+    }
+
+    /* ── card header ── */
+    .ev-header {
       display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 14px 11px 14px;
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
     }
 
-    .tag {
+    .ev-badge {
+      flex-shrink: 0;
+      width: 38px; height: 38px;
+      background: var(--gold);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff;
       font-size: 8pt;
-      padding: 2px 9px;
+      font-weight: 900;
+      line-height: 1.2;
+      text-align: center;
+    }
+
+    .ev-title-block { flex: 1; min-width: 0; }
+    .ev-title { font-size: 11.5pt; font-weight: 700; color: var(--teal-dk); }
+
+    .ev-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 5px;
+    }
+    .tag {
+      font-size: 7.5pt;
+      padding: 1.5px 8px;
       border-radius: 20px;
-      font-weight: 600;
+      font-weight: 700;
       white-space: nowrap;
     }
-    .tag-primary { background: var(--primary); color: var(--white); }
-    .tag-accent  { background: var(--accent-lt); color: #5a3d00; border: 1px solid var(--accent); }
-    .tag-gray    { background: #eeeeee; color: var(--meta); }
+    .t-teal  { background: var(--teal); color: #fff; }
+    .t-gold  { background: var(--gold-lt); color: var(--gold-dk); border: 1px solid #e0c56a; }
+    .t-gray  { background: #eef0f2; color: var(--muted); }
+    .t-green { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
 
-    .evidence-card-body { padding: 14px 16px; }
+    /* ── card body ── */
+    .ev-body { padding: 14px 16px; }
 
-    .evidence-description {
+    .field-label {
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: var(--teal);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 5px;
+    }
+
+    .ev-desc {
       font-size: 10.5pt;
       line-height: 1.85;
-      color: var(--text);
+      color: var(--body);
       margin-bottom: 14px;
     }
 
-    /* ─ Image Grid ────────────────────────────────────────────────────── */
+    /* Educational value box */
+    .edu-value {
+      background: var(--gold-lt);
+      border: 1px solid #e8cf7a;
+      border-radius: 7px;
+      padding: 10px 13px;
+      margin-bottom: 14px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .edu-value-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .edu-value-content {}
+    .edu-value-label { font-size: 8pt; font-weight: 700; color: var(--gold-dk); margin-bottom: 3px; }
+    .edu-value-text  { font-size: 9.5pt; color: #5a4200; line-height: 1.7; }
+
+    /* ── Media ─────────────────────────────────────────────────────── */
+    .media-wrap { margin-top: 4px; }
+
+    /* Image Grid */
     .img-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
       gap: 8px;
-      margin-top: 4px;
     }
-    .img-grid.single { grid-template-columns: 1fr; }
+    .img-grid.g1 { grid-template-columns: 1fr; }
+    .img-grid.g2 { grid-template-columns: 1fr 1fr; }
+    .img-grid.g3 { grid-template-columns: 1fr 1fr 1fr; }
+    .img-grid.g4 { grid-template-columns: 1fr 1fr; }
 
     .img-grid img {
       width: 100%;
-      max-height: 200px;
+      max-height: 180px;
       object-fit: cover;
-      border-radius: 8px;
+      border-radius: 7px;
       border: 1px solid var(--border);
       display: block;
     }
 
-    /* ─ Audio ─────────────────────────────────────────────────────────── */
+    /* Audio */
     .audio-card {
-      background: var(--primary-lt);
-      border: 1px solid #b8d8da;
-      border-radius: 8px;
-      padding: 14px 16px;
       display: flex;
       gap: 12px;
-      margin-top: 4px;
+      background: var(--teal-lt);
+      border: 1px solid #b8d8da;
+      border-radius: 7px;
+      padding: 12px 14px;
     }
-    .audio-icon { font-size: 26px; flex-shrink: 0; }
-    .audio-label { font-size: 9pt; color: var(--primary); font-weight: 700; margin-bottom: 4px; }
-    .audio-transcript { font-size: 10pt; color: var(--text); line-height: 1.7; font-style: italic; }
+    .audio-icon  { font-size: 22px; flex-shrink: 0; }
+    .audio-label { font-size: 8pt; font-weight: 700; color: var(--teal); margin-bottom: 4px; }
+    .audio-text  { font-size: 9.5pt; color: var(--body); line-height: 1.7; font-style: italic; }
 
-    /* ─ Video Thumbnail ───────────────────────────────────────────────── */
-    .video-wrap { position: relative; display: inline-block; width: 100%; }
+    /* Video */
+    .video-wrap { position: relative; }
     .video-thumb {
-      width: 100%;
-      max-height: 200px;
+      width: 100%; max-height: 180px;
       object-fit: cover;
-      border-radius: 8px;
+      border-radius: 7px;
       border: 1px solid var(--border);
     }
-    .video-play-btn {
+    .play-btn {
       position: absolute;
       top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      width: 52px; height: 52px;
-      background: rgba(47,111,115,0.85);
+      width: 48px; height: 48px;
+      background: rgba(47,111,115,0.82);
       border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      font-size: 22px;
-      color: var(--white);
+      font-size: 20px;
+      color: #fff;
+    }
+    .video-caption {
+      margin-top: 8px;
+      font-size: 9.5pt;
+      color: var(--body);
+      font-style: italic;
     }
 
-    /* ─ File Card ─────────────────────────────────────────────────────── */
+    /* File */
     .file-card {
-      background: var(--card);
-      border: 1px dashed var(--border);
-      border-radius: 8px;
-      padding: 12px 16px;
       display: flex;
-      align-items: center;
       gap: 12px;
-      margin-top: 4px;
+      background: var(--card);
+      border: 1px dashed var(--border-dk);
+      border-radius: 7px;
+      padding: 12px 14px;
+      align-items: center;
     }
-    .file-icon { font-size: 26px; flex-shrink: 0; }
-    .file-name { font-size: 10pt; font-weight: 700; color: var(--primary-dk); }
-    .file-type { font-size: 9pt; color: var(--meta); }
+    .file-icon { font-size: 24px; flex-shrink: 0; }
+    .file-name { font-size: 10pt; font-weight: 700; color: var(--teal-dk); }
+    .file-type { font-size: 8.5pt; color: var(--muted); }
 
-    /* ─ URL Card ──────────────────────────────────────────────────────── */
+    /* URL */
     .url-card {
-      background: var(--accent-lt);
-      border: 1px solid #e0c97a;
-      border-radius: 8px;
-      padding: 12px 16px;
       display: flex;
-      align-items: center;
       gap: 12px;
-      margin-top: 4px;
-      word-break: break-all;
+      background: var(--gold-lt);
+      border: 1px solid #e0c97a;
+      border-radius: 7px;
+      padding: 11px 14px;
+      align-items: flex-start;
     }
-    .url-icon { font-size: 22px; flex-shrink: 0; }
-    .url-text { font-size: 9.5pt; color: var(--primary-dk); font-weight: 600; }
+    .url-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+    .url-text  { font-size: 9.5pt; color: var(--teal-dk); word-break: break-all; font-weight: 600; }
 
-    /* ─ Evidence Footer ───────────────────────────────────────────────── */
-    .evidence-footer {
-      padding: 8px 16px;
-      background: var(--card);
-      border-top: 1px solid var(--border);
+    /* ── card footer ── */
+    .ev-footer {
       display: flex;
       gap: 16px;
-      font-size: 9pt;
-      color: var(--meta);
+      padding: 7px 14px;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      font-size: 8.5pt;
+      color: var(--muted);
     }
-    .evidence-footer span { display: flex; align-items: center; gap: 4px; }
+    .ev-footer span { display: flex; align-items: center; gap: 4px; }
 
-    /* ── EMPTY CATEGORY ───────────────────────────────────────────────── */
-    .empty-cat {
+    /* ══════════════════════════════════════════════════════════════════
+       EMPTY CATEGORY
+    ══════════════════════════════════════════════════════════════════ */
+    .empty {
       text-align: center;
-      color: var(--meta);
-      font-size: 10pt;
       padding: 24px;
       border: 1px dashed var(--border);
-      border-radius: 10px;
+      border-radius: var(--radius);
+      color: var(--muted);
+      font-size: 10pt;
     }
 
-    /* ══════════════════════════════════════════════════════════════════════
-       CLOSING PAGE
-    ══════════════════════════════════════════════════════════════════════ */
-    .closing-box {
-      background: linear-gradient(135deg, var(--primary-dk), var(--primary));
-      color: var(--white);
+    /* ══════════════════════════════════════════════════════════════════
+       CLOSING
+    ══════════════════════════════════════════════════════════════════ */
+    .closing-hero {
+      background: linear-gradient(135deg, var(--teal-dk), var(--teal));
       border-radius: 14px;
-      padding: 36px 32px;
+      padding: 32px 28px;
+      color: #fff;
       text-align: center;
-      margin-bottom: 32px;
+      margin-bottom: 28px;
     }
-    .closing-box h3 {
-      font-size: 17pt;
-      color: var(--accent);
-      margin-bottom: 14px;
-    }
-    .closing-box p {
-      font-size: 10.5pt;
-      line-height: 1.9;
-      color: rgba(255,255,255,0.8);
-      max-width: 480px;
-      margin: 0 auto;
-    }
+    .closing-hero h3  { font-size: 18pt; color: var(--gold); margin-bottom: 12px; }
+    .closing-hero p   { font-size: 10.5pt; line-height: 1.9; color: rgba(255,255,255,0.78); }
+    .closing-hero p + p { margin-top: 10px; font-size: 9.5pt; color: rgba(255,255,255,0.5); }
 
-    .signature-row {
+    .sig-row {
       display: flex;
       justify-content: space-between;
-      padding-top: 24px;
+      padding-top: 22px;
       border-top: 1px solid var(--border);
-      font-size: 10.5pt;
+      margin-top: 4px;
     }
-    .sig-block { line-height: 1.8; }
-    .sig-block strong { color: var(--primary); }
-    .sig-line { margin-top: 24px; color: var(--meta); font-size: 9.5pt; }
+    .sig-block { line-height: 1.8; font-size: 10.5pt; }
+    .sig-block strong { color: var(--teal); }
+    .sig-line { margin-top: 22px; font-size: 9pt; color: var(--muted); }
 
-    .generated-stamp {
+    .stamp {
       text-align: center;
-      margin-top: 28px;
-      font-size: 8.5pt;
-      color: #bbb;
+      margin-top: 24px;
+      font-size: 8pt;
+      color: #ccc;
     }
 
-    /* ── PRINT ────────────────────────────────────────────────────────── */
+    /* ── PRINT ─────────────────────────────────────────────────────── */
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
@@ -599,387 +585,407 @@
 </head>
 <body>
 
-<!-- ════════════════════════════════════════════════════════════════════════
-     1. COVER PAGE
-════════════════════════════════════════════════════════════════════════ -->
-<div class="cover page">
-  <div class="cover-top">
-    <div class="cover-logo">📚</div>
-    <div class="cover-badge">TEACHER PORTFOLIO — ملف الشواهد</div>
+<!-- ══════════════════════════════════════════════════════════════════
+     COVER
+══════════════════════════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="cover-topband">
+    <span>المملكة العربية السعودية · وزارة التعليم</span>
+    <span>العام الدراسي {{ academic_year }}</span>
+  </div>
 
+  <div class="cover-center">
+    <div class="cover-emblem">📚</div>
+    <div class="cover-label">TEACHER PORTFOLIO · ملف الشواهد</div>
     <h1>ملف الشواهد</h1>
-    <h2>توثيق الأداء المهني للمعلم</h2>
-    {% if teacher.subject %}
-    <div class="cover-teacher-role">
-      معلم {{ teacher.subject }}
+    <div class="cover-subtitle">توثيق الأداء المهني للمعلم</div>
+    {% if teacher.subject or teacher.stage %}
+    <div class="cover-role">
+      {% if teacher.subject %}معلم {{ teacher.subject }}{% endif %}
       {% if teacher.stage %} · {{ teacher.stage }}{% endif %}
     </div>
     {% endif %}
+    <div class="cover-rule"></div>
 
-    <div class="cover-divider"></div>
-
-    <div class="cover-info">
-      <div class="cover-info-row">
-        <span class="cover-info-label">اسم المعلم</span>
-        <span class="cover-info-value">{{ teacher.name or '—' }}</span>
+    <div class="cover-box">
+      <div class="cbox-row">
+        <span class="cbox-label">المعلم</span>
+        <span class="cbox-value">{{ teacher.name or '—' }}</span>
       </div>
       {% if teacher.school_name %}
-      <div class="cover-info-row">
-        <span class="cover-info-label">المدرسة</span>
-        <span class="cover-info-value">{{ teacher.school_name }}</span>
+      <div class="cbox-row">
+        <span class="cbox-label">المدرسة</span>
+        <span class="cbox-value">{{ teacher.school_name }}</span>
       </div>
       {% endif %}
       {% if teacher.principal_name %}
-      <div class="cover-info-row">
-        <span class="cover-info-label">مدير المدرسة</span>
-        <span class="cover-info-value">{{ teacher.principal_name }}</span>
+      <div class="cbox-row">
+        <span class="cbox-label">مدير المدرسة</span>
+        <span class="cbox-value">{{ teacher.principal_name }}</span>
       </div>
       {% endif %}
       {% if teacher.grades %}
-      <div class="cover-info-row">
-        <span class="cover-info-label">الصفوف</span>
-        <span class="cover-info-value">{{ teacher.grades }}</span>
+      <div class="cbox-row">
+        <span class="cbox-label">الصفوف</span>
+        <span class="cbox-value">{{ teacher.grades }}</span>
       </div>
       {% endif %}
-      <div class="cover-info-row">
-        <span class="cover-info-label">إجمالي الشواهد</span>
-        <span class="cover-info-value">{{ total_count }} شاهد</span>
+      <div class="cbox-row">
+        <span class="cbox-label">إجمالي الشواهد</span>
+        <span class="cbox-value">{{ total_count }} شاهد</span>
       </div>
     </div>
   </div>
 
   <div class="cover-bottom">
-    <div class="cover-moe">
-      المملكة العربية السعودية · وزارة التعليم
-      &nbsp;|&nbsp; العام الدراسي {{ academic_year }}
-    </div>
+    <span>إعداد وتنظيم الشواهد بصيغة PDF — شواهد AI</span>
+    <span>{{ generated_at }}</span>
   </div>
 </div>
 
 
-<!-- ════════════════════════════════════════════════════════════════════════
-     2. STATISTICS PAGE
-════════════════════════════════════════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════════════════════════════
+     STATISTICS
+══════════════════════════════════════════════════════════════════ -->
 <div class="page">
-  <div class="page-strip">
-    <span class="page-strip-title">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
-    <span class="page-strip-sub">ملخص إحصائي</span>
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">ملخص إحصائي</span>
   </div>
 
-  <div class="section-title" style="margin-bottom:20px;">
-    <div class="section-title-icon">📊</div>
-    <div class="section-title-text">ملخص الشواهد</div>
-    <div class="section-title-line"></div>
+  <div class="sec">
+    <div class="sec-icon">📊</div>
+    <div class="sec-title">ملخص الشواهد والإحصائيات</div>
+    <div class="sec-line"></div>
   </div>
 
-  <div class="stats-grid">
-    <div class="stat-card">
+  <div class="stat-grid">
+    <div class="stat-card stat-card-accent">
       <div class="stat-icon">📁</div>
-      <div class="stat-value">{{ total_count }}</div>
-      <div class="stat-label">إجمالي الشواهد</div>
+      <div class="stat-num">{{ total_count }}</div>
+      <div class="stat-lbl">إجمالي الشواهد</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card stat-card-accent">
       <div class="stat-icon">📷</div>
-      <div class="stat-value">{{ stats.images }}</div>
-      <div class="stat-label">صور</div>
+      <div class="stat-num">{{ stats.images }}</div>
+      <div class="stat-lbl">صور توثيقية</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card stat-card-accent">
       <div class="stat-icon">🎥</div>
-      <div class="stat-value">{{ stats.videos }}</div>
-      <div class="stat-label">مقاطع فيديو</div>
+      <div class="stat-num">{{ stats.videos }}</div>
+      <div class="stat-lbl">مقاطع فيديو</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card stat-card-accent">
       <div class="stat-icon">🎙</div>
-      <div class="stat-value">{{ stats.audios }}</div>
-      <div class="stat-label">تسجيلات صوتية</div>
+      <div class="stat-num">{{ stats.audios }}</div>
+      <div class="stat-lbl">تسجيلات صوتية</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card stat-card-accent">
       <div class="stat-icon">📄</div>
-      <div class="stat-value">{{ stats.documents }}</div>
-      <div class="stat-label">ملفات ووثائق</div>
+      <div class="stat-num">{{ stats.documents }}</div>
+      <div class="stat-lbl">ملفات ووثائق</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card stat-card-accent">
       <div class="stat-icon">🔗</div>
-      <div class="stat-value">{{ stats.urls }}</div>
-      <div class="stat-label">روابط إثرائية</div>
+      <div class="stat-num">{{ stats.urls }}</div>
+      <div class="stat-lbl">روابط إثرائية</div>
     </div>
   </div>
 
   {% if stats.top_categories %}
-  <div class="top-categories">
-    <div class="top-cat-title">أبرز التصنيفات</div>
-    {% for cat in stats.top_categories %}
-    <div class="top-cat-item">
-      <span class="top-cat-name">{{ cat.name }}</span>
-      <div class="top-cat-bar-wrap">
-        <div class="top-cat-bar" style="width:{{ cat.pct }}%;"></div>
-      </div>
-      <span class="top-cat-count">{{ cat.count }}</span>
-    </div>
-    {% endfor %}
+  <div class="sec" style="margin-top:10px; margin-bottom:14px;">
+    <div class="sec-icon">🏆</div>
+    <div class="sec-title">أبرز التصنيفات</div>
+    <div class="sec-line"></div>
   </div>
-  {% endif %}
-</div>
-
-
-<!-- ════════════════════════════════════════════════════════════════════════
-     3. TABLE OF CONTENTS
-════════════════════════════════════════════════════════════════════════ -->
-<div class="page">
-  <div class="page-strip">
-    <span class="page-strip-title">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
-    <span class="page-strip-sub">فهرس المحتويات</span>
+  {% for cat in stats.top_categories %}
+  <div class="top-cat-row">
+    <span class="tc-name">{{ cat.name }}</span>
+    <div class="tc-track"><div class="tc-fill" style="width:{{ cat.pct }}%;"></div></div>
+    <span class="tc-num">{{ cat.count }}</span>
   </div>
-
-  <div class="section-title" style="margin-bottom:20px;">
-    <div class="section-title-icon">📋</div>
-    <div class="section-title-text">فهرس المحتويات</div>
-    <div class="section-title-line"></div>
-  </div>
-
-  {% for cat in categories %}
-  {% if cat.count > 0 %}
-  <div class="toc-item">
-    <span class="toc-name">{{ cat.name }}</span>
-    <span class="toc-count">{{ cat.count }} شاهد</span>
-  </div>
-  {% endif %}
   {% endfor %}
+  {% endif %}
+</div>
 
-  <div class="toc-total-row">
+
+<!-- ══════════════════════════════════════════════════════════════════
+     TABLE OF CONTENTS
+══════════════════════════════════════════════════════════════════ -->
+<div class="page">
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">فهرس المحتويات</span>
+  </div>
+
+  <div class="sec">
+    <div class="sec-icon">📋</div>
+    <div class="sec-title">فهرس المحتويات</div>
+    <div class="sec-line"></div>
+  </div>
+
+  <table class="toc-table">
+    {% set ns = namespace(idx=0) %}
+    {% for cat in categories %}
+    {% if cat.count > 0 %}
+    {% set ns.idx = ns.idx + 1 %}
+    <tr>
+      <td class="toc-num">{{ ns.idx }}</td>
+      <td class="toc-name">{{ cat.name }}</td>
+      <td style="text-align:left;"><span class="toc-badge">{{ cat.count }} شاهد</span></td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </table>
+
+  <div class="toc-total">
     <span>الإجمالي</span>
-    <span class="toc-count">{{ total_count }} شاهد</span>
+    <span class="toc-badge" style="font-size:10pt; padding:3px 14px;">{{ total_count }} شاهد</span>
   </div>
 </div>
 
 
-<!-- ════════════════════════════════════════════════════════════════════════
-     4. TEACHER PROFILE
-════════════════════════════════════════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════════════════════════════
+     TEACHER PROFILE
+══════════════════════════════════════════════════════════════════ -->
 <div class="page">
-  <div class="page-strip">
-    <span class="page-strip-title">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
-    <span class="page-strip-sub">بيانات المعلم</span>
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">بيانات المعلم</span>
   </div>
 
-  <div class="section-title">
-    <div class="section-title-icon">👤</div>
-    <div class="section-title-text">بيانات المعلم والفلسفة التعليمية</div>
-    <div class="section-title-line"></div>
+  <div class="sec">
+    <div class="sec-icon">👤</div>
+    <div class="sec-title">بيانات المعلم والفلسفة التعليمية</div>
+    <div class="sec-line"></div>
   </div>
 
   <table class="info-table">
-    <tr><td>الاسم الكامل</td><td>{{ teacher.name or '—' }}</td></tr>
-    <tr><td>التخصص / المادة</td><td>{{ teacher.subject or '—' }}</td></tr>
-    <tr><td>المرحلة الدراسية</td><td>{{ teacher.stage or '—' }}</td></tr>
-    <tr><td>الصفوف</td><td>{{ teacher.grades or '—' }}</td></tr>
-    <tr><td>المدرسة</td><td>{{ teacher.school_name or '—' }}</td></tr>
-    <tr><td>مدير المدرسة</td><td>{{ teacher.principal_name or '—' }}</td></tr>
-    <tr><td>إجمالي الشواهد</td><td>{{ total_count }} شاهد</td></tr>
-    <tr><td>العام الدراسي</td><td>{{ academic_year }}</td></tr>
+    <tr><td class="lbl">الاسم الكامل</td><td>{{ teacher.name or '—' }}</td></tr>
+    <tr><td class="lbl">التخصص / المادة</td><td>{{ teacher.subject or '—' }}</td></tr>
+    <tr><td class="lbl">المرحلة الدراسية</td><td>{{ teacher.stage or '—' }}</td></tr>
+    <tr><td class="lbl">الصفوف</td><td>{{ teacher.grades or '—' }}</td></tr>
+    <tr><td class="lbl">المدرسة</td><td>{{ teacher.school_name or '—' }}</td></tr>
+    <tr><td class="lbl">مدير المدرسة</td><td>{{ teacher.principal_name or '—' }}</td></tr>
+    <tr><td class="lbl">إجمالي الشواهد</td><td>{{ total_count }} شاهد</td></tr>
+    <tr><td class="lbl">العام الدراسي</td><td>{{ academic_year }}</td></tr>
   </table>
 
-  <div class="section-title" style="margin-top:24px;">
-    <div class="section-title-icon">💡</div>
-    <div class="section-title-text">الفلسفة التعليمية</div>
-    <div class="section-title-line"></div>
+  <div class="sec">
+    <div class="sec-icon">💡</div>
+    <div class="sec-title">الفلسفة التعليمية</div>
+    <div class="sec-line"></div>
   </div>
-  <div class="philosophy-box">
+  <div class="philosophy">
     يؤمن المعلم <strong>{{ teacher.name or '' }}</strong> بأن التعليم الفعّال
     يقوم على التخطيط المحكم، والتنفيذ الإبداعي، والتقويم المستمر.
     ويسعى دائمًا إلى تنمية مهارات التفكير الناقد، وتعزيز قيم التعاون والمسؤولية،
-    مستعينًا بأساليب التعلم النشط والتقنيات الحديثة لتحقيق مخرجات تعليمية متميزة.
+    مستعينًا بأساليب التعلم النشط والتقنيات الحديثة لتحقيق مخرجات تعليمية متميزة
+    تُسهم في رفع مستوى الطلاب وتُنمّي شخصياتهم.
   </div>
 </div>
 
 
-<!-- ════════════════════════════════════════════════════════════════════════
-     5. EVIDENCE SECTIONS
-════════════════════════════════════════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════════════════════════════
+     EVIDENCE SECTIONS  (no full-teal intro page — clean header band)
+══════════════════════════════════════════════════════════════════ -->
+{% set ns2 = namespace(cat_idx=0) %}
 {% for cat in categories %}
 {% if cat.count > 0 %}
+{% set ns2.cat_idx = ns2.cat_idx + 1 %}
 
-<!-- Section intro page -->
-<div class="section-intro page">
-  <div class="section-num">{{ loop.index }}</div>
-  <div class="section-intro-title">{{ cat.name }}</div>
-  <div class="section-intro-en">{{ cat.en or '' }}</div>
-  <div class="section-intro-divider"></div>
-  <div class="section-intro-desc">{{ cat.desc or '' }}</div>
-  <div class="section-intro-footer">
-    ملف الشواهد — {{ teacher.name or 'المعلم' }}
-    {% if teacher.school_name %} · {{ teacher.school_name }}{% endif %}
-  </div>
-</div>
-
-<!-- Evidence cards page -->
 <div class="page">
-  <div class="page-strip">
-    <span class="page-strip-title">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
-    <span class="page-strip-sub">{{ cat.name }}</span>
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">{{ cat.name }}</span>
   </div>
 
+  <!-- Section hero band -->
+  <div class="section-hero">
+    <div class="sh-num">{{ ns2.cat_idx }}</div>
+    <div class="sh-content">
+      <div class="sh-name">{{ cat.name }}</div>
+      {% if cat.en %}<div class="sh-en">{{ cat.en }}</div>{% endif %}
+    </div>
+    <div class="sh-count">{{ cat.count }} شاهد</div>
+  </div>
+
+  {% if cat.desc %}
+  <div class="section-desc">{{ cat.desc }}</div>
+  {% endif %}
+
+  <!-- Evidence cards -->
   {% for ev in cat.evidences %}
-  <div class="evidence-card">
+  <div class="ev-card">
+
     <!-- Header -->
-    <div class="evidence-card-header">
-      <div class="evidence-badge">شاهد</div>
-      <div class="evidence-title">{{ ev.title or 'شاهد بدون عنوان' }}</div>
-      <div class="evidence-meta">
-        {% if ev.grade %}<span class="tag tag-primary">{{ ev.grade }}</span>{% endif %}
-        {% if ev.subject %}<span class="tag tag-accent">{{ ev.subject }}</span>{% endif %}
-        <span class="tag tag-gray">
-          {% if ev.evidence_type == 'image' %}📷
-          {% elif ev.evidence_type == 'video' %}🎥
-          {% elif ev.evidence_type == 'audio' %}🎙
-          {% elif ev.evidence_type in ('pdf', 'document') %}📄
-          {% elif ev.evidence_type == 'url' %}🔗
-          {% else %}📝{% endif %}
-          {{ ev.evidence_type }}
-        </span>
+    <div class="ev-header">
+      <div class="ev-badge">شاهد</div>
+      <div class="ev-title-block">
+        <div class="ev-title">{{ ev.title or 'شاهد بدون عنوان' }}</div>
+        <div class="ev-tags">
+          {% if ev.subject %}<span class="tag t-teal">📖 {{ ev.subject }}</span>{% endif %}
+          {% if ev.grade   %}<span class="tag t-teal">🎓 {{ ev.grade }}</span>{% endif %}
+          {% if ev.category %}<span class="tag t-gold">{{ ev.category }}</span>{% endif %}
+          <span class="tag t-gray">
+            {%- if ev.evidence_type == 'image'    %}📷 صورة
+            {%- elif ev.evidence_type == 'video'  %}🎥 فيديو
+            {%- elif ev.evidence_type == 'audio'  %}🎙 صوت
+            {%- elif ev.evidence_type in ('pdf','document') %}📄 ملف
+            {%- elif ev.evidence_type == 'url'    %}🔗 رابط
+            {%- else %}📝 نص{%- endif %}
+          </span>
+        </div>
       </div>
     </div>
 
     <!-- Body -->
-    <div class="evidence-card-body">
+    <div class="ev-body">
+
+      <!-- Description -->
       {% if ev.description %}
-      <p class="evidence-description">{{ ev.description }}</p>
+      <div class="field-label">الوصف التربوي</div>
+      <div class="ev-desc">{{ ev.description }}</div>
       {% elif ev.message_text %}
-      <p class="evidence-description" style="color:var(--meta); font-style:italic;">
-        {{ ev.message_text[:400] }}{% if ev.message_text|length > 400 %}…{% endif %}
-      </p>
-      {% endif %}
-
-      <!-- IMAGE -->
-      {% if ev.evidence_type == 'image' and ev.storage_path %}
-      <div class="img-grid single">
-        <img
-          src="file://{{ ev.storage_path }}"
-          alt="{{ ev.title or 'صورة شاهد' }}"
-          onerror="this.style.display='none'"
-        />
-      </div>
-
-      <!-- AUDIO -->
-      {% elif ev.evidence_type == 'audio' %}
-      <div class="audio-card">
-        <div class="audio-icon">🎙</div>
-        <div>
-          <div class="audio-label">تسجيل صوتي — نص التفريغ</div>
-          {% if ev.message_text %}
-          <div class="audio-transcript">{{ ev.message_text[:600] }}{% if ev.message_text|length > 600 %}…{% endif %}</div>
-          {% else %}
-          <div class="audio-transcript" style="color:var(--meta);">تسجيل صوتي — لا يتوفر نص تفريغ.</div>
-          {% endif %}
-        </div>
-      </div>
-
-      <!-- VIDEO -->
-      {% elif ev.evidence_type == 'video' %}
-      {% if ev.storage_path %}
-      <div class="video-wrap">
-        <img
-          class="video-thumb"
-          src="file://{{ ev.storage_path }}"
-          alt="مقطع فيديو"
-          onerror="this.style.display='none'"
-        />
-        <div class="video-play-btn">▶</div>
+      <div class="field-label">المحتوى</div>
+      <div class="ev-desc" style="color:var(--muted); font-style:italic;">
+        {{ ev.message_text[:500] }}{% if ev.message_text|length > 500 %}…{% endif %}
       </div>
       {% endif %}
-      {% if ev.message_text %}
-      <div class="audio-card" style="margin-top:8px;">
-        <div class="audio-icon">🎬</div>
-        <div>
-          <div class="audio-label">ملخص المقطع المرئي</div>
-          <div class="audio-transcript">{{ ev.message_text[:400] }}…</div>
+
+      <!-- Educational value -->
+      {% if cat.value %}
+      <div class="edu-value">
+        <div class="edu-value-icon">✨</div>
+        <div class="edu-value-content">
+          <div class="edu-value-label">القيمة التربوية</div>
+          <div class="edu-value-text">{{ cat.value }}</div>
         </div>
       </div>
       {% endif %}
 
-      <!-- URL / LINK -->
-      {% elif ev.evidence_type == 'url' %}
-      {% set url_text = ev.message_text or ev.media_url or '' %}
-      {% if url_text %}
-      <div class="url-card">
-        <div class="url-icon">🔗</div>
-        <div class="url-text">{{ url_text[:200] }}</div>
-      </div>
-      {% endif %}
+      <!-- ── MEDIA ─────────────────────────────────────────────────── -->
+      <div class="media-wrap">
 
-      <!-- DOCUMENT / PDF -->
-      {% elif ev.evidence_type in ('pdf', 'document') or ev.file_name %}
-      <div class="file-card">
-        <div class="file-icon">
-          {% if ev.evidence_type == 'pdf' or (ev.file_name and ev.file_name.endswith('.pdf')) %}📄
-          {% else %}📝{% endif %}
+        {% if ev.evidence_type == 'image' and ev.storage_path %}
+        <div class="img-grid g1">
+          <img src="file://{{ ev.storage_path }}"
+               alt="{{ ev.title or 'صورة' }}"
+               onerror="this.style.display='none'" />
         </div>
-        <div>
-          <div class="file-name">{{ ev.file_name or 'ملف مرفق' }}</div>
-          <div class="file-type">{{ (ev.evidence_type or 'document') | upper }}</div>
+
+        {% elif ev.evidence_type == 'audio' %}
+        <div class="audio-card">
+          <div class="audio-icon">🎙</div>
+          <div>
+            <div class="audio-label">تسجيل صوتي — نص التفريغ</div>
+            {% if ev.message_text %}
+            <div class="audio-text">{{ ev.message_text[:700] }}{% if ev.message_text|length > 700 %}…{% endif %}</div>
+            {% else %}
+            <div class="audio-text" style="color:var(--muted);">لا يتوفر نص تفريغ لهذا التسجيل.</div>
+            {% endif %}
+          </div>
         </div>
-      </div>
-      {% endif %}
-    </div>
+
+        {% elif ev.evidence_type == 'video' %}
+        {% if ev.storage_path %}
+        <div class="video-wrap">
+          <img class="video-thumb"
+               src="file://{{ ev.storage_path }}"
+               alt="مقطع فيديو"
+               onerror="this.style.display='none'" />
+          <div class="play-btn">▶</div>
+        </div>
+        {% endif %}
+        {% if ev.message_text and ev.description != ev.message_text %}
+        <div class="video-caption">{{ ev.message_text[:400] }}</div>
+        {% endif %}
+
+        {% elif ev.evidence_type == 'url' %}
+        {% set url_text = ev.message_text or ev.media_url or '' %}
+        {% if url_text %}
+        <div class="url-card">
+          <div class="url-icon">🔗</div>
+          <div class="url-text">{{ url_text[:300] }}</div>
+        </div>
+        {% endif %}
+
+        {% elif ev.evidence_type in ('pdf', 'document') or ev.file_name %}
+        <div class="file-card">
+          <div class="file-icon">
+            {%- if ev.evidence_type == 'pdf' or (ev.file_name and ev.file_name.lower().endswith('.pdf')) %}📄
+            {%- elif ev.file_name and ev.file_name.lower().endswith('.docx') %}📝
+            {%- else %}🗂️{%- endif %}
+          </div>
+          <div>
+            <div class="file-name">{{ ev.file_name or 'ملف مرفق' }}</div>
+            <div class="file-type">{{ (ev.evidence_type or 'document') | upper }}</div>
+          </div>
+        </div>
+        {% endif %}
+
+      </div><!-- /media-wrap -->
+    </div><!-- /ev-body -->
 
     <!-- Footer -->
-    <div class="evidence-footer">
+    <div class="ev-footer">
       <span>📅 {{ ev.created_at.strftime('%Y/%m/%d') if ev.created_at else '—' }}</span>
-      {% if ev.subject %}<span>📖 {{ ev.subject }}</span>{% endif %}
-      {% if ev.grade %}<span>🎓 {{ ev.grade }}</span>{% endif %}
+      {% if ev.subject  %}<span>📖 {{ ev.subject }}</span>{% endif %}
+      {% if ev.grade    %}<span>🎓 {{ ev.grade }}</span>{% endif %}
       {% if ev.category %}<span>🏷 {{ ev.category }}</span>{% endif %}
     </div>
-  </div>
+  </div><!-- /ev-card -->
   {% endfor %}
-</div>
+
+  {% if not cat.evidences %}
+  <div class="empty">لا توجد شواهد مسجّلة في هذا المحور بعد.</div>
+  {% endif %}
+</div><!-- /page -->
 
 {% endif %}
 {% endfor %}
 
 
-<!-- ════════════════════════════════════════════════════════════════════════
-     6. CLOSING PAGE
-════════════════════════════════════════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════════════════════════════
+     CLOSING
+══════════════════════════════════════════════════════════════════ -->
 <div class="page">
-  <div class="page-strip">
-    <span class="page-strip-title">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
-    <span class="page-strip-sub">خاتمة الملف</span>
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">خاتمة الملف</span>
   </div>
 
-  <div class="closing-box">
+  <div class="closing-hero">
     <h3>خاتمة الملف</h3>
     <p>
       يُعدّ هذا الملف توثيقًا أمينًا لجهود المعلم
-      <strong style="color:var(--accent);">{{ teacher.name or '' }}</strong>
+      <strong style="color:var(--gold);">{{ teacher.name or '' }}</strong>
       خلال العام الدراسي {{ academic_year }}.
-      وقد حرص على تنويع شواهد أدائه المهني لتشمل التخطيط والتنفيذ والتقويم والأنشطة الإثرائية،
-      سعيًا نحو تحقيق الجودة التعليمية ورفع مستوى التحصيل الدراسي لطلابه.
+      وقد حرص على تنويع شواهد أدائه المهني لتشمل التخطيط والتنفيذ والتقويم
+      والأنشطة الإثرائية، سعيًا نحو تحقيق الجودة التعليمية ورفع مستوى التحصيل.
     </p>
-    <br />
-    <p style="font-size:9.5pt; color:rgba(255,255,255,0.55);">
+    <p>
       إن ما يحويه هذا الملف من صور وخطط وتسجيلات وملفات ليس غاية في ذاته،
-      بل هو وسيلة للتأمل والتطوير المستمر،
-      بما ينعكس على جودة التعلم ورفع مستوى التحصيل.
+      بل هو وسيلة للتأمل والتطوير المستمر.
     </p>
   </div>
 
-  <div class="signature-row">
+  <div class="sig-row">
     <div class="sig-block">
-      <strong>المعلم</strong><br />
-      {{ teacher.name or '—' }}<br />
-      {% if teacher.subject %}{{ teacher.subject }} — {% endif %}
-      {{ teacher.school_name or '' }}<br />
-      <span class="sig-line">التوقيع: ___________________</span>
+      <strong>المعلم</strong><br/>
+      {{ teacher.name or '—' }}<br/>
+      {% if teacher.subject %}{{ teacher.subject }}{% if teacher.school_name %} — {% endif %}{% endif %}{{ teacher.school_name or '' }}<br/>
+      <div class="sig-line">التوقيع: ___________________________</div>
     </div>
     <div class="sig-block" style="text-align:left;">
-      <strong>مدير المدرسة</strong><br />
-      {{ teacher.principal_name or '—' }}<br />
-      {{ teacher.school_name or '' }}<br />
-      <span class="sig-line">التوقيع: ___________________</span>
+      <strong>مدير المدرسة</strong><br/>
+      {{ teacher.principal_name or '—' }}<br/>
+      {{ teacher.school_name or '' }}<br/>
+      <div class="sig-line">التوقيع: ___________________________</div>
     </div>
   </div>
 
-  <div class="generated-stamp">
+  <div class="stamp">
     تم إنشاء هذا الملف تلقائيًا عبر منصة شواهد AI &nbsp;·&nbsp; {{ generated_at }}
   </div>
 </div>
