@@ -10,6 +10,7 @@ Message flow:  WhatsApp inbound → ask_gpt() → GPTDecision → execute
 GPT is the sole decision-maker. Code only executes what GPT decides.
 """
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -42,6 +43,8 @@ from app.services.whatsapp import (
     get_meta_media_url,
     send_whatsapp_message,
     send_whatsapp_button,
+    send_export_options_buttons,
+    build_payment_link_message,
     build_payment_receipt_message,
     build_subscription_activated_message,
 )
@@ -51,6 +54,22 @@ from app.core.phone import normalize_phone
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Short in-memory session state. This is intentionally lightweight:
+# it helps the conversational flow inside the current process without changing DB schema.
+_LAST_PROFILE_UPDATES: dict[int, dict[str, str]] = {}
+_PENDING_EXPORT_REQUESTS: set[int] = set()
+
+_PROFILE_FIELD_LABELS: dict[str, str] = {
+    "name": "الاسم",
+    "subject": "المادة",
+    "stage": "المرحلة",
+    "grades": "الصفوف",
+    "school_name": "المدرسة",
+    "principal_name": "مدير المدرسة",
+    "region": "المنطقة",
+    "education_admin": "إدارة التعليم",
+}
 
 # ─── Meta Webhook Verification (GET) ─────────────────────────────────────────
 
@@ -123,6 +142,16 @@ def _parse_meta_payload(body: dict) -> dict | None:
             # We use "voice" as the msg_type for voice notes, "audio" for music/files
             if msg["audio"].get("voice"):
                 msg_type = "voice"
+        elif msg_type == "interactive":
+            interactive = msg.get("interactive", {})
+            if interactive.get("type") == "button_reply":
+                reply = interactive.get("button_reply", {})
+                # Prefer stable id (export_full/export_smart/export_short), fallback to title.
+                text = reply.get("id") or reply.get("title")
+                msg_type = "text"
+            else:
+                logger.info("Unsupported interactive type: %s — ignoring", interactive.get("type"))
+                return None
         else:
             logger.info("Unsupported Meta message type: %s — ignoring", msg_type)
             return None
@@ -231,44 +260,114 @@ async def _gpt_retry_and_reply(
         logger.warning("[RETRY] Background retry also failed for teacher_id=%d", teacher_id)
 
 
-_WELCOME_TEXT_MSG = """\
-مرحبًا 👋
-أنا شواهد AI — مساعدك الذكي لتوثيق أعمالك التعليمية.
+_WELCOME_SHORT_MSG = (
+    "مرحبًا بك في شواهد AI 👋\n"
+    "أرسل صورة، ملف، تسجيل صوتي أو اكتب وصف الشاهد… وسأرتبه لك تلقائيًا."
+)
 
-الميزة المتوفرة الآن:
-أحوّل صورك، دروسك، وروابطك إلى ملف إنجاز احترافي جاهز للتقديم 📘
+_VOICE_HINT_MSG = (
+    "تلميح 🎙️\n"
+    "يمكنك أيضًا إرسال مقطع صوتي، وسأفهمه وأحوّله إلى وصف شاهد مرتب."
+)
 
-جرّب الآن:
-أرسل صور نشاطك أو اكتب: صدر ملفي
+_MEDIA_NO_DESCRIPTION_HINT_MSG = (
+    "وصلتني الوسائط ✅\n"
+    "اكتب أو سجّل بصوتك وصفًا بسيطًا للشاهد، وسأوثقه لك."
+)
 
-قريبًا جدًا 🔜
-سأوفر لك:
-• أوراق عمل جاهزة باسمك
-• اختبارات (قصيرة ونهائية)
-• أنشطة تعليمية حسب المنهج
-
-إذا تحب التفاصيل، اكتب: ماذا تستطيع؟\
-"""
-
-_WELCOME_MEDIA_MSG = (
-    "👋 سعيد ببدء توثيق شواهدك!\n"
-    "أنا هنا أساعدك في بناء ملف إنجاز احترافي بكل سهولة 📘\n"
-    "أرسل ما تشاء — صور، فيديو، ملفات، أو روابط — وسأحفظها منظمة لك."
+_FIRST_VOICE_SUCCESS_MSG = (
+    "فهمت المقطع الصوتي ✅\n"
+    "وسأستخدمه في صياغة الشاهد وتنظيم ملفك."
 )
 
 
-async def _send_welcome_message(phone: str, teacher_id: int, is_media: bool = False) -> None:
+async def _send_welcome_message(phone: str, teacher_id: int) -> None:
     """
-    Send one-time onboarding welcome. Runs as a background task after the first reply.
-    - Text-first: full welcome message.
-    - Media-first: brief friendly note (don't interrupt the media flow).
+    Send one-time short onboarding welcome. Runs as a background task after the first reply.
     """
-    msg = _WELCOME_MEDIA_MSG if is_media else _WELCOME_TEXT_MSG
     try:
-        await send_whatsapp_message(phone, msg, teacher_id=teacher_id, context="onboarding")
-        logger.info("[ONBOARDING] welcome sent teacher_id=%d is_media=%s", teacher_id, is_media)
+        await send_whatsapp_message(phone, _WELCOME_SHORT_MSG, teacher_id=teacher_id, context="onboarding_welcome")
+        logger.info("[ONBOARDING] short welcome sent teacher_id=%d", teacher_id)
     except Exception as exc:
         logger.warning("[ONBOARDING] failed teacher_id=%d: %s", teacher_id, exc)
+
+
+def _parse_export_mode(text: str | None) -> str | None:
+    """Parse teacher's export mode selection."""
+    if not text:
+        return None
+    t = text.strip().lower()
+    if t in ("1", "١", "كامل", "كاملة", "كل الشواهد", "full"):
+        return "full"
+    if t in ("export_full", "full_export"):
+        return "full"
+    if t in ("2", "٢", "ذكي", "ذكية", "smart", "export_smart"):
+        return "smart"
+    if t in ("3", "٣", "مختصر", "مختصر جدًا", "مختصر جدا", "elite", "export_short"):
+        return "elite"
+    return None
+
+
+def _export_mode_question() -> str:
+    return (
+        "كيف تحب ملفك؟ 📘\n\n"
+        "1️⃣ كامل: كل الشواهد والوسائط\n"
+        "2️⃣ ذكي: أفضل الشواهد مع اختصار جميل\n"
+        "3️⃣ مختصر جدًا: أقوى الشواهد فقط\n\n"
+        "اكتب الرقم فقط."
+    )
+
+
+def _export_start_message(teacher_name: str | None) -> str:
+    display_name = teacher_name or "أستاذ"
+    return (
+        f"يا {display_name}، جاري إنشاء ملف شواهدك الآن ⏳\n"
+        "سيصلك رابط التحميل فور الانتهاء."
+    )
+
+
+def _clean_profile_update(data: dict | None) -> dict[str, str]:
+    if not data:
+        return {}
+    clean: dict[str, str] = {}
+    for key, value in data.items():
+        if key not in _PROFILE_FIELD_LABELS or value is None:
+            continue
+        if isinstance(value, (list, tuple)):
+            text_value = "، ".join(str(v).strip() for v in value if str(v).strip())
+        else:
+            text_value = str(value).strip()
+        if text_value and text_value.lower() not in ("null", "none", "undefined"):
+            clean[key] = text_value
+    return clean
+
+
+def _format_profile_update_reply(update: dict[str, str]) -> str:
+    if not update:
+        return "لم أجد تحديثًا جديدًا في بيانات ملفك حتى الآن."
+    parts = [
+        f"{_PROFILE_FIELD_LABELS.get(key, key)} {value}"
+        for key, value in update.items()
+    ]
+    return "نعم، تم تحديث بيانات ملفك: " + "، و".join(parts) + "."
+
+
+def _is_profile_update_followup(text: str | None) -> bool:
+    if not text:
+        return False
+    t = text.strip().replace("؟", "").replace("?", "")
+    return t in {
+        "هل حدثتها", "حدثتها", "تم تحديثها", "هل حفظتها",
+        "حفظتها", "حدثت البيانات", "هل تم تحديث البيانات",
+    }
+
+
+def _is_creator_question(text: str | None) -> bool:
+    if not text:
+        return False
+    t = text.strip().replace("؟", "").replace("?", "")
+    triggers = ("من صنعك", "من طورك", "من مؤسسك", "من مطورك", "مين صنعك", "مين طورك")
+    return any(trigger in t for trigger in triggers)
 
 
 # ─── Main Webhook (POST) ─────────────────────────────────────────────────────
@@ -318,7 +417,7 @@ async def whatsapp_webhook(
     evidence_type = detect_evidence_type(mime_type, file_name, text)
 
     # ── Onboarding: track first-ever interaction ──────────────────────────────
-    is_new_user = not teacher.welcomed
+    is_new_user = not teacher.welcome_sent_at
 
     logger.info(
         "[WA INBOUND] teacher_id=%d type=%s has_media=%s is_new=%s text=%r",
@@ -344,16 +443,90 @@ async def whatsapp_webhook(
         name=teacher.name,
         subject=teacher.subject,
         stage=teacher.stage,
+        grades=teacher.grades,
         school_name=teacher.school_name,
+        principal_name=teacher.principal_name,
         region=teacher.region,
         education_admin=teacher.education_admin,
         evidence_count=evidence_count,
         is_new_user=is_new_user,
+        last_profile_update=_LAST_PROFILE_UPDATES.get(teacher.id),
     )
     logger.info(
         "[USER PROFILE LOADED] teacher_id=%d name=%r evidence_count=%d",
         teacher.id, teacher.name, evidence_count,
     )
+
+    if _is_creator_question(text) and not media_id:
+        reply = "تم تطوير شواهد AI بواسطة الأستاذ تركي بن عايد الحارثي."
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone, reply, teacher_id=teacher.id, context="creator_question"
+        )
+        return {"ok": True, "teacher_id": teacher.id, "intent": "creator_question"}
+
+    if _is_profile_update_followup(text) and not media_id:
+        reply = _format_profile_update_reply(_LAST_PROFILE_UPDATES.get(teacher.id, {}))
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone, reply, teacher_id=teacher.id, context="profile_update_followup"
+        )
+        return {"ok": True, "teacher_id": teacher.id, "intent": "profile_update_followup"}
+
+    # ── Export mode selection shortcut ────────────────────────────────────────
+    # After the user is asked "كيف تحب ملفك؟", their next message may be "1/2/3".
+    # Handle that before GPT so "كامل" is not treated as smalltalk/evidence.
+    selected_export_mode = _parse_export_mode(text)
+    if selected_export_mode and not media_id:
+        if teacher.id not in _PENDING_EXPORT_REQUESTS:
+            reply = "هل تقصد اختيار وضع التصدير؟ اكتب: صدر ملفي أولًا، ثم اختر 1 أو 2 أو 3."
+            background_tasks.add_task(
+                send_whatsapp_message, teacher.phone, reply, teacher_id=teacher.id, context="export_mode_without_pending"
+            )
+            return {"ok": True, "teacher_id": teacher.id, "intent": "export_mode_without_pending"}
+
+        logger.info(
+            "[EXPORT MODE SELECTED] teacher_id=%d mode=%s sub_status=%s",
+            teacher.id, selected_export_mode, sub_info["status"],
+        )
+        _PENDING_EXPORT_REQUESTS.discard(teacher.id)
+        if not sub_active:
+            try:
+                payment_url = await _create_moyasar_link(
+                    db, teacher.id, teacher.name or "", teacher.phone or ""
+                )
+            except Exception as exc:
+                logger.error("Moyasar invoice creation failed: %s", exc)
+                payment_url = get_payment_link(teacher.id)
+
+            background_tasks.add_task(
+                send_whatsapp_message,
+                teacher.phone,
+                build_payment_link_message(payment_url, teacher.name or ""),
+                teacher_id=teacher.id,
+                context="payment_link",
+            )
+            return {"ok": False, "teacher_id": teacher.id, "reason": "subscription_required"}
+
+        export_record = exporter_svc.create_export_record(db, teacher.id)
+        background_tasks.add_task(
+            send_whatsapp_message,
+            teacher.phone,
+            _export_start_message(teacher.name),
+            teacher_id=teacher.id,
+            context="export_started",
+        )
+        background_tasks.add_task(
+            exporter_svc.run_export_background,
+            teacher_id=teacher.id,
+            export_id=export_record.id,
+            export_mode=selected_export_mode,
+        )
+        return {
+            "ok": True,
+            "teacher_id": teacher.id,
+            "intent": "payment",
+            "export_id": export_record.id,
+            "export_mode": selected_export_mode,
+        }
 
     # ── Download media (WhatsApp URLs require auth — must download first) ─────
     storage_path:   str | None = None
@@ -496,6 +669,21 @@ async def whatsapp_webhook(
     intent = decision["intent"]
     reply  = decision["reply"]
 
+    # ── Apply profile_update from ANY GPT intent ─────────────────────────────
+    # GPT may save an audio/text as evidence and still extract profile fields
+    # from it (subject, grades, school, principal, region, education_admin).
+    # Persist those fields before routing/export so the PDF sees fresh data.
+    profile_update = _clean_profile_update(decision.get("profile_update"))
+    if profile_update:
+        update_teacher(db, teacher, profile_update)
+        _LAST_PROFILE_UPDATES[teacher.id] = profile_update
+        logger.info(
+            "[PROFILE UPDATED] teacher_id=%d fields=%s source_intent=%s",
+            teacher.id, list(profile_update.keys()), intent,
+        )
+        if intent == "update_profile":
+            reply = _format_profile_update_reply(profile_update)
+
     # ── FORCE SAVE for any media message ─────────────────────────────────────
     # Golden rule: if WhatsApp media was received (image/video/audio/document),
     # it MUST be saved as evidence regardless of GPT's intent decision.
@@ -533,16 +721,9 @@ async def whatsapp_webhook(
     # ── Intent routing ────────────────────────────────────────────────────────
 
     if intent == "update_profile":
-        # GPT detected name/profile info → save to teacher record, never as evidence
-        profile_data = decision.get("profile_update") or {}
-        clean = {k: v for k, v in profile_data.items() if v}
-        if clean:
-            update_teacher(db, teacher, clean)
-            logger.info(
-                "[PROFILE UPDATED] teacher_id=%d fields=%s",
-                teacher.id, list(clean.keys()),
-            )
+        # Profile updates were already applied above for all intents.
         # GPT already wrote the reply (e.g. "تم حفظ اسمك يا تركي 🌿")
+        pass
 
     elif intent in ("my_files", "my_data", "edit_data", "smalltalk", "help", "batch_summary"):
         # GPT writes the reply based on context. Backend does nothing extra.
@@ -566,21 +747,15 @@ async def whatsapp_webhook(
                 logger.error("Moyasar invoice creation failed: %s", exc)
                 payment_url = get_payment_link(teacher.id)
 
-            display_name = teacher.name or ""
-            greeting     = f"يا {display_name}، " if display_name else ""
-            body_text    = (
-                f"{greeting}تصدير ملف PDF متاح بعد تفعيل الاشتراك 🌿\n"
-                f"يمكنك السداد من الرابط:"
-            )
+            body_text = build_payment_link_message(payment_url, teacher.name or "")
 
             # Interactive CTA button — not a plain text URL
             background_tasks.add_task(
-                send_whatsapp_button,
+                send_whatsapp_message,
                 teacher.phone,
                 body_text,
-                "سداد الاشتراك",
-                payment_url,
                 teacher_id=teacher.id,
+                context="payment_link",
             )
             return {
                 "ok": False,
@@ -591,16 +766,14 @@ async def whatsapp_webhook(
             }
 
         # active_paid → allow export
-        logger.info("[EXPORT ALLOWED] teacher_id=%d evidence_count=%d", teacher.id, evidence_count)
-        export_record = exporter_svc.create_export_record(db, teacher.id)
+        logger.info("[EXPORT MODE REQUESTED] teacher_id=%d evidence_count=%d", teacher.id, evidence_count)
+        _PENDING_EXPORT_REQUESTS.add(teacher.id)
         background_tasks.add_task(
-            exporter_svc.run_export_background,
+            send_export_options_buttons,
+            teacher.phone,
             teacher_id=teacher.id,
-            export_id=export_record.id,
         )
-        # Natural, friendly message — GPT will send the PDF URL when done
-        teacher_name = teacher.name or "أستاذ"
-        reply = f"يا {teacher_name}، جارٍ إنشاء ملف شواهدك الآن ⏳ سيصلك رابط التحميل فور الانتهاء."
+        return {"ok": True, "teacher_id": teacher.id, "intent": intent, "awaiting_export_mode": True}
 
     elif decision["should_save"]:
         # GPT decided to save evidence (intents: evidence | batch_save | url_link)
@@ -670,7 +843,9 @@ async def whatsapp_webhook(
                     # For image/doc: caption/text.
                     message_text=transcript or gpt_text or text,
                     media_url=media_url,
-                    storage_path=storage_path,
+                    # For videos, store the extracted thumbnail for PDF rendering.
+                    # The original video is not embeddable in PDF, but the thumbnail is.
+                    storage_path=thumbnail_path if (ev_type == "video" and thumbnail_path) else storage_path,
                     file_name=safe_filename or file_name,
                     mime_type=mime_type,
                     category=gpt_category,
@@ -718,27 +893,61 @@ async def whatsapp_webhook(
     else:
         logger.info("[EVIDENCE SKIPPED] teacher_id=%d intent=%s", teacher.id, intent)
 
+    # ── Progressive onboarding: short, contextual and one-time ────────────────
+    # Mutate the final reply only when the onboarding/context rule is stronger
+    # than GPT's generic answer.
+    now = datetime.now(timezone.utc)
+    is_successful = intent not in ("failure",)
+    is_voice_success = msg_type in ("audio", "voice") and bool(transcript)
+    is_media_without_description = (
+        bool(media_id)
+        and msg_type in ("image", "video", "document")
+        and not (text or transcript)
+    )
+
+    if is_successful and is_voice_success and not teacher.first_voice_processed_at:
+        reply = _FIRST_VOICE_SUCCESS_MSG
+        teacher.first_voice_processed_at = now
+        logger.info("[ONBOARDING] first voice processed teacher_id=%d", teacher.id)
+
+    elif is_successful and is_media_without_description and not teacher.media_hint_sent_at:
+        reply = _MEDIA_NO_DESCRIPTION_HINT_MSG
+        teacher.media_hint_sent_at = now
+        logger.info("[ONBOARDING] media hint marked teacher_id=%d", teacher.id)
+
+    elif is_successful and is_new_user and not media_id:
+        # First text-only interaction: keep it very short, no marketing wall.
+        reply = _WELCOME_SHORT_MSG
+
     # ── Send reply ────────────────────────────────────────────────────────────
     background_tasks.add_task(
         send_whatsapp_message, teacher.phone, reply, teacher_id=teacher.id
     )
 
-    # ── Onboarding: send welcome follow-up after first reply ─────────────────
-    # Triggered only once per teacher, AFTER the main reply is queued.
-    # For text-only first messages: welcome arrives as a second message right after.
-    # For media first messages: welcome arrives after evidence ACK.
-    if is_new_user and intent not in ("failure",):
+    if is_successful and is_new_user:
         teacher.welcomed = True
-        db.commit()
-        # Pass is_media so welcome message adapts:
-        # media-first → short note; text-first → full welcome
+        teacher.welcome_sent_at = now
+        logger.info("[ONBOARDING] welcome marked teacher_id=%d", teacher.id)
+
+    # Voice hint: once, after first/second successful non-voice interaction.
+    if (
+        is_successful
+        and not teacher.voice_hint_sent_at
+        and not teacher.first_voice_processed_at
+        and not is_voice_success
+        and evidence_count <= 1
+    ):
+        teacher.voice_hint_sent_at = now
         background_tasks.add_task(
-            _send_welcome_message, teacher.phone, teacher.id, bool(media_id)
+            send_whatsapp_message,
+            teacher.phone,
+            _VOICE_HINT_MSG,
+            teacher_id=teacher.id,
+            context="onboarding_voice_hint",
         )
-        logger.info(
-            "[ONBOARDING] welcome scheduled teacher_id=%d is_media=%s",
-            teacher.id, bool(media_id),
-        )
+        logger.info("[ONBOARDING] voice hint scheduled teacher_id=%d", teacher.id)
+
+    db.commit()
 
     return {"ok": True, "teacher_id": teacher.id, "intent": intent, "reply": reply}
 
@@ -982,6 +1191,7 @@ async def payment_success(request: Request):
     Activation is handled by the webhook — NOT this page.
     """
     teacher_id = request.query_params.get("teacher_id", "")
+    trust = settings.trust_info
     html = f"""<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -1032,6 +1242,22 @@ async def payment_success(request: Request):
       font-size: 1rem;
       font-weight: 600;
     }}
+    .trust-box {{
+      margin-top: 22px;
+      text-align: right;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 16px 18px;
+      color: #334155;
+      font-size: .9rem;
+      line-height: 1.8;
+    }}
+    .trust-title {{
+      font-weight: 800;
+      color: #0f172a;
+      margin-bottom: 8px;
+    }}
   </style>
 </head>
 <body>
@@ -1039,14 +1265,24 @@ async def payment_success(request: Request):
     <div class="icon">✅</div>
     <h1>تم استلام عملية الدفع</h1>
     <p>
-      إذا اكتملت عملية الدفع بنجاح، سيتم تفعيل اشتراكك في شواهد AI تلقائيًا خلال لحظات.
+      تم استلام عملية الدفع. سيتم تفعيل اشتراكك تلقائيًا خلال لحظات.
+      في حال احتجت أي مساعدة يمكنك التواصل معنا عبر الدعم الرسمي.
     </p>
     <div class="highlight">
       يمكنك العودة إلى واتساب وكتابة:<br>
       <strong style="font-size:1.1rem;letter-spacing:.05em;">تصدير</strong><br>
       لإنشاء ملف الشواهد PDF فور تفعيل الاشتراك.
     </div>
-    <a href="https://wa.me/" class="wa-btn">العودة إلى واتساب</a>
+    <div class="trust-box">
+      <div class="trust-title">ضمانات الثقة</div>
+      <div>✅ الخدمة مقدمة من {trust["provider"]}</div>
+      <div>✅ السجل التجاري موثق</div>
+      <div>✅ {trust["business_verification_text"]}</div>
+      <div>🌐 الموقع الرسمي: <a href="{trust["website"]}">{trust["website"]}</a></div>
+      <div>📩 الدعم: <a href="mailto:{trust["support_email"]}">{trust["support_email"]}</a></div>
+      <div>📱 للاستفسار: {trust["support_person"]} — <span dir="ltr">{trust["support_phone"]}</span></div>
+    </div>
+    <a href="https://wa.me/{trust["support_phone"]}" class="wa-btn">التواصل عبر واتساب</a>
   </div>
 </body>
 </html>"""

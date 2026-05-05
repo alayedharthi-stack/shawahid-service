@@ -2,7 +2,9 @@
 Portfolio PDF exporter using Playwright.
 HTML is rendered via Jinja2 then converted to A4 PDF via Playwright/Chromium.
 """
+import base64
 import logging
+import mimetypes
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -59,6 +61,124 @@ _CATEGORY_META: dict[str, dict] = {
 
 _DEFAULT_META = {"en": "", "icon": "📌", "desc": "", "value": ""}
 
+_CATEGORY_META.update({
+    "التعلم النشط": {
+        "en": "Active Learning", "icon": "🤝",
+        "desc": "يوثق هذا المحور ممارسات التعلم النشط ومشاركة الطلاب في بناء المعرفة وتطبيقها.",
+        "value": "يعكس هذا الشاهد توظيف استراتيجيات تعلم فاعلة تزيد مشاركة الطلاب ومسؤوليتهم عن التعلم.",
+    },
+    "إدارة الصف": {
+        "en": "Classroom Management", "icon": "🏫",
+        "desc": "يوثق هذا المحور ممارسات تنظيم البيئة الصفية وإدارة التفاعل داخل الحصة.",
+        "value": "يدل هذا الشاهد على قدرة المعلم على بناء بيئة تعلم منظمة ومحفزة.",
+    },
+    "التواصل": {
+        "en": "Communication", "icon": "💬",
+        "desc": "يوثق هذا المحور تواصل المعلم مع الطلاب وأولياء الأمور والشركاء في العملية التعليمية.",
+        "value": "يبرز هذا الشاهد أثر التواصل المهني في دعم الطالب وتعزيز الشراكة التعليمية.",
+    },
+    "مصادر تعليمية": {
+        "en": "Learning Resources", "icon": "🔗",
+        "desc": "يوثق هذا المحور المصادر والروابط والمواد الرقمية المستخدمة لإثراء التعلم.",
+        "value": "يجسد هذا الشاهد حسن توظيف الموارد التعليمية والتقنية لتنويع خبرات التعلم.",
+    },
+    "ملفات واختبارات": {
+        "en": "Files & Assessments", "icon": "📄",
+        "desc": "يوثق هذا المحور الاختبارات وأوراق العمل والملفات التعليمية المرتبطة بالتعلم والتقويم.",
+        "value": "يثبت هذا الشاهد عناية المعلم بإعداد أدوات تعليمية وتقويمية منظمة.",
+    },
+})
+
+_MAIN_CATEGORY_ORDER = [
+    "التخطيط",
+    "التنفيذ داخل الصف",
+    "التعلم النشط",
+    "التقويم",
+    "التحفيز",
+    "إدارة الصف",
+    "التواصل",
+    "سجل المتابعة",
+    "مصادر تعليمية",
+    "ملفات واختبارات",
+]
+
+_SUB_TO_MAIN_CATEGORY = {
+    "نشاط صفي": "التنفيذ داخل الصف",
+    "شرح درس": "التنفيذ داخل الصف",
+    "حل تمارين": "التنفيذ داخل الصف",
+    "تعلم تعاوني": "التعلم النشط",
+    "التعلم التعاوني": "التعلم النشط",
+    "التعلم بالممارسة": "التعلم النشط",
+    "مشاركة طلابية": "التعلم النشط",
+    "إنجاز طلابي": "التعلم النشط",
+    "تقويم": "التقويم",
+    "التقويم": "التقويم",
+    "واجب منزلي": "التقويم",
+    "اختبار": "ملفات واختبارات",
+    "ورقة عمل": "ملفات واختبارات",
+    "ملف إداري": "سجل المتابعة",
+    "سجل المتابعة": "سجل المتابعة",
+    "تكريم وتميز": "التحفيز",
+    "التحفيز": "التحفيز",
+    "تواصل مع أولياء الأمور": "التواصل",
+    "مصدر تعليمي": "مصادر تعليمية",
+    "رابط إثرائي": "مصادر تعليمية",
+    "الدورات والشهادات": "التخطيط",
+    "المبادرات والأنشطة": "التنفيذ داخل الصف",
+}
+
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+_SUPPORT_WHATSAPP = "966544761054"
+
+
+def _ministry_logo_svg_data_uri() -> str:
+    """Small white ministry mark used on the cover header."""
+    svg = """
+<svg xmlns="http://www.w3.org/2000/svg" width="150" height="80" viewBox="0 0 150 80">
+  <g fill="#fff" opacity=".96">
+    <circle cx="24" cy="16" r="7"/><circle cx="42" cy="17" r="7"/><circle cx="60" cy="19" r="7"/>
+    <circle cx="78" cy="23" r="6"/><circle cx="96" cy="29" r="5"/>
+    <circle cx="25" cy="36" r="7"/><circle cx="43" cy="37" r="6.5"/><circle cx="61" cy="40" r="6"/>
+    <circle cx="80" cy="45" r="5"/><circle cx="99" cy="51" r="4.5"/>
+    <circle cx="26" cy="55" r="6.5"/><circle cx="45" cy="56" r="6"/><circle cx="64" cy="59" r="5.5"/>
+    <circle cx="84" cy="65" r="4.5"/>
+    <circle cx="111" cy="36" r="5.5"/><circle cx="124" cy="28" r="6"/><circle cx="136" cy="22" r="6.5"/>
+    <circle cx="112" cy="53" r="5"/><circle cx="127" cy="47" r="6"/><circle cx="139" cy="42" r="6.5"/>
+  </g>
+</svg>
+""".strip()
+    encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
+def _file_data_uri(path: str | None, mime_type: str | None = None) -> str | None:
+    """Return a browser-safe data URI for local media used inside Playwright PDF."""
+    if not path:
+        return None
+
+    file_path = Path(path)
+    if not file_path.exists() or not file_path.is_file():
+        logger.warning("[PDF MEDIA MISSING] path=%s", path)
+        return None
+
+    guessed = mime_type or mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    try:
+        encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
+    except Exception as exc:
+        logger.warning("[PDF MEDIA READ FAILED] path=%s error=%s", path, exc)
+        return None
+
+    return f"data:{guessed};base64,{encoded}"
+
+
+def _image_data_uri(path: str | None) -> str | None:
+    if not path:
+        return None
+    file_path = Path(path)
+    if file_path.suffix.lower() not in _IMAGE_EXTS:
+        return None
+    return _file_data_uri(str(file_path))
+
 
 # ── Evidence normalisation for PDF export ─────────────────────────────────────
 
@@ -67,7 +187,7 @@ _RAW_TITLE_PATTERNS: frozenset[str] = frozenset({
     "شاهد image", "شاهد video", "شاهد audio", "شاهد document",
     "شاهد pdf",   "شاهد url",   "شاهد text",  "شاهد voice",
     "image", "video", "audio", "document", "pdf", "url", "text", "voice",
-    "", "شاهد",
+    "", "شاهد", "null", "none", "undefined",
 })
 
 # Defaults per evidence_type: title, category, description used when stored values are weak.
@@ -138,24 +258,53 @@ def _normalize_evidence_for_export(ev) -> dict:
         else defaults["title"]
     )
 
-    # ── Category ──────────────────────────────────────────────────────────────
+    # ── Category / tags ───────────────────────────────────────────────────────
     raw_cat  = (ev.category or "").strip()
-    category = raw_cat if raw_cat in ALLOWED_CATEGORIES else defaults["category"]
+    sub_category = raw_cat if raw_cat in ALLOWED_CATEGORIES else defaults["category"]
+    category = _SUB_TO_MAIN_CATEGORY.get(sub_category, sub_category)
+    if category not in _MAIN_CATEGORY_ORDER and category not in _CATEGORY_META:
+        category = _SUB_TO_MAIN_CATEGORY.get(defaults["category"], "التنفيذ داخل الصف")
+
+    tags = []
+    for value in (sub_category, ev.subject, ev.grade):
+        if value and value not in tags and value != category:
+            tags.append(value)
 
     # ── Description ───────────────────────────────────────────────────────────
     stored_desc = (ev.description or "").strip()
     # Also try to extract from message_text if no description and it's a text evidence
     description = stored_desc or defaults["desc"]
 
+    media_src: str | None = None
+    media_available = False
+    if ev_type == "image":
+        media_src = _image_data_uri(ev.storage_path)
+        media_available = bool(media_src)
+    elif ev_type == "video":
+        # Video storage_path should be a thumbnail from webhook for new records.
+        # Older records may still point to .mp4; in that case render a video card fallback.
+        media_src = _image_data_uri(ev.storage_path)
+        media_available = bool(media_src or ev.storage_path)
+    elif ev_type in ("audio", "voice"):
+        media_available = bool(ev.message_text or ev.storage_path)
+    elif ev_type in ("pdf", "document") or ev.file_name:
+        media_available = True
+    elif ev_type == "url":
+        media_available = bool(ev.message_text or ev.media_url)
+
     return {
         "id":            ev.id,
         "evidence_type": ev_type,
         "title":         title,
         "category":      category,
+        "sub_category":  sub_category,
+        "tags":          tags,
         "description":   description,
         "message_text":  ev.message_text,
         "media_url":     ev.media_url,
         "storage_path":  ev.storage_path,
+        "media_src":     media_src,
+        "media_available": media_available,
         "file_name":     ev.file_name,
         "mime_type":     ev.mime_type,
         "subject":       ev.subject,
@@ -177,8 +326,8 @@ def _build_categories(normalised_evidences: list[dict]) -> list[dict]:
         cat = ev["category"]            # already validated — always in ALLOWED_CATEGORIES
         grouped.setdefault(cat, []).append(ev)
 
-    # Canonical order first, then any extra
-    order  = list(ALLOWED_CATEGORIES) + [c for c in grouped if c not in ALLOWED_CATEGORIES]
+    # Canonical main-section order first, then any extra
+    order  = list(_MAIN_CATEGORY_ORDER) + [c for c in grouped if c not in _MAIN_CATEGORY_ORDER]
     result = []
     for name in order:
         items = grouped.get(name, [])
@@ -221,6 +370,45 @@ def _build_stats(normalised_evidences: list[dict], categories: list[dict]) -> di
     return {**counts, "top_categories": top_categories}
 
 
+def _evidence_quality_score(ev) -> float:
+    """Score evidence quality for smart/elite export modes."""
+    score = 0.0
+    if ev.storage_path:
+        score += 5
+    if ev.description:
+        score += min(len(ev.description), 400) / 40
+    if ev.title:
+        score += min(len(ev.title), 100) / 25
+    if ev.subject:
+        score += 1
+    if ev.grade:
+        score += 1
+    if ev.evidence_type in ("image", "video"):
+        score += 2
+    return score
+
+
+def _select_evidences_for_mode(evidences: list, export_mode: str = "full") -> list:
+    """
+    Export modes:
+      full  — all evidences
+      smart — strongest 30 evidences, preserving quality and media
+      elite — strongest 15 evidences only
+    """
+    mode = (export_mode or "full").lower()
+    if mode == "full":
+        return evidences
+
+    limit = 30 if mode == "smart" else 15
+    ranked = sorted(evidences, key=_evidence_quality_score, reverse=True)
+    selected = ranked[:limit]
+    logger.info(
+        "[EXPORT MODE] mode=%s selected=%d/%d",
+        mode, len(selected), len(evidences),
+    )
+    return selected
+
+
 def _render_html(teacher: Teacher, evidences: list) -> str:
     from app.services.deduplication import deduplicate_for_export
 
@@ -247,9 +435,12 @@ def _render_html(teacher: Teacher, evidences: list) -> str:
         teacher=teacher,
         categories=categories,
         stats=stats,
-        total_count=len(normalised),
+        total_count=len(deduped),
         academic_year=_academic_year(),
         generated_at=datetime.now().strftime("%Y/%m/%d %H:%M"),
+        ministry_logo=_ministry_logo_svg_data_uri(),
+        whatsapp_phone=_SUPPORT_WHATSAPP,
+        whatsapp_url=f"https://wa.me/{_SUPPORT_WHATSAPP}",
     )
 
 
@@ -342,7 +533,7 @@ def create_export_record(db: Session, teacher_id: int) -> PortfolioExport:
     return record
 
 
-async def run_export_background(teacher_id: int, export_id: int) -> None:
+async def run_export_background(teacher_id: int, export_id: int, export_mode: str = "full") -> None:
     """
     Background task: generate PDF → update record → send download link via WhatsApp.
     Opens its own DB session (avoids DetachedInstanceError).
@@ -350,7 +541,7 @@ async def run_export_background(teacher_id: int, export_id: int) -> None:
     """
     from app.db.base import SessionLocal
     from app.services.teachers import get_teacher_by_id
-    from app.services.whatsapp import send_whatsapp_message
+    from app.services.whatsapp import send_whatsapp_button, send_whatsapp_message
 
     db: Session = SessionLocal()
     teacher_phone: str | None = None
@@ -375,10 +566,11 @@ async def run_export_background(teacher_id: int, export_id: int) -> None:
         teacher_phone = teacher.phone
         teacher_name  = teacher.name or "أستاذ"
         evidences = get_teacher_evidences(db, teacher_id, limit=1000)
+        evidences = _select_evidences_for_mode(evidences, export_mode)
 
         logger.info(
-            "[EXPORT STARTED] teacher_id=%d evidence_count=%d export_id=%d",
-            teacher_id, len(evidences), export_id,
+            "[EXPORT STARTED] teacher_id=%d evidence_count=%d export_id=%d mode=%s",
+            teacher_id, len(evidences), export_id, export_mode,
         )
 
         html = _render_html(teacher, evidences)
@@ -404,12 +596,25 @@ async def run_export_background(teacher_id: int, export_id: int) -> None:
 
         # ── Send download link to teacher via WhatsApp ────────────────────────
         success_msg = (
-            f"✅ تم إنشاء ملف شواهدك بنجاح يا {teacher_name}!\n\n"
-            f"رابط التحميل:\n{pdf_url}"
+            f"✅ تم إنشاء ملف شواهدك بنجاح يا {teacher_name}.\n"
+            "اضغط الزر لتحميل ملف الشواهد 📘"
         )
-        sent = await send_whatsapp_message(
-            teacher_phone, success_msg, teacher_id=teacher_id, context="export_done"
+        sent = await send_whatsapp_button(
+            teacher_phone,
+            success_msg,
+            "تحميل ملف الشواهد 📘",
+            pdf_url,
+            teacher_id=teacher_id,
         )
+        if not sent:
+            fallback_msg = (
+                f"✅ تم إنشاء ملف شواهدك بنجاح يا {teacher_name}.\n"
+                "اضغط هنا لتحميل ملف الشواهد:\n"
+                f"{pdf_url}"
+            )
+            sent = await send_whatsapp_message(
+                teacher_phone, fallback_msg, teacher_id=teacher_id, context="export_done_fallback"
+            )
         if sent:
             logger.info("[PDF SEND SUCCESS] teacher_id=%d", teacher_id)
 

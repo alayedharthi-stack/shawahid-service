@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"   # set to "production" on Railway
     PORT: int = 8010
 
+    # ── Trust / support identity ──────────────────────────────────────────────
+    NAHLA_WEBSITE: str = "https://nahlah.ai"
+    SUPPORT_EMAIL: str = "support@nahlah.ai"
+    SUPPORT_PHONE: str = "966555906901"
+    SUPPORT_PERSON: str = "تركي الحارثي"
+    BUSINESS_VERIFICATION_TEXT: str = "موثق عبر السجل التجاري والمركز السعودي للأعمال"
+
     # ── Derived helpers ───────────────────────────────────────────────────────
 
     @property
@@ -93,6 +100,23 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.APP_ENV == "production"
+
+    @property
+    def trust_info(self) -> dict:
+        return {
+            "provider": "نحلة AI",
+            "website": self.NAHLA_WEBSITE,
+            "support_email": self.SUPPORT_EMAIL,
+            "support_phone": self.SUPPORT_PHONE,
+            "support_person": self.SUPPORT_PERSON,
+            "business_verification_text": self.BUSINESS_VERIFICATION_TEXT,
+            "trust_box_text": (
+                "شواهد AI خدمة تعليمية مقدمة ضمن منظومة نحلة AI، وهي خدمة موثقة تجاريًا "
+                "ومرتبطة بسجل تجاري وتوثيق المركز السعودي للأعمال. نحرص على حماية بيانات "
+                "المعلمين وتنظيم شواهدهم بشكل آمن، ويمكنكم التواصل معنا لأي استفسار عبر "
+                "البريد الرسمي أو رقم المطور."
+            ),
+        }
 
 
 settings = Settings()

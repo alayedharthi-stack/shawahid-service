@@ -57,6 +57,21 @@ def _sub_status_for_teacher(db: Session, teacher: Teacher) -> str:
     return get_subscription_status(db, teacher.id)["status"]
 
 
+def _active_subscription_for_teacher(db: Session, teacher_id: int) -> TeacherSubscription | None:
+    now = datetime.utcnow()
+    return (
+        db.query(TeacherSubscription)
+        .filter(
+            TeacherSubscription.teacher_id == teacher_id,
+            TeacherSubscription.status == "active",
+            TeacherSubscription.ends_at.isnot(None),
+            TeacherSubscription.ends_at > now,
+        )
+        .order_by(TeacherSubscription.ends_at.desc())
+        .first()
+    )
+
+
 def _sub_ends_at(teacher: Teacher) -> str | None:
     now = datetime.utcnow()
     active = next(
@@ -127,11 +142,14 @@ def admin_teachers(request: Request, q: str = "", db: Session = Depends(get_db),
 
     teachers = []
     for t in teachers_raw:
+        active_sub = _active_subscription_for_teacher(db, t.id)
+        sub_status = "active" if active_sub else _sub_status_for_teacher(db, t)
         teachers.append({
             "id": t.id, "name": t.name, "phone": t.phone, "school_name": t.school_name,
             "subject": t.subject,
-            "sub_status": _sub_status_for_teacher(db, t),
-            "sub_ends_at": _sub_ends_at(t),
+            "sub_status": sub_status,
+            "sub_ends_at": active_sub.ends_at.strftime("%Y/%m/%d") if active_sub and active_sub.ends_at else _sub_ends_at(t),
+            "sub_amount_sar": active_sub.amount_sar if active_sub else None,
             "evidence_count": evidence_counts.get(t.id, 0),
         })
 
@@ -168,6 +186,7 @@ def admin_teacher_detail(
         "sub_status": sub_status["status"],       # "active_paid" | "pending" | "expired" | "unpaid"
         "sub_verified_payment": sub_status.get("payment"),
         "payment_attempts": payment_attempts,
+        "trust_info": settings.trust_info,
         "flash_success": flash_success, "flash_error": flash_error,
     })
 

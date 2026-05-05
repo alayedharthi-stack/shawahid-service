@@ -27,6 +27,7 @@
           <th>الشواهد</th>
           <th>الاشتراك</th>
           <th>ينتهي</th>
+          <th>المبلغ</th>
           <th>إجراءات</th>
         </tr>
       </thead>
@@ -49,6 +50,7 @@
             {% endif %}
           </td>
           <td>{{ t.sub_ends_at or '—' }}</td>
+          <td>{% if t.sub_amount_sar %}<strong>{{ t.sub_amount_sar }}</strong> ريال{% else %}—{% endif %}</td>
           <td>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
               <a href="/admin/teachers/{{ t.id }}" class="btn btn-ghost btn-sm">عرض</a>

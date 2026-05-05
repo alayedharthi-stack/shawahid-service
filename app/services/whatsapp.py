@@ -245,6 +245,78 @@ async def send_whatsapp_button(
         return False
 
 
+async def send_export_options_buttons(
+    to_phone: str,
+    *,
+    teacher_id: int | None = None,
+) -> bool:
+    """
+    Send WhatsApp Reply Buttons for export mode selection.
+    Falls back automatically to plain text numbers if interactive buttons fail.
+    """
+    fallback = (
+        "📘 كيف تحب ملفك؟\n\n"
+        "اختر نوع التصدير:\n"
+        "1 كامل\n"
+        "2 ذكي\n"
+        "3 مختصر"
+    )
+
+    if not settings.WHATSAPP_ACCESS_TOKEN or not settings.WHATSAPP_PHONE_NUMBER_ID:
+        logger.info("[WhatsApp export buttons stub] teacher_id=%s To=%s", teacher_id, to_phone)
+        return True
+
+    api_url = (
+        f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}"
+        f"/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+    )
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_phone,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": "📘 كيف تحب ملفك؟\n\nاختر نوع التصدير:"},
+            "action": {
+                "buttons": [
+                    {"type": "reply", "reply": {"id": "export_full", "title": "كامل"}},
+                    {"type": "reply", "reply": {"id": "export_smart", "title": "ذكي"}},
+                    {"type": "reply", "reply": {"id": "export_short", "title": "مختصر"}},
+                ]
+            },
+        },
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(api_url, json=payload, headers=headers)
+
+        if resp.status_code == 200:
+            logger.info("[EXPORT OPTIONS BUTTONS SENT] teacher_id=%s phone=%s", teacher_id, to_phone)
+            return True
+
+        logger.warning(
+            "[EXPORT OPTIONS BUTTONS FAILED] teacher_id=%s status=%d body=%s — falling back to text",
+            teacher_id, resp.status_code, resp.text[:300],
+        )
+    except Exception as exc:
+        logger.warning(
+            "[EXPORT OPTIONS BUTTONS EXCEPTION] teacher_id=%s error=%s — falling back to text",
+            teacher_id, exc,
+        )
+
+    return await send_whatsapp_message(
+        to_phone,
+        fallback,
+        teacher_id=teacher_id,
+        context="export_options_fallback",
+    )
+
+
 # ── Payment message builders ──────────────────────────────────────────────────
 
 def build_payment_link_message(payment_url: str, teacher_display_name: str = "") -> str:
@@ -252,11 +324,18 @@ def build_payment_link_message(payment_url: str, teacher_display_name: str = "")
     Message sent to teacher when a payment link is created.
     This is a session message — no template required.
     """
-    greeting = f"مرحبًا {teacher_display_name} 👋\n" if teacher_display_name else "مرحبًا 👋\n"
+    greeting = f"مرحبًا {teacher_display_name} 👋" if teacher_display_name else "مرحبًا أستاذ/ة 👋"
     return (
-        f"{greeting}"
-        f"هذا رابط سداد اشتراك شواهد AI السنوي بقيمة {LAUNCH_PRICE_SAR} ريال:\n"
-        f"{payment_url}"
+        f"{greeting}\n\n"
+        f"لتفعيل اشتراك شواهد AI السنوي ضمن عرض الإطلاق بقيمة "
+        f"{settings.SHAWAHID_LAUNCH_PRICE_SAR} ريال فقط، يمكنك الدفع عبر الرابط التالي:\n"
+        f"{payment_url}\n\n"
+        f"✅ الخدمة مقدمة من نحلة AI\n"
+        f"✅ {settings.BUSINESS_VERIFICATION_TEXT}\n"
+        f"🌐 الموقع الرسمي: {settings.NAHLA_WEBSITE}\n"
+        f"📩 الدعم: {settings.SUPPORT_EMAIL}\n"
+        f"📱 للاستفسار: {settings.SUPPORT_PERSON} {settings.SUPPORT_PHONE}\n\n"
+        f"بعد الدفع سيتم تفعيل اشتراكك تلقائيًا بإذن الله."
     )
 
 

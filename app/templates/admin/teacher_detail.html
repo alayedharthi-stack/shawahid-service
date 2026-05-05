@@ -22,6 +22,26 @@
   </div>
 </div>
 
+<div class="card" style="margin-bottom:16px;border:1px solid #dbeafe;background:linear-gradient(135deg,#eff6ff,#ffffff);">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <span>ضمانات الثقة</span>
+    <span class="badge badge-green">موثق</span>
+  </div>
+  <div class="card-body">
+    <p style="margin:0 0 12px;line-height:1.8;color:var(--slate-600);font-size:.9rem;">
+      {{ trust_info.trust_box_text }}
+    </p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;font-size:.86rem;color:var(--slate-700);">
+      <div>✅ الخدمة مقدمة من <strong>{{ trust_info.provider }}</strong></div>
+      <div>✅ السجل التجاري موثق</div>
+      <div>✅ {{ trust_info.business_verification_text }}</div>
+      <div>🌐 الموقع الرسمي: <a href="{{ trust_info.website }}" target="_blank">{{ trust_info.website }}</a></div>
+      <div>📩 الدعم: <a href="mailto:{{ trust_info.support_email }}">{{ trust_info.support_email }}</a></div>
+      <div>📱 للتواصل والاستفسارات: {{ trust_info.support_person }} — <span dir="ltr">{{ trust_info.support_phone }}</span></div>
+    </div>
+  </div>
+</div>
+
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
   <!-- Teacher Info -->
   <div class="card">
