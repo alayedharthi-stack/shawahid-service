@@ -341,6 +341,8 @@ async def whatsapp_webhook(
         subject=teacher.subject,
         stage=teacher.stage,
         school_name=teacher.school_name,
+        region=teacher.region,
+        education_admin=teacher.education_admin,
         evidence_count=evidence_count,
         is_new_user=is_new_user,
     )
@@ -480,6 +482,38 @@ async def whatsapp_webhook(
     intent = decision["intent"]
     reply  = decision["reply"]
 
+    # ── FORCE SAVE for any media message ─────────────────────────────────────
+    # Golden rule: if WhatsApp media was received (image/video/audio/document),
+    # it MUST be saved as evidence regardless of GPT's intent decision.
+    # GPT still provides title, category and reply. Only the save is forced.
+    _MEDIA_DEFAULT_CATEGORY: dict[str, str] = {
+        "image":    "نشاط صفي",
+        "video":    "نشاط صفي",
+        "audio":    "نشاط صفي",
+        "document": "ملف إداري",
+        "pdf":      "ملف إداري",
+        "url":      "رابط إثرائي",
+    }
+
+    if media_id and not decision["should_save"] and intent not in ("failure",):
+        # GPT classified this as non-evidence (e.g. smalltalk), but media exists → force save
+        forced_cat   = decision["category"] or _MEDIA_DEFAULT_CATEGORY.get(evidence_type, "نشاط صفي")
+        forced_title = decision["title"] or f"شاهد {evidence_type}"
+        logger.warning(
+            "[FORCE SAVE] teacher_id=%d — media detected but GPT intent=%s should_save=False. "
+            "Forcing save with category=%r title=%r",
+            teacher.id, intent, forced_cat, forced_title,
+        )
+        # Patch decision so the save branch below executes
+        decision = {
+            **decision,
+            "intent":      "evidence",
+            "should_save": True,
+            "category":    forced_cat,
+            "title":       forced_title,
+        }
+        intent = "evidence"
+
     # ── Intent routing ────────────────────────────────────────────────────────
 
     if intent == "update_profile":
@@ -556,33 +590,55 @@ async def whatsapp_webhook(
         # GPT decided to save evidence (intents: evidence | batch_save | url_link)
         # url_link: evidence_type comes from detect_evidence_type (already "url" for URL-only msgs)
         # batch_save: same flow as evidence, but reply is intentionally short (GPT handles it)
+        from app.services.evidences import ALLOWED_CATEGORIES
+
         ev_type = evidence_type
         if intent == "url_link" and ev_type == "text":
             ev_type = "url"   # ensure URL text messages are stored as "url" type
 
-        evidence = create_evidence(
-            db=db,
-            teacher_id=teacher.id,
-            source_phone=teacher.phone,
-            evidence_type=ev_type,
-            # For audio/video: save transcript. For URL: save the raw text (contains URL).
-            # For image/doc: caption/text.
-            message_text=transcript or gpt_text or text,
-            media_url=media_url,
-            storage_path=storage_path,
-            file_name=safe_filename or file_name,
-            mime_type=mime_type,
-            category=decision["category"],
-            title=decision["title"],
-            ai_status="completed",
-            ai_raw=dict(decision),
-        )
-        log_tag = "[EVIDENCE SAVED]" if intent == "evidence" else f"[{intent.upper()} SAVED]"
-        logger.info(
-            "%s teacher_id=%d evidence_id=%d type=%s category=%r confidence=%.2f",
-            log_tag, teacher.id, evidence.id, ev_type,
-            decision["category"], decision["confidence"],
-        )
+        # Normalise category: if GPT returned an unknown category, use the closest default
+        gpt_category = (decision["category"] or "").strip()
+        if not gpt_category or gpt_category not in ALLOWED_CATEGORIES:
+            fallback_cat = _MEDIA_DEFAULT_CATEGORY.get(ev_type, "نشاط صفي")
+            if gpt_category and gpt_category not in ALLOWED_CATEGORIES:
+                logger.info(
+                    "[CATEGORY FIXED] teacher_id=%d GPT category %r not in allowed list → %r",
+                    teacher.id, gpt_category, fallback_cat,
+                )
+            gpt_category = fallback_cat
+
+        try:
+            evidence = create_evidence(
+                db=db,
+                teacher_id=teacher.id,
+                source_phone=teacher.phone,
+                evidence_type=ev_type,
+                # For audio/video: save transcript. For URL: save the raw text (contains URL).
+                # For image/doc: caption/text.
+                message_text=transcript or gpt_text or text,
+                media_url=media_url,
+                storage_path=storage_path,
+                file_name=safe_filename or file_name,
+                mime_type=mime_type,
+                category=gpt_category,
+                title=decision["title"] or f"شاهد {ev_type}",
+                description=decision.get("description"),
+                grade=decision.get("grade"),
+                subject=decision.get("subject"),
+                ai_status="completed",
+                ai_raw=dict(decision),
+            )
+            log_tag = "[EVIDENCE SAVED]" if intent == "evidence" else f"[{intent.upper()} SAVED]"
+            logger.info(
+                "%s teacher_id=%d evidence_id=%d type=%s category=%r title=%r confidence=%.2f",
+                log_tag, teacher.id, evidence.id, ev_type,
+                gpt_category, decision["title"], decision["confidence"],
+            )
+        except Exception as save_exc:
+            logger.error(
+                "[SAVE FAILED] teacher_id=%d type=%s category=%r error=%s",
+                teacher.id, ev_type, gpt_category, save_exc, exc_info=True,
+            )
 
     elif intent == "failure":
         # GPT failed after all retries.

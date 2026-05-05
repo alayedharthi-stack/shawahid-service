@@ -60,7 +60,10 @@ class GPTDecision(TypedDict):
     should_save: bool
     reply: str
     title: str | None
+    description: str | None  # educational description to store in DB and render in PDF
     category: str | None
+    grade: str | None         # المرحلة الدراسية (if extractable)
+    subject: str | None       # المادة (if extractable)
     confidence: float
     profile_update: dict | None
 
@@ -75,6 +78,28 @@ _SYSTEM_BASE = """\
 أنت لا ترد على الرسائل فقط — أنت تجمع وتفهم وتحفظ وتنظم وتصدر.
 تصرّف كمشرف تربوي محترف، لا كروبوت محادثة.
 كل صورة أو رابط أو ملف أو صوت يرسله المعلم يجب أن يتحول إلى شاهد منظم.
+
+══ قاعدة ذهبية لا استثناء منها ══
+❗ أي صورة أو فيديو أو تسجيل صوتي أو ملف أو رابط وصلك:
+→ should_save = true دائمًا بلا استثناء
+→ حدد التصنيف والعنوان حتى لو لم تفهم المحتوى جيدًا
+→ استخدم "نشاط صفي" تصنيفًا افتراضيًا إذا لم تتمكن من التحديد
+→ لا تُرجع should_save=false مطلقًا للوسائط
+
+❗ أي نص يُثبت أن المعلم يتواصل أو يعمل أو يوجّه:
+→ أي رسالة فيها توجيه للطلاب، تحفيز، ثناء، تعليمات صفية، تواصل مع أولياء الأمور → should_save=true
+→ استخدم التصنيف المناسب: "تواصل مع أولياء الأمور" أو "مشاركة طلابية" أو "نشاط صفي" أو "تكريم وتميز"
+→ لا تحفظ تحية مجردة أو حديثًا عن النظام (تلك smalltalk). الفارق: هل يدل النص على نشاط تعليمي حقيقي؟
+
+══ حقل المنطقة وإدارة التعليم ══
+إذا ذكر المعلم منطقته (مثل: "أنا في الرياض" أو "من منطقة جدة") أو إدارة التعليم:
+→ استخرج المنطقة وإدارة التعليم وضعها في profile_update:
+  { "region": "الرياض", "education_admin": "إدارة تعليم الرياض" } (أو أي قيمة ذكرها)
+→ استخدم intent=update_profile مع should_save=false
+→ رد بشكل طبيعي مثل: "شكرًا، سأضع منطقتك الرياض في ملفك 🌿"
+
+إذا كان الملف غير مكتمل (المنطقة أو إدارة التعليم غائبة)، يمكنك السؤال بلطف عند المناسبة:
+"بالمناسبة، من أي منطقة أنت؟ حتى تكون بيانات ملفك كاملة."
 
 ══ قواعد ثابتة ══
 • تحدّث بالعربية الطبيعية الدافئة، وناد المعلم باسمه دائمًا إن كان معروفًا.
@@ -150,14 +175,19 @@ _SYSTEM_BASE = """\
 - batch_save      → شاهد ضمن دفعة، رد مختصر جدًا (should_save=true)
 - batch_summary   → ملخص الدفعة، لا حفظ جديد (should_save=false)
 - url_link        → رابط/يوتيوب (should_save=true)
-- smalltalk       → تحية أو حديث عابر (should_save=false)
+- smalltalk       → تحية مجردة أو حديث عن النظام — لا قيمة توثيقية (should_save=false)
 - capabilities    → "ماذا تستطيع؟" أو "وش تسوي؟" (should_save=false)
 - help            → سؤال عن الخدمة (should_save=false)
 - payment         → "تصدير" أو "صدر ملفي" أو طلب PDF (should_save=false)
 - my_files        → "ملفي" أو استفسار عن عدد الشواهد (should_save=false)
 - my_data         → "بياناتي" (should_save=false)
 - edit_data       → "تعديل بياناتي" (should_save=false)
-- update_profile  → اسم أو معلومات شخصية (should_save=false)
+- update_profile  → اسم، مادة، مرحلة، مدرسة، منطقة، إدارة التعليم (should_save=false)
+
+مثال profile_update للمنطقة وإدارة التعليم:
+  { "region": "الرياض", "education_admin": "إدارة تعليم الرياض" }
+مثال profile_update للاسم والمادة:
+  { "name": "تركي", "subject": "رياضيات", "stage": "المتوسطة" }
 
 ══ ردّ "ماذا تستطيع؟" (intent=capabilities) ══
 إذا سأل المعلم عن إمكانيات الخدمة بأي صيغة:
@@ -169,13 +199,19 @@ _SYSTEM_BASE = """\
 أرجع JSON فقط (بدون أي نص خارجه):
 {
   "intent": "...",
-  "should_save": false,
+  "should_save": true,
   "reply": "رد عربي بشري طبيعي — مختصر للدفعة، كامل للشاهد المنفرد",
-  "title": "عنوان الشاهد أو null",
-  "category": "التصنيف أو null",
+  "title": "عنوان الشاهد — جملة قصيرة وصفية — null إذا لم يكن شاهدًا",
+  "description": "وصف تربوي مهني جملتين — null إذا لم يكن شاهدًا",
+  "category": "أحد التصنيفات المعتمدة أو null",
+  "grade": "المرحلة الدراسية إن وُجدت أو null",
+  "subject": "المادة الدراسية إن وُجدت أو null",
   "confidence": 0.95,
   "profile_update": null
-}\
+}
+
+ملاحظة: profile_update يمكن أن يحتوي على أي مزيج من:
+name, subject, stage, school_name, principal_name, region, education_admin\
 """
 
 
@@ -188,6 +224,8 @@ def build_teacher_context(
     subject: str | None,
     stage: str | None,
     school_name: str | None = None,
+    region: str | None = None,
+    education_admin: str | None = None,
     evidence_count: int | None = None,
     is_new_user: bool = False,
 ) -> str:
@@ -206,8 +244,28 @@ def build_teacher_context(
         lines.append(f"المرحلة الدراسية: {stage}")
     if school_name:
         lines.append(f"المدرسة: {school_name}")
+    if region:
+        lines.append(f"المنطقة: {region}")
+    if education_admin:
+        lines.append(f"إدارة التعليم: {education_admin}")
     if evidence_count is not None:
         lines.append(f"عدد الشواهد المحفوظة حتى الآن: {evidence_count}")
+
+    # Highlight missing profile fields so GPT can gently ask
+    missing = []
+    if not name:
+        missing.append("الاسم")
+    if not subject:
+        missing.append("المادة")
+    if not stage:
+        missing.append("المرحلة")
+    if not region:
+        missing.append("المنطقة")
+    if not education_admin:
+        missing.append("إدارة التعليم")
+    if missing:
+        lines.append(f"حقول ملف المعلم غير مكتملة: {', '.join(missing)} — يمكنك سؤاله بشكل طبيعي إن سنحت الفرصة")
+
     lines.append("===================")
     return "\n".join(lines)
 
@@ -267,7 +325,7 @@ async def ask_gpt(
                         {"role": "user",   "content": content},
                     ],
                     response_format={"type": "json_object"},
-                    max_tokens=600,
+                    max_tokens=900,
                     temperature=0.3,
                 )
                 raw  = response.choices[0].message.content or "{}"
@@ -415,7 +473,10 @@ def _coerce(data: dict) -> GPTDecision:
         "should_save":    should_save,
         "reply":          reply,
         "title":          data.get("title") or None,
+        "description":    data.get("description") or None,
         "category":       data.get("category") or None,
+        "grade":          data.get("grade") or None,
+        "subject":        data.get("subject") or None,
         "confidence":     float(data.get("confidence", 0.5)),
         "profile_update": data.get("profile_update") or None,
     }
@@ -431,7 +492,10 @@ def _failure_decision() -> GPTDecision:
         "should_save":    False,
         "reply":          "يبدو أن هناك ضغطًا بسيطًا الآن 🌿 جرّب بعد لحظات",
         "title":          None,
+        "description":    None,
         "category":       None,
+        "grade":          None,
+        "subject":        None,
         "confidence":     0.0,
         "profile_update": None,
     }
