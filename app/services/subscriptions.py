@@ -1,12 +1,36 @@
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from app.models.subscription import TeacherSubscription
+from app.models.payment_attempt import PaymentAttempt
 from app.core.config import settings
 
+# ─── Unified subscription status ─────────────────────────────────────────────
+#
+# Status values:
+#   "active_paid" — active subscription backed by a verified real payment
+#   "pending"     — subscription record exists but no verified payment (manual/trial)
+#   "expired"     — subscription existed but has expired
+#   "unpaid"      — no subscription record at all
+#
+# Only "active_paid" allows PDF export.
+# ─────────────────────────────────────────────────────────────────────────────
 
-def get_active_subscription(db: Session, teacher_id: int) -> TeacherSubscription | None:
+def get_subscription_status(db: Session, teacher_id: int) -> dict:
+    """
+    Single source of truth for subscription gating.
+    Used by webhook, admin panel, and any future access-control check.
+
+    Returns dict:
+      {
+        "status": "active_paid" | "pending" | "expired" | "unpaid",
+        "sub":     TeacherSubscription | None,
+        "payment": PaymentAttempt | None,
+      }
+    """
     now = datetime.now(timezone.utc)
-    return (
+
+    # 1. Is there an active subscription at all?
+    sub = (
         db.query(TeacherSubscription)
         .filter(
             TeacherSubscription.teacher_id == teacher_id,
@@ -16,9 +40,44 @@ def get_active_subscription(db: Session, teacher_id: int) -> TeacherSubscription
         .first()
     )
 
+    if not sub:
+        expired = (
+            db.query(TeacherSubscription)
+            .filter(TeacherSubscription.teacher_id == teacher_id)
+            .order_by(TeacherSubscription.id.desc())
+            .first()
+        )
+        if expired:
+            return {"status": "expired", "sub": expired, "payment": None}
+        return {"status": "unpaid", "sub": None, "payment": None}
+
+    # 2. Subscription exists — verify it has a real paid PaymentAttempt.
+    #    Manual activations from admin panel have payment_reference = None.
+    if sub.payment_reference:
+        payment = (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.teacher_id == teacher_id,
+                PaymentAttempt.provider_payment_id == sub.payment_reference,
+                PaymentAttempt.status == "paid",
+            )
+            .first()
+        )
+        if payment and float(payment.amount_sar or 0) >= (LAUNCH_AMOUNT_SAR - 0.01):
+            return {"status": "active_paid", "sub": sub, "payment": payment}
+
+    # Active subscription but no verified payment → manual/trial
+    return {"status": "pending", "sub": sub, "payment": None}
+
+
+def get_active_subscription(db: Session, teacher_id: int) -> TeacherSubscription | None:
+    result = get_subscription_status(db, teacher_id)
+    return result["sub"] if result["status"] == "active_paid" else None
+
 
 def is_subscription_active(db: Session, teacher_id: int) -> bool:
-    return get_active_subscription(db, teacher_id) is not None
+    """Backward-compat wrapper. True only for active_paid."""
+    return get_subscription_status(db, teacher_id)["status"] == "active_paid"
 
 
 LAUNCH_PLAN_SLUG = "launch_annual_29"

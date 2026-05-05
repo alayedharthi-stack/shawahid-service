@@ -26,6 +26,7 @@ from app.services.evidences import (
     delete_evidence,
 )
 from app.services.subscriptions import (
+    get_subscription_status,
     activate_subscription,
     get_payment_link,
     list_subscriptions,
@@ -51,22 +52,17 @@ templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
 
-def _sub_status(teacher: Teacher) -> str:
-    now = datetime.utcnow()
-    active = next(
-        (s for s in teacher.subscriptions if s.status == "active" and s.ends_at and s.ends_at.replace(tzinfo=None) > now),
-        None,
-    )
-    if active:
-        return "active"
-    expired = next((s for s in teacher.subscriptions), None)
-    return "expired" if expired else "inactive"
+def _sub_status_for_teacher(db: Session, teacher: Teacher) -> str:
+    """Uses the unified get_subscription_status() — single source of truth."""
+    return get_subscription_status(db, teacher.id)["status"]
 
 
 def _sub_ends_at(teacher: Teacher) -> str | None:
     now = datetime.utcnow()
     active = next(
-        (s for s in teacher.subscriptions if s.status == "active" and s.ends_at and s.ends_at.replace(tzinfo=None) > now),
+        (s for s in teacher.subscriptions
+         if s.status == "active" and s.ends_at
+         and s.ends_at.replace(tzinfo=None) > now),
         None,
     )
     if active and active.ends_at:
@@ -98,7 +94,7 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _: str = De
     for t in recent_teachers:
         enriched.append({
             "id": t.id, "name": t.name, "phone": t.phone, "school_name": t.school_name,
-            "sub_status": _sub_status(t),
+            "sub_status": _sub_status_for_teacher(db, t),
             "evidence_count": evidence_counts.get(t.id, 0),
         })
 
@@ -134,7 +130,7 @@ def admin_teachers(request: Request, q: str = "", db: Session = Depends(get_db),
         teachers.append({
             "id": t.id, "name": t.name, "phone": t.phone, "school_name": t.school_name,
             "subject": t.subject,
-            "sub_status": _sub_status(t),
+            "sub_status": _sub_status_for_teacher(db, t),
             "sub_ends_at": _sub_ends_at(t),
             "evidence_count": evidence_counts.get(t.id, 0),
         })

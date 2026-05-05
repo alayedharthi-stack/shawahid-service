@@ -146,57 +146,102 @@ def create_export_record(db: Session, teacher_id: int) -> PortfolioExport:
 
 async def run_export_background(teacher_id: int, export_id: int) -> None:
     """
-    Background task: generate PDF for teacher and update the export record.
-    Opens its own DB session so it isn't affected by the closed request session.
-    Each teacher's files are isolated under their own directory.
+    Background task: generate PDF → update record → send download link via WhatsApp.
+    Opens its own DB session (avoids DetachedInstanceError).
+    Sends WhatsApp message to teacher on success AND on failure — never silent.
     """
     from app.db.base import SessionLocal
     from app.services.teachers import get_teacher_by_id
+    from app.services.whatsapp import send_whatsapp_message
 
     db: Session = SessionLocal()
+    teacher_phone: str | None = None
+
     try:
         record = db.query(PortfolioExport).filter(PortfolioExport.id == export_id).first()
         if not record:
+            logger.error("[EXPORT FAILED] export_id=%d not found in DB", export_id)
             return
 
         record.status = "processing"
         db.commit()
 
-        # Re-fetch teacher inside fresh session
         teacher = get_teacher_by_id(db, teacher_id)
         if not teacher:
+            logger.error("[EXPORT FAILED] teacher_id=%d not found", teacher_id)
             record.status = "error"
             record.error = f"Teacher {teacher_id} not found"
             db.commit()
             return
 
+        teacher_phone = teacher.phone
+        teacher_name  = teacher.name or "أستاذ"
         evidences = get_teacher_evidences(db, teacher_id, limit=1000)
+
+        logger.info(
+            "[EXPORT STARTED] teacher_id=%d evidence_count=%d export_id=%d",
+            teacher_id, len(evidences), export_id,
+        )
+
         html = _render_html(teacher, evidences)
 
         export_dir = settings.export_storage(teacher_id)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        filename = f"shawahid_teacher_{teacher_id}_{timestamp}.pdf"
+        timestamp  = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        filename   = f"shawahid_teacher_{teacher_id}_{timestamp}.pdf"
         output_path = export_dir / filename
 
         await _generate_pdf(html, output_path)
+        logger.info("[PDF GENERATED] path=%s", output_path)
 
-        pdf_url = f"{settings.effective_base_url}/files/teachers/{teacher_id}/exports/{filename}"
+        pdf_url = (
+            f"{settings.effective_base_url}/files"
+            f"/teachers/{teacher_id}/exports/{filename}"
+        )
         record.storage_path = str(output_path)
-        record.pdf_url = pdf_url
-        record.status = "done"
+        record.pdf_url      = pdf_url
+        record.status       = "done"
         db.commit()
 
-        logger.info("Export done for teacher %d: %s", teacher_id, pdf_url)
+        logger.info("[PDF URL CREATED] teacher_id=%d url=%s", teacher_id, pdf_url)
+
+        # ── Send download link to teacher via WhatsApp ────────────────────────
+        success_msg = (
+            f"✅ تم إنشاء ملف شواهدك بنجاح يا {teacher_name}!\n\n"
+            f"رابط التحميل:\n{pdf_url}"
+        )
+        sent = await send_whatsapp_message(
+            teacher_phone, success_msg, teacher_id=teacher_id, context="export_done"
+        )
+        if sent:
+            logger.info("[PDF SEND SUCCESS] teacher_id=%d", teacher_id)
+        else:
+            logger.warning(
+                "[PDF SEND FAILED] WhatsApp delivery failed for teacher_id=%d url=%s",
+                teacher_id, pdf_url,
+            )
 
     except Exception as exc:
-        logger.error("Export failed for teacher %d: %s", teacher_id, exc)
+        logger.error("[EXPORT FAILED] teacher_id=%d error=%s", teacher_id, exc, exc_info=True)
         try:
             record = db.query(PortfolioExport).filter(PortfolioExport.id == export_id).first()
             if record:
                 record.status = "error"
-                record.error = str(exc)
+                record.error  = str(exc)
                 db.commit()
         except Exception:
             pass
+
+        # Notify teacher about the failure (never silent)
+        if teacher_phone:
+            try:
+                from app.services.whatsapp import send_whatsapp_message as _send
+                fail_msg = (
+                    "تعذّر إنشاء ملف الشواهد الآن 🙏 "
+                    "سنحاول مرة أخرى. "
+                    "تواصل مع الدعم إن تكررت المشكلة."
+                )
+                await _send(teacher_phone, fail_msg, teacher_id=teacher_id, context="export_failed")
+            except Exception as wa_exc:
+                logger.error("Could not notify teacher of export failure: %s", wa_exc)
     finally:
         db.close()

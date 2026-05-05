@@ -19,6 +19,7 @@ from app.services.teachers import get_or_create_teacher, get_teacher_by_id
 from app.services.evidences import create_evidence, get_teacher_evidences
 from app.services.storage import download_and_save, detect_evidence_type
 from app.services.subscriptions import (
+    get_subscription_status,
     is_subscription_active,
     activate_subscription,
     get_payment_link,
@@ -270,11 +271,12 @@ async def whatsapp_webhook(
     # ── Load profile + subscription (backend-only decision) ──────────────────
     from app.services.teachers import update_teacher
 
-    # Subscription: DB-only check. GPT never knows or decides subscription state.
-    sub_active = is_subscription_active(db, teacher.id)
+    # Subscription: single DB-only source of truth. GPT never sees or decides this.
+    sub_info = get_subscription_status(db, teacher.id)
+    sub_active = sub_info["status"] == "active_paid"
     logger.info(
-        "[SUBSCRIPTION CHECK] teacher_id=%d status=%s",
-        teacher.id, "active" if sub_active else "inactive",
+        "[SUBSCRIPTION CHECK] teacher_id=%d status=%s source=db",
+        teacher.id, sub_info["status"],
     )
 
     # Evidence count for GPT context (so it can write natural my_files replies)
@@ -348,8 +350,14 @@ async def whatsapp_webhook(
         pass
 
     elif intent == "payment":
+        logger.info("[EXPORT REQUESTED] teacher_id=%d sub_status=%s", teacher.id, sub_info["status"])
+
         if not sub_active:
-            # Build Moyasar link
+            # Not active_paid → send payment button, block export
+            logger.info(
+                "[EXPORT BLOCKED] teacher_id=%d reason=subscription_status_%s",
+                teacher.id, sub_info["status"],
+            )
             try:
                 payment_url = await _create_moyasar_link(
                     db, teacher.id, teacher.name or "", teacher.phone or ""
@@ -358,15 +366,14 @@ async def whatsapp_webhook(
                 logger.error("Moyasar invoice creation failed: %s", exc)
                 payment_url = get_payment_link(teacher.id)
 
-            # Compose short body text personalised with teacher's name
-            display_name = teacher.name or teacher.phone or ""
-            greeting = f"يا {display_name}، " if display_name else ""
-            body_text = (
-                f"{greeting}هذا رابط سداد اشتراك شواهد AI السنوي بقيمة "
-                f"{LAUNCH_AMOUNT_SAR} ريال."
+            display_name = teacher.name or ""
+            greeting     = f"يا {display_name}، " if display_name else ""
+            body_text    = (
+                f"{greeting}تصدير ملف PDF متاح بعد تفعيل الاشتراك 🌿\n"
+                f"يمكنك السداد من الرابط:"
             )
 
-            # Send as interactive button (not plain text URL)
+            # Interactive CTA button — not a plain text URL
             background_tasks.add_task(
                 send_whatsapp_button,
                 teacher.phone,
@@ -379,18 +386,21 @@ async def whatsapp_webhook(
                 "ok": False,
                 "teacher_id": teacher.id,
                 "intent": intent,
-                "reason": "subscription_required",
+                "reason": f"subscription_{sub_info['status']}",
                 "payment_url": payment_url,
             }
 
-        # Subscription active → trigger PDF export
+        # active_paid → allow export
+        logger.info("[EXPORT ALLOWED] teacher_id=%d evidence_count=%d", teacher.id, evidence_count)
         export_record = exporter_svc.create_export_record(db, teacher.id)
         background_tasks.add_task(
             exporter_svc.run_export_background,
             teacher_id=teacher.id,
             export_id=export_record.id,
         )
-        reply = "جارٍ إنشاء ملف الشواهد... سيصلك رابط التحميل قريبًا. ⏳"
+        # Natural, friendly message — GPT will send the PDF URL when done
+        teacher_name = teacher.name or "أستاذ"
+        reply = f"يا {teacher_name}، جارٍ إنشاء ملف شواهدك الآن ⏳ سيصلك رابط التحميل فور الانتهاء."
 
     elif decision["should_save"]:
         # GPT decided this is evidence worth saving
