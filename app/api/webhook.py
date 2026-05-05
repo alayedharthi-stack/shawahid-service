@@ -19,6 +19,10 @@ from app.db.base import get_db
 from app.services.teachers import get_or_create_teacher, get_teacher_by_id
 from app.services.evidences import create_evidence, get_teacher_evidences
 from app.services.storage import download_and_save, detect_evidence_type, extract_urls
+from app.services.deduplication import (
+    is_exact_duplicate, find_near_duplicate_text,
+    hash_text, hash_url,
+)
 from app.services import transcribe as transcribe_svc
 from app.services.subscriptions import (
     get_subscription_status,
@@ -354,9 +358,11 @@ async def whatsapp_webhook(
     # ── Download media (WhatsApp URLs require auth — must download first) ─────
     storage_path:   str | None = None
     safe_filename:  str | None = None
+    media_hash:     str | None = None
+
     if media_url:
         try:
-            storage_path, safe_filename = await download_and_save(
+            storage_path, safe_filename, media_hash = await download_and_save(
                 teacher_id=teacher.id,
                 media_url=media_url,
                 original_filename=file_name,
@@ -365,6 +371,14 @@ async def whatsapp_webhook(
             )
         except Exception as exc:
             logger.error("Media download failed for teacher %d: %s", teacher.id, exc)
+
+    # ── Media deduplication: exact byte-hash check ────────────────────────────
+    if media_hash and is_exact_duplicate(db, teacher.id, media_hash):
+        logger.info(
+            "[DUPLICATE SKIPPED] media already exists teacher_id=%d hash=%s",
+            teacher.id, media_hash[:12],
+        )
+        return {"ok": True, "teacher_id": teacher.id, "duplicate": True, "reason": "media_hash"}
 
     # ── Audio / Video transcription ───────────────────────────────────────────
     transcript:          str | None = None
@@ -609,41 +623,78 @@ async def whatsapp_webhook(
                 )
             gpt_category = fallback_cat
 
-        try:
-            is_force_saved = bool(decision.get("_force_saved"))
-            evidence = create_evidence(
-                db=db,
-                teacher_id=teacher.id,
-                source_phone=teacher.phone,
-                evidence_type=ev_type,
-                # For audio/video: save transcript. For URL: save the raw text (contains URL).
-                # For image/doc: caption/text.
-                message_text=transcript or gpt_text or text,
-                media_url=media_url,
-                storage_path=storage_path,
-                file_name=safe_filename or file_name,
-                mime_type=mime_type,
-                category=gpt_category,
-                title=decision["title"] or f"شاهد {ev_type}",
-                description=decision.get("description"),
-                grade=decision.get("grade"),
-                subject=decision.get("subject"),
-                # force_saved = GPT didn't decide to save, system overrode.
-                # Exporter normalises these automatically before PDF generation.
-                ai_status="force_saved" if is_force_saved else "completed",
-                ai_raw=dict(decision),
-            )
-            log_tag = "[EVIDENCE SAVED]" if intent == "evidence" else f"[{intent.upper()} SAVED]"
+        # ── Pre-save deduplication checks ─────────────────────────────────────
+        _content_hash: str | None = media_hash   # already computed for media
+        _skip_dedup = False
+
+        if not _content_hash:
+            # Text / URL evidence: compute hash for dedup
+            if ev_type == "url":
+                # Use first URL found, or the full text
+                _first_url = (extract_urls(gpt_text or text or "") or [None])[0]
+                if _first_url:
+                    _content_hash = hash_url(_first_url)
+            elif ev_type == "text" and (transcript or gpt_text or text):
+                _raw_text = transcript or gpt_text or text or ""
+                _content_hash = hash_text(_raw_text)
+                # Also run near-duplicate similarity check for text
+                if not is_exact_duplicate(db, teacher.id, _content_hash):
+                    _near_dup = find_near_duplicate_text(db, teacher.id, _raw_text)
+                    if _near_dup:
+                        logger.info(
+                            "[DUPLICATE SKIPPED] near-duplicate text teacher_id=%d similar_to_id=%d",
+                            teacher.id, _near_dup.id,
+                        )
+                        _skip_dedup = True
+
+        if not _skip_dedup and _content_hash and is_exact_duplicate(db, teacher.id, _content_hash):
             logger.info(
-                "%s teacher_id=%d evidence_id=%d type=%s category=%r title=%r confidence=%.2f",
-                log_tag, teacher.id, evidence.id, ev_type,
-                gpt_category, decision["title"], decision["confidence"],
+                "[DUPLICATE SKIPPED] exact hash match teacher_id=%d type=%s hash=%s",
+                teacher.id, ev_type, _content_hash[:12],
             )
-        except Exception as save_exc:
-            logger.error(
-                "[SAVE FAILED] teacher_id=%d type=%s category=%r error=%s",
-                teacher.id, ev_type, gpt_category, save_exc, exc_info=True,
-            )
+            _skip_dedup = True
+
+        if _skip_dedup:
+            # Duplicate detected — GPT's reply still goes out (e.g. "✅ محفوظ"),
+            # but we do NOT create a new evidence record.
+            logger.info("[DUPLICATE SKIPPED] no evidence created teacher_id=%d type=%s", teacher.id, ev_type)
+        else:
+            try:
+                is_force_saved = bool(decision.get("_force_saved"))
+                evidence = create_evidence(
+                    db=db,
+                    teacher_id=teacher.id,
+                    source_phone=teacher.phone,
+                    evidence_type=ev_type,
+                    # For audio/video: save transcript. For URL: save the raw text (contains URL).
+                    # For image/doc: caption/text.
+                    message_text=transcript or gpt_text or text,
+                    media_url=media_url,
+                    storage_path=storage_path,
+                    file_name=safe_filename or file_name,
+                    mime_type=mime_type,
+                    category=gpt_category,
+                    title=decision["title"] or f"شاهد {ev_type}",
+                    description=decision.get("description"),
+                    grade=decision.get("grade"),
+                    subject=decision.get("subject"),
+                    content_hash=_content_hash,
+                    # force_saved = GPT didn't decide to save, system overrode.
+                    # Exporter normalises these automatically before PDF generation.
+                    ai_status="force_saved" if is_force_saved else "completed",
+                    ai_raw=dict(decision),
+                )
+                log_tag = "[EVIDENCE SAVED]" if intent == "evidence" else f"[{intent.upper()} SAVED]"
+                logger.info(
+                    "%s teacher_id=%d evidence_id=%d type=%s category=%r title=%r confidence=%.2f",
+                    log_tag, teacher.id, evidence.id, ev_type,
+                    gpt_category, decision["title"], decision["confidence"],
+                )
+            except Exception as save_exc:
+                logger.error(
+                    "[SAVE FAILED] teacher_id=%d type=%s category=%r error=%s",
+                    teacher.id, ev_type, gpt_category, save_exc, exc_info=True,
+                )
 
     elif intent == "failure":
         # GPT failed after all retries.

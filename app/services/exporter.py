@@ -161,6 +161,7 @@ def _normalize_evidence_for_export(ev) -> dict:
         "subject":       ev.subject,
         "grade":         ev.grade,
         "created_at":    ev.created_at,
+        "content_hash":  getattr(ev, "content_hash", None),  # used by export dedup
         "was_normalised": stored_desc == "" or raw_title.lower() in _RAW_TITLE_PATTERNS,
     }
 
@@ -221,17 +222,26 @@ def _build_stats(normalised_evidences: list[dict], categories: list[dict]) -> di
 
 
 def _render_html(teacher: Teacher, evidences: list) -> str:
-    # ── Normalise ALL evidences before any PDF rendering ─────────────────────
-    # This step guarantees every evidence has a proper title, category, and
-    # description — even if it was force-saved without GPT metadata.
+    from app.services.deduplication import deduplicate_for_export
+
+    # ── Step 1: Normalise ALL evidences ──────────────────────────────────────
+    # Guarantees every evidence has a proper title, category, and description.
     normalised = [_normalize_evidence_for_export(ev) for ev in evidences]
     n_fixed    = sum(1 for e in normalised if e["was_normalised"])
     if n_fixed:
         logger.info("[PDF NORMALISE] %d/%d evidences had missing metadata — defaults applied",
                     n_fixed, len(normalised))
 
-    categories = _build_categories(normalised)
-    stats      = _build_stats(normalised, categories)
+    # ── Step 2: Deduplicate before rendering ──────────────────────────────────
+    # Safety net: removes duplicate evidences that slipped through save-time checks
+    # (e.g. evidences added before dedup system was deployed, or content_hash=None).
+    deduped   = deduplicate_for_export(normalised)
+    n_removed = len(normalised) - len(deduped)
+    if n_removed:
+        logger.info("[PDF DEDUP] removed %d duplicate(s) before render", n_removed)
+
+    categories = _build_categories(deduped)
+    stats      = _build_stats(deduped, categories)
     template   = _jinja_env.get_template("portfolio.html")
     return template.render(
         teacher=teacher,

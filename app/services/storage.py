@@ -37,13 +37,15 @@ async def download_and_save(
     original_filename: str | None = None,
     mime_type: str | None = None,
     auth_token: str | None = None,
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     """
     Download media from media_url and save under teacher's isolated folder.
-    Returns (storage_path, safe_filename).
+    Returns (storage_path, safe_filename, content_hash).
     Never stores files outside the teacher's own directory.
     Pass auth_token for Meta Cloud API media URLs that require Authorization.
     """
+    import hashlib
+
     safe_name = _safe_filename(original_filename, mime_type)
     dest_dir = settings.evidence_storage(teacher_id)
     dest_path = dest_dir / safe_name
@@ -56,12 +58,14 @@ async def download_and_save(
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             resp = await client.get(media_url, headers=headers)
             resp.raise_for_status()
-            dest_path.write_bytes(resp.content)
+            raw_bytes = resp.content
+            dest_path.write_bytes(raw_bytes)
     except Exception as exc:
         logger.error("Failed to download media for teacher %d from %s: %s", teacher_id, media_url, exc)
         raise
 
-    return str(dest_path), safe_name
+    content_hash = hashlib.sha256(raw_bytes).hexdigest()
+    return str(dest_path), safe_name, content_hash
 
 
 def detect_evidence_type(mime_type: str | None, file_name: str | None, text: str | None) -> str:

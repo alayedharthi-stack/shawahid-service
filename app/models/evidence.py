@@ -25,6 +25,7 @@ class Evidence(Base):
     grade: Mapped[str | None] = mapped_column(Text)
     subject: Mapped[str | None] = mapped_column(Text)
 
+    content_hash: Mapped[str | None] = mapped_column(String(64), index=True)  # SHA-256 of media bytes or cleaned text
     ai_status: Mapped[str] = mapped_column(String(30), default="pending")
     ai_raw: Mapped[dict | None] = mapped_column(JSONB)
 
