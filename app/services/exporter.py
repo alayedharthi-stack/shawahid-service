@@ -132,19 +132,75 @@ _SUPPORT_WHATSAPP = "966544761054"
 
 
 def _ministry_logo_svg_data_uri() -> str:
-    """Small white ministry mark used on the cover header."""
+    """Full white ministry crest (icon + Arabic name + English name) embedded
+    as a single SVG, so the cover renders it as ONE integrated watermark
+    instead of an icon plus separate text labels.
+
+    All elements share the same fill (#ffffff) and a single opacity stop,
+    so the whole mark reads as one coherent monochrome official identity.
+    Rendered inline by Chromium during Playwright PDF export — no external
+    fonts required (Chromium falls back to its bundled Arabic faces, which
+    display "وزارة التعليم" correctly).
+    """
     svg = """
-<svg xmlns="http://www.w3.org/2000/svg" width="150" height="80" viewBox="0 0 150 80">
-  <g fill="#fff" opacity=".96">
-    <circle cx="24" cy="16" r="7"/><circle cx="42" cy="17" r="7"/><circle cx="60" cy="19" r="7"/>
-    <circle cx="78" cy="23" r="6"/><circle cx="96" cy="29" r="5"/>
-    <circle cx="25" cy="36" r="7"/><circle cx="43" cy="37" r="6.5"/><circle cx="61" cy="40" r="6"/>
-    <circle cx="80" cy="45" r="5"/><circle cx="99" cy="51" r="4.5"/>
-    <circle cx="26" cy="55" r="6.5"/><circle cx="45" cy="56" r="6"/><circle cx="64" cy="59" r="5.5"/>
-    <circle cx="84" cy="65" r="4.5"/>
-    <circle cx="111" cy="36" r="5.5"/><circle cx="124" cy="28" r="6"/><circle cx="136" cy="22" r="6.5"/>
-    <circle cx="112" cy="53" r="5"/><circle cx="127" cy="47" r="6"/><circle cx="139" cy="42" r="6.5"/>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="220" height="180" viewBox="0 0 220 180">
+  <g fill="#ffffff" opacity="0.95">
+    <!-- ═══ Left dot cluster (3 rows × 5 dots, descending size) ═══ -->
+    <circle cx="34" cy="14" r="6.8"/>
+    <circle cx="51" cy="14" r="6.8"/>
+    <circle cx="68" cy="15" r="6.5"/>
+    <circle cx="85" cy="18" r="5.6"/>
+    <circle cx="100" cy="24" r="4.6"/>
+    <circle cx="34" cy="33" r="6.6"/>
+    <circle cx="51" cy="33" r="6.2"/>
+    <circle cx="68" cy="35" r="5.6"/>
+    <circle cx="85" cy="40" r="4.7"/>
+    <circle cx="100" cy="46" r="3.9"/>
+    <circle cx="34" cy="52" r="6.2"/>
+    <circle cx="51" cy="52" r="5.6"/>
+    <circle cx="68" cy="54" r="5.0"/>
+    <circle cx="85" cy="59" r="4.0"/>
+    <circle cx="98" cy="64" r="3.2"/>
+
+    <!-- ═══ Right dot cluster (mirror, ascending size outward) ═══ -->
+    <circle cx="120" cy="24" r="4.6"/>
+    <circle cx="135" cy="18" r="5.6"/>
+    <circle cx="152" cy="15" r="6.5"/>
+    <circle cx="169" cy="14" r="6.8"/>
+    <circle cx="186" cy="14" r="6.8"/>
+    <circle cx="120" cy="46" r="3.9"/>
+    <circle cx="135" cy="40" r="4.7"/>
+    <circle cx="152" cy="35" r="5.6"/>
+    <circle cx="169" cy="33" r="6.2"/>
+    <circle cx="186" cy="33" r="6.6"/>
+    <circle cx="122" cy="64" r="3.2"/>
+    <circle cx="135" cy="59" r="4.0"/>
+    <circle cx="152" cy="54" r="5.0"/>
+    <circle cx="169" cy="52" r="5.6"/>
+    <circle cx="186" cy="52" r="6.2"/>
   </g>
+
+  <!-- Arabic: وزارة التعليم — primary identity line -->
+  <text x="110" y="115"
+        text-anchor="middle"
+        font-family="'Cairo','Tajawal','IBM Plex Sans Arabic','Tahoma','Arial',sans-serif"
+        font-size="26"
+        font-weight="700"
+        fill="#ffffff"
+        opacity="0.95"
+        direction="rtl"
+        xml:lang="ar">وزارة التعليم</text>
+
+  <!-- English: Ministry of Education — secondary line -->
+  <text x="110" y="145"
+        text-anchor="middle"
+        font-family="'Cairo','Tahoma','Arial','Segoe UI',sans-serif"
+        font-size="13.5"
+        font-weight="500"
+        fill="#ffffff"
+        opacity="0.78"
+        letter-spacing="0.4">Ministry of Education</text>
 </svg>
 """.strip()
     encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")

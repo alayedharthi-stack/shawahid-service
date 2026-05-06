@@ -136,51 +136,24 @@
       pointer-events: none;
     }
 
-    /* Ministry of Education block, top-LEFT corner.
-       Re-uses the {{ ministry_logo }} asset, recolored to white via CSS
-       filter so it sits cleanly on the deep-teal background. The official
-       "وزارة التعليم | Ministry of Education" caption sits underneath in
-       a quiet weight so the identity reads even if the logo glyph is faint.
-       Logo is slightly smaller and slightly less opaque than the previous
-       revision, so it integrates with the background instead of floating. */
-    .tcover-moe-block {
-      position: absolute;
-      top: 28mm;
-      left: 22mm;
-      width: 60mm;
-      z-index: 5;
-      text-align: left;
-    }
+    /* Full Ministry of Education crest (icon + Arabic name + English name)
+       — all baked into the SVG produced by `_ministry_logo_svg_data_uri()`.
+       Rendered as a single integrated white watermark. NO separate text
+       caption underneath — the SVG already contains the labels, so the
+       mark reads as one official identity block, not "logo + labels".
+       The SVG is already pure white internally; opacity tones the whole
+       mark down so it sits behind the headline rather than competing. */
     .tcover-moe-logo {
-      display: block;
-      width: 40mm;
-      max-width: 40mm;
+      position: absolute;
+      top: 24mm;
+      left: 22mm;
+      width: 50mm;
+      max-width: 50mm;
       height: auto;
-      max-height: 34mm;
-      filter: brightness(0) invert(1);
+      max-height: 50mm;
       opacity: 0.88;
       object-fit: contain;
-    }
-    /* Caption sits CLOSE under the logo and reads as ONE identity block:
-       Arabic line on top (clear, readable), English line directly below
-       in a smaller, slightly fainter weight. Same opacity family so
-       they belong together. */
-    .tcover-moe-caption {
-      margin-top: 2.5mm;
-    }
-    .tcover-moe-caption .ar {
-      font-size: 10.5pt;
-      font-weight: 700;
-      color: rgba(255,255,255,0.88);
-      line-height: 1.2;
-    }
-    .tcover-moe-caption .en {
-      margin-top: 0.6mm;
-      font-size: 8pt;
-      font-weight: 500;
-      color: rgba(255,255,255,0.66);
-      line-height: 1.2;
-      letter-spacing: 0.2px;
+      z-index: 5;
     }
 
     /* Top-right block: ministry line (small) + gold pill */
@@ -830,15 +803,9 @@
      Single A4 page, overflow:hidden, no clip-path (gradients only).
 ═══════════════════════════════════════════════════════════════════ -->
 <div class="tcover-page">
-  <div class="tcover-moe-block">
-    {% if ministry_logo %}
-    <img class="tcover-moe-logo" src="{{ ministry_logo }}" alt="وزارة التعليم">
-    {% endif %}
-    <div class="tcover-moe-caption">
-      <div class="ar">وزارة التعليم</div>
-      <div class="en">Ministry of Education</div>
-    </div>
-  </div>
+  {% if ministry_logo %}
+  <img class="tcover-moe-logo" src="{{ ministry_logo }}" alt="وزارة التعليم - Ministry of Education">
+  {% endif %}
 
   <div class="tcover-top">
     <div class="tcover-ministry">المملكة العربية السعودية &nbsp;-&nbsp; وزارة التعليم</div>
