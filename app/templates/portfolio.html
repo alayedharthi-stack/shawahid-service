@@ -102,14 +102,15 @@
     }
     .tcover-page * { box-sizing: border-box; }
 
-    /* Subtle grid texture across the green plane (very low opacity) */
+    /* Subtle grid texture across the green plane (further softened so it
+       never competes with the headline / teacher-name typography). */
     .tcover-page::before {
       content: "";
       position: absolute;
       inset: 0;
       background-image:
-        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+        linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
       background-size: 18mm 18mm;
       pointer-events: none;
       z-index: 1;
@@ -135,23 +136,47 @@
       pointer-events: none;
     }
 
-    /* Ministry logo, top-LEFT corner, fills the empty green space.
-       Uses the same {{ ministry_logo }} asset already loaded by the
-       exporter, but recolored to pure white via CSS filter so it sits
-       cleanly on the deep-teal background (no separate white asset
-       needed, no extra HTTP request, Playwright-safe). */
-    .tcover-moe-logo {
+    /* Ministry of Education block, top-LEFT corner.
+       Re-uses the {{ ministry_logo }} asset, recolored to white via CSS
+       filter so it sits cleanly on the deep-teal background. The official
+       "وزارة التعليم | Ministry of Education" caption sits underneath in
+       a quiet weight so the identity reads even if the logo glyph is faint.
+       Logo is slightly smaller and slightly less opaque than the previous
+       revision, so it integrates with the background instead of floating. */
+    .tcover-moe-block {
       position: absolute;
-      top: 26mm;
+      top: 28mm;
       left: 22mm;
-      width: 44mm;
-      max-width: 44mm;
-      height: auto;
-      max-height: 38mm;
-      filter: brightness(0) invert(1);
-      opacity: 0.92;
-      object-fit: contain;
+      width: 60mm;
       z-index: 5;
+    }
+    .tcover-moe-logo {
+      display: block;
+      width: 40mm;
+      max-width: 40mm;
+      height: auto;
+      max-height: 34mm;
+      filter: brightness(0) invert(1);
+      opacity: 0.86;
+      object-fit: contain;
+    }
+    .tcover-moe-caption {
+      margin-top: 4mm;
+      font-size: 8pt;
+      font-weight: 500;
+      color: rgba(255,255,255,0.72);
+      line-height: 1.35;
+      white-space: nowrap;
+      text-align: left;
+    }
+    .tcover-moe-caption .sep {
+      margin: 0 1.5mm;
+      color: rgba(255,255,255,0.42);
+      font-weight: 300;
+    }
+    .tcover-moe-caption .en {
+      font-size: 7.5pt;
+      color: rgba(255,255,255,0.58);
     }
 
     /* Top-right block: ministry line (small) + gold pill */
@@ -198,7 +223,7 @@
     }
     .tcover-headline h1 {
       font-size: 42pt;
-      font-weight: 900;
+      font-weight: 800;            /* eased from 900 → 800 for premium print feel */
       line-height: 1.3;
       margin: 0;
       color: #ffffff;
@@ -208,7 +233,7 @@
       display: block;
       margin-top: 1mm;
       font-size: 36pt;
-      font-weight: 900;
+      font-weight: 800;            /* matched to line 1 */
       color: #ffffff;
       line-height: 1.3;
     }
@@ -225,9 +250,9 @@
       z-index: 5;
     }
     .tcover-teacher-rule {
-      width: 50mm;
-      height: 0.6mm;
-      background: rgba(218,176,82,0.65);
+      width: 42mm;                       /* shorter (was 50mm) → reads as accent, not divider */
+      height: 0.45mm;                    /* thinner (was 0.6mm) */
+      background: rgba(218,176,82,0.45); /* softer (was 0.65) */
       margin-bottom: 4mm;
     }
     .tcover-teacher-name {
@@ -258,8 +283,8 @@
       border-radius: 4mm;
       padding: 8mm 9mm 9mm;
       box-shadow:
-        0 8mm 18mm rgba(0,0,0,0.12),
-        0 1mm 2mm rgba(0,0,0,0.06);
+        0 4mm 10mm rgba(0,0,0,0.07),    /* softer print-grade shadow */
+        0 0.6mm 1.2mm rgba(0,0,0,0.04);
       z-index: 6;
     }
     .tcover-card-title {
@@ -310,6 +335,22 @@
       color: rgba(15,94,87,0.62);
       line-height: 1.4;
       z-index: 7;
+    }
+
+    /* Quiet wordmark inside the bottom-left white wedge — barely visible,
+       gives the empty triangle intentional brand presence without noise. */
+    .tcover-watermark {
+      position: absolute;
+      bottom: 36mm;
+      left: 12mm;
+      font-size: 9pt;
+      font-weight: 800;
+      letter-spacing: 4px;
+      color: rgba(15,94,87,0.07);
+      z-index: 3;
+      pointer-events: none;
+      white-space: nowrap;
+      text-transform: uppercase;
     }
 
     /* ══════════════════════════════════════════════════════════════════
@@ -785,9 +826,14 @@
      Single A4 page, overflow:hidden, no clip-path (gradients only).
 ═══════════════════════════════════════════════════════════════════ -->
 <div class="tcover-page">
-  {% if ministry_logo %}
-  <img class="tcover-moe-logo" src="{{ ministry_logo }}" alt="وزارة التعليم">
-  {% endif %}
+  <div class="tcover-moe-block">
+    {% if ministry_logo %}
+    <img class="tcover-moe-logo" src="{{ ministry_logo }}" alt="وزارة التعليم">
+    {% endif %}
+    <div class="tcover-moe-caption">
+      وزارة التعليم<span class="sep">|</span><span class="en">Ministry of Education</span>
+    </div>
+  </div>
 
   <div class="tcover-top">
     <div class="tcover-ministry">المملكة العربية السعودية &nbsp;-&nbsp; وزارة التعليم</div>
@@ -834,6 +880,8 @@
       </div>
     </div>
   </div>
+
+  <div class="tcover-watermark">SHAWAHID</div>
 
   <div class="tcover-note">إعداد وتنظيم الشواهد بصيغة PDF جاهزة للطباعة</div>
 </div>
