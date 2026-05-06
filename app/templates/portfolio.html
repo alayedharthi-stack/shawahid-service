@@ -815,7 +815,7 @@
   <div class="tcover-headline">
     <h1>
       ملف الشواهد
-      {% if teacher.subject %}<span class="tcover-line2">لمعلم {{ teacher.subject }}</span>{% endif %}
+      {% if teacher.subject %}<span class="tcover-line2">لمعلم {{ subject_with_al or teacher.subject }}</span>{% endif %}
     </h1>
   </div>
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ملف الشواهد لمعلم {{subject}}</title>
+  <title>ملف الشواهد لمعلم {{ subject_with_al or subject }}</title>
   <style>
     @page {
       size: A4;
@@ -462,7 +462,7 @@
     </div>
 
     <section class="headline">
-      <h1>ملف الشواهد<br>لمعلم {{subject}}</h1>
+      <h1>ملف الشواهد<br>لمعلم {{ subject_with_al or subject }}</h1>
       <div class="title-rule"></div>
     </section>
 

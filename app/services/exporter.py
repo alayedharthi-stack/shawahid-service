@@ -207,6 +207,89 @@ def _ministry_logo_svg_data_uri() -> str:
     return f"data:image/svg+xml;base64,{encoded}"
 
 
+# ── Arabic-aware subject formatter ────────────────────────────────────────────
+# Used by the cover headline ("ملف الشواهد لمعلم {subject_with_al}") so the
+# Arabic grammar reads correctly: "لمعلم الرياضيات" / "لمعلم الدراسات
+# الاجتماعية" / "لمعلم اللغة العربية" — never "لمعلم رياضيات".
+_SUBJECT_WITH_AL_OVERRIDES: dict[str, str] = {
+    # Core subjects (exact name → properly-grammared form)
+    "رياضيات":               "الرياضيات",
+    "علوم":                  "العلوم",
+    "فيزياء":                "الفيزياء",
+    "كيمياء":                "الكيمياء",
+    "أحياء":                 "الأحياء",
+    "احياء":                 "الأحياء",
+    # Languages
+    "لغة عربية":             "اللغة العربية",
+    "لغتي":                  "لغتي",                  # already grammatical
+    "لغتي الجميلة":          "لغتي الجميلة",
+    "لغة إنجليزية":          "اللغة الإنجليزية",
+    "لغة انجليزية":          "اللغة الإنجليزية",
+    "إنجليزي":               "اللغة الإنجليزية",
+    "انجليزي":               "اللغة الإنجليزية",
+    # Social studies
+    "دراسات اجتماعية":       "الدراسات الاجتماعية",
+    "دراسات إجتماعية":       "الدراسات الاجتماعية",
+    "اجتماعيات":             "الاجتماعيات",
+    "تاريخ":                 "التاريخ",
+    "جغرافيا":               "الجغرافيا",
+    "جغرافية":               "الجغرافيا",
+    # Religious subjects
+    "تربية إسلامية":         "التربية الإسلامية",
+    "تربية اسلامية":         "التربية الإسلامية",
+    "دراسات إسلامية":        "الدراسات الإسلامية",
+    "دراسات اسلامية":        "الدراسات الإسلامية",
+    "فقه":                   "الفقه",
+    "توحيد":                 "التوحيد",
+    "حديث":                  "الحديث",
+    "تفسير":                 "التفسير",
+    "قرآن":                  "القرآن الكريم",
+    "قرآن كريم":             "القرآن الكريم",
+    "القرآن الكريم":         "القرآن الكريم",
+    "تجويد":                 "التجويد",
+    # Other common subjects
+    "تربية بدنية":           "التربية البدنية",
+    "تربية فنية":            "التربية الفنية",
+    "حاسب آلي":              "الحاسب الآلي",
+    "حاسب":                  "الحاسب الآلي",
+    "حاسوب":                 "الحاسوب",
+    "علوم الحاسب":           "علوم الحاسب",            # already grammatical
+    "تقنية رقمية":           "التقنية الرقمية",
+    "مهارات حياتية":         "المهارات الحياتية",
+    "مهارات رقمية":          "المهارات الرقمية",
+    "مهارات أسرية":          "المهارات الأسرية",
+    "علم النفس":             "علم النفس",              # already grammatical
+    "اقتصاد":                "الاقتصاد",
+    "إدارة أعمال":           "إدارة الأعمال",
+}
+
+
+def _format_subject_with_al(subject: str | None) -> str:
+    """Return the subject prefixed with the Arabic definite article ('ال')
+    when needed, so the cover headline reads grammatically:
+
+        "لمعلم الرياضيات"   (not "لمعلم رياضيات")
+        "لمعلم الدراسات الاجتماعية"
+        "لمعلم اللغة العربية"
+
+    Strategy:
+      1. Empty → empty string (caller should hide the line entirely).
+      2. Exact match in `_SUBJECT_WITH_AL_OVERRIDES` → use the canonical form.
+      3. Already starts with 'ال' / 'أل' → keep as-is.
+      4. Default → prepend 'ال'.
+    """
+    if not subject:
+        return ""
+    s = subject.strip()
+    if not s:
+        return ""
+    if s in _SUBJECT_WITH_AL_OVERRIDES:
+        return _SUBJECT_WITH_AL_OVERRIDES[s]
+    if s.startswith("ال") or s.startswith("أل"):
+        return s
+    return f"ال{s}"
+
+
 def _file_data_uri(path: str | None, mime_type: str | None = None) -> str | None:
     """Return a browser-safe data URI for local media used inside Playwright PDF."""
     if not path:
@@ -511,6 +594,9 @@ def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool 
         academic_year=_academic_year(),
         generated_at=datetime.now().strftime("%Y/%m/%d %H:%M"),
         ministry_logo=_ministry_logo_svg_data_uri(),
+        # Grammar-correct subject for the cover headline:
+        # "لمعلم الرياضيات" instead of "لمعلم رياضيات".
+        subject_with_al=_format_subject_with_al(getattr(teacher, "subject", None)),
         whatsapp_phone=_SUPPORT_WHATSAPP,
         whatsapp_url=f"https://wa.me/{_SUPPORT_WHATSAPP}",
         include_intro_page=include_intro_page,
