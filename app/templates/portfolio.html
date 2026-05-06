@@ -782,6 +782,36 @@
       line-height: 1.6;
     }
 
+    /* ── TEACHER STRIP (Philosophy page) ──────────────────────────── */
+    .teacher-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .ts-field {
+      background: var(--teal-lt);
+      border: 1px solid var(--border-dk);
+      border-radius: 8px;
+      padding: 9px 14px;
+      min-width: 130px;
+      flex: 1 1 130px;
+    }
+    .ts-label {
+      font-size: 8pt;
+      font-weight: 700;
+      color: var(--teal);
+      margin-bottom: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .ts-value {
+      font-size: 10.5pt;
+      font-weight: 600;
+      color: var(--teal-dk);
+      line-height: 1.4;
+    }
+
     /* ── PRINT ─────────────────────────────────────────────────────── */
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -860,6 +890,54 @@
 
 
 <!-- ══════════════════════════════════════════════════════════════════
+     PHILOSOPHY — teacher intro + educational philosophy
+     Guard: only rendered when teacher has at least name or school data.
+     This is the FIRST inner page (page-first) so no extra break needed.
+══════════════════════════════════════════════════════════════════ -->
+{% set _has_teacher_profile = teacher.name or teacher.subject or teacher.school_name or teacher.principal_name %}
+{% if _has_teacher_profile %}
+<div class="page page-first">
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">التعريف بالمعلم</span>
+  </div>
+
+  <div class="sec">
+    <div class="sec-icon">👤</div>
+    <div class="sec-title">التعريف بالمعلم والفلسفة التعليمية</div>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="teacher-strip">
+    {% if teacher.name %}<div class="ts-field"><div class="ts-label">الاسم الكامل</div><div class="ts-value">{{ teacher.name }}</div></div>{% endif %}
+    {% if teacher.subject %}<div class="ts-field"><div class="ts-label">التخصص / المادة</div><div class="ts-value">{{ teacher.subject }}</div></div>{% endif %}
+    {% if teacher.stage %}<div class="ts-field"><div class="ts-label">المرحلة الدراسية</div><div class="ts-value">{{ teacher.stage }}</div></div>{% endif %}
+    {% if teacher.grades %}<div class="ts-field"><div class="ts-label">الصفوف</div><div class="ts-value">{{ teacher.grades }}</div></div>{% endif %}
+    {% if teacher.school_name %}<div class="ts-field"><div class="ts-label">المدرسة</div><div class="ts-value">{{ teacher.school_name }}</div></div>{% endif %}
+    {% if teacher.principal_name %}<div class="ts-field"><div class="ts-label">مدير المدرسة</div><div class="ts-value">{{ teacher.principal_name }}</div></div>{% endif %}
+    {% if teacher.education_admin %}<div class="ts-field"><div class="ts-label">إدارة التعليم</div><div class="ts-value">{{ teacher.education_admin }}</div></div>{% endif %}
+    {% if teacher.region %}<div class="ts-field"><div class="ts-label">المنطقة</div><div class="ts-value">{{ teacher.region }}</div></div>{% endif %}
+    <div class="ts-field"><div class="ts-label">العام الدراسي</div><div class="ts-value">{{ academic_year }}</div></div>
+    <div class="ts-field"><div class="ts-label">إجمالي الشواهد</div><div class="ts-value">{{ total_count }} شاهد</div></div>
+  </div>
+
+  <div class="sec" style="margin-top:24px;">
+    <div class="sec-icon">💡</div>
+    <div class="sec-title">الفلسفة التعليمية</div>
+    <div class="sec-line"></div>
+  </div>
+  <div class="philosophy">
+    {% if teacher.name %}يؤمن المعلم <strong>{{ teacher.name }}</strong>{% else %}يؤمن هذا المعلم{% endif %}
+    بأن التعليم الفعّال يقوم على التخطيط المحكم، والتنفيذ الإبداعي، والتقويم المستمر.
+    ويسعى دائمًا إلى تنمية مهارات التفكير الناقد، وتعزيز قيم التعاون والمسؤولية،
+    مستعينًا بأساليب التعلم النشط والتقنيات الحديثة لتحقيق مخرجات تعليمية متميزة
+    تُسهم في رفع مستوى الطلاب وتُنمّي شخصياتهم.
+  </div>
+</div>
+{% endif %}{# /philosophy #}
+
+
+<!-- ══════════════════════════════════════════════════════════════════
      STATISTICS — only when there is real content
      Guard: page is rendered only when total_count >= 3 AND the portfolio
      actually has at least one media item (image/video/audio/doc/url).
@@ -867,7 +945,7 @@
 ══════════════════════════════════════════════════════════════════ -->
 {% set _has_media = (stats.images or 0) + (stats.videos or 0) + (stats.audios or 0) + (stats.documents or 0) + (stats.urls or 0) %}
 {% if total_count >= 3 and _has_media > 0 %}
-<div class="page page-first">
+<div class="page">
   <div class="page-header">
     <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
     <span class="ph-right">ملخص إحصائي</span>
@@ -967,53 +1045,6 @@
   </div>
 </div>
 {% endif %}{# /toc conditional #}
-
-
-<!-- ══════════════════════════════════════════════════════════════════
-     TEACHER PROFILE
-══════════════════════════════════════════════════════════════════ -->
-<div class="page">
-  <div class="page-header">
-    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
-    <span class="ph-right">بيانات المعلم</span>
-  </div>
-
-  <div class="sec">
-    <div class="sec-icon">👤</div>
-    <div class="sec-title">بيانات المعلم والفلسفة التعليمية</div>
-    <div class="sec-line"></div>
-  </div>
-
-  <table class="info-table">
-    <tr><td class="lbl">الاسم الكامل</td><td>{{ teacher.name or '—' }}</td></tr>
-    <tr><td class="lbl">التخصص / المادة</td><td>{{ teacher.subject or '—' }}</td></tr>
-    <tr><td class="lbl">المرحلة الدراسية</td><td>{{ teacher.stage or '—' }}</td></tr>
-    <tr><td class="lbl">الصفوف</td><td>{{ teacher.grades or '—' }}</td></tr>
-    <tr><td class="lbl">المدرسة</td><td>{{ teacher.school_name or '—' }}</td></tr>
-    {% if teacher.education_admin %}
-    <tr><td class="lbl">إدارة التعليم</td><td>{{ teacher.education_admin }}</td></tr>
-    {% endif %}
-    {% if teacher.region %}
-    <tr><td class="lbl">المنطقة</td><td>{{ teacher.region }}</td></tr>
-    {% endif %}
-    <tr><td class="lbl">مدير المدرسة</td><td>{{ teacher.principal_name or '—' }}</td></tr>
-    <tr><td class="lbl">إجمالي الشواهد</td><td>{{ total_count }} شاهد</td></tr>
-    <tr><td class="lbl">العام الدراسي</td><td>{{ academic_year }}</td></tr>
-  </table>
-
-  <div class="sec">
-    <div class="sec-icon">💡</div>
-    <div class="sec-title">الفلسفة التعليمية</div>
-    <div class="sec-line"></div>
-  </div>
-  <div class="philosophy">
-    يؤمن المعلم <strong>{{ teacher.name or '' }}</strong> بأن التعليم الفعّال
-    يقوم على التخطيط المحكم، والتنفيذ الإبداعي، والتقويم المستمر.
-    ويسعى دائمًا إلى تنمية مهارات التفكير الناقد، وتعزيز قيم التعاون والمسؤولية،
-    مستعينًا بأساليب التعلم النشط والتقنيات الحديثة لتحقيق مخرجات تعليمية متميزة
-    تُسهم في رفع مستوى الطلاب وتُنمّي شخصياتهم.
-  </div>
-</div>
 
 
 <!-- ══════════════════════════════════════════════════════════════════
