@@ -758,6 +758,12 @@
       color: var(--body);
       font-style: italic;
     }
+    .video-hint {
+      margin-top: 6px;
+      font-size: 8.8pt;
+      color: var(--muted);
+      font-weight: 700;
+    }
     .media-action {
       display: inline-block;
       margin-top: 8px;
@@ -783,6 +789,12 @@
     .file-icon { font-size: 24px; flex-shrink: 0; }
     .file-name { font-size: 10pt; font-weight: 700; color: var(--teal-dk); }
     .file-type { font-size: 8.5pt; color: var(--muted); font-weight: 700; }
+    .file-unavailable {
+      margin-top: 4px;
+      font-size: 8.8pt;
+      color: var(--muted);
+      font-weight: 700;
+    }
 
     /* URL */
     .url-card {
@@ -1213,6 +1225,7 @@
         {% if ev.message_text and ev.message_text|length > 3 %}
         <div class="video-caption">{{ ev.message_text[:500] }}</div>
         {% endif %}
+        <div class="video-hint">اضغط لفتح الفيديو</div>
         {% if ev.media_url %}
         <a class="media-action" href="{{ ev.media_url }}">مشاهدة الفيديو</a>
         {% endif %}
@@ -1233,6 +1246,13 @@
 
         {# DOCUMENT / PDF / FILE #}
         {% elif ev.evidence_type in ('pdf', 'document') or ev.file_name %}
+        {% if ev.media_src %}
+        <div class="img-grid g1">
+          <img src="{{ ev.media_src }}"
+               alt="{{ ev.file_label or ev.title }}"
+               onerror="this.parentElement.innerHTML='<div class=\'media-placeholder\'>📄 ملف مرفق — لا يمكن عرض المحتوى</div>';" />
+        </div>
+        {% else %}
         <div class="file-card">
           <div class="file-icon">
             {%- if ev.evidence_type == 'pdf' or (ev.file_name and ev.file_name.lower().endswith('.pdf')) %}📄
@@ -1241,15 +1261,17 @@
             {%- else %}🗂️{%- endif %}
           </div>
           <div style="flex:1;">
-            <div class="file-name">{{ ev.file_label or ev.title }}</div>
+            <div class="file-name">📄 {{ ev.file_label or 'ملف مرفق' }}</div>
             <div class="file-type">
               {{ ev.file_type_label or 'ملف' }}
             </div>
+            <div class="file-unavailable">🔍 لا يمكن عرض المحتوى داخل ملف PDF</div>
             {% if ev.media_url %}
             <a class="media-action" href="{{ ev.media_url }}">تحميل الملف</a>
             {% endif %}
           </div>
         </div>
+        {% endif %}
 
         {# TEXT — show content if meaningful (not just the title) #}
         {% elif ev.evidence_type == 'text' and ev.message_text and ev.message_text|length > 10 %}
