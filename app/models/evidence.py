@@ -15,6 +15,7 @@ class Evidence(Base):
     category: Mapped[str | None] = mapped_column(String(80))
     title: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
+    ai_enriched_description: Mapped[str | None] = mapped_column(Text)
 
     message_text: Mapped[str | None] = mapped_column(Text)
     media_url: Mapped[str | None] = mapped_column(Text)

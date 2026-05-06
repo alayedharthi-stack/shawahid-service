@@ -465,6 +465,37 @@
       color: var(--teal-dk);
       line-height: 1.8;
     }
+    .analysis-lists {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .analysis-list {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      background: var(--white);
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .analysis-list h4 {
+      font-size: 10pt;
+      color: var(--teal);
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 5px;
+    }
+    .analysis-list ul {
+      padding-right: 16px;
+      margin: 0;
+    }
+    .analysis-list li {
+      font-size: 8.8pt;
+      line-height: 1.65;
+      margin-bottom: 5px;
+      color: var(--body);
+    }
 
     /* ══════════════════════════════════════════════════════════════════
        SECTION TITLE HELPER
@@ -663,6 +694,31 @@
       line-height: 1.65;
       color: var(--body);
       margin-bottom: 10px;
+    }
+    .evidence-sections {
+      display: grid;
+      gap: 7px;
+      margin-bottom: 10px;
+    }
+    .evidence-section {
+      border: 1px solid var(--border);
+      border-right: 3px solid var(--teal);
+      border-radius: 8px;
+      padding: 7px 10px;
+      background: #fbfdfd;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .evidence-section-label {
+      font-size: 8.3pt;
+      font-weight: 900;
+      color: var(--teal);
+      margin-bottom: 3px;
+    }
+    .evidence-section-text {
+      font-size: 9.5pt;
+      line-height: 1.55;
+      color: var(--body);
     }
 
     /* Educational value box */
@@ -1146,10 +1202,20 @@
     <!-- Body -->
     <div class="ev-body">
 
-      <!-- Description -->
-      {% if ev.description %}
+      <!-- Professional Description -->
+      {% if ev.enriched_sections %}
+      <div class="field-label">الشاهد التربوي الاحترافي</div>
+      <div class="evidence-sections">
+        {% for section in ev.enriched_sections %}
+        <div class="evidence-section">
+          <div class="evidence-section-label">{{ section.label }}</div>
+          <div class="evidence-section-text">{{ section.text }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% elif ev.ai_enriched_description or ev.description %}
       <div class="field-label">الوصف التربوي</div>
-      <div class="ev-desc">{{ ev.description }}</div>
+      <div class="ev-desc">{{ ev.ai_enriched_description or ev.description }}</div>
       {% elif ev.message_text %}
       <div class="field-label">المحتوى</div>
       <div class="ev-desc" style="color:var(--muted); font-style:italic;">
@@ -1405,7 +1471,7 @@
 
   <div class="sec">
     <div class="sec-icon">📈</div>
-    <div class="sec-title">تحليل الأداء التعليمي</div>
+    <div class="sec-title">تحليل الأداء المهني</div>
     <div class="sec-line"></div>
   </div>
 
@@ -1417,6 +1483,33 @@
   </div>
 
   <div class="analysis-note">{{ performance_analysis.note }}</div>
+
+  <div class="analysis-lists">
+    <div class="analysis-list">
+      <h4>أبرز نقاط القوة</h4>
+      <ul>
+        {% for item in performance_analysis.strengths %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="analysis-list">
+      <h4>مجالات التحسين</h4>
+      <ul>
+        {% for item in performance_analysis.improvements %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="analysis-list">
+      <h4>توصيات تطوير</h4>
+      <ul>
+        {% for item in performance_analysis.recommendations %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
 </div>
 {% endif %}
 

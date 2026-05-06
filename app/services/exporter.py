@@ -181,6 +181,48 @@ def _clean_text(value) -> str | None:
     return text
 
 
+_ENRICHED_SECTION_LABELS = (
+    "وصف الشاهد",
+    "الهدف التربوي",
+    "الأثر على الطلاب",
+    "تأمل المعلم",
+    "الارتباط بالمعايير",
+)
+
+
+def _parse_enriched_sections(value: str | None) -> list[dict[str, str]]:
+    text = _clean_text(value)
+    if not text:
+        return []
+
+    sections: list[dict[str, str]] = []
+    current_label: str | None = None
+    current_lines: list[str] = []
+
+    def flush() -> None:
+        nonlocal current_label, current_lines
+        if not current_label:
+            return
+        content = " ".join(line.strip() for line in current_lines if line.strip()).strip()
+        if content and not any(item["label"] == current_label and item["text"] == content for item in sections):
+            sections.append({"label": current_label, "text": content})
+        current_label = None
+        current_lines = []
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip().lstrip("-•0123456789). ").strip()
+        matched = next((label for label in _ENRICHED_SECTION_LABELS if line.startswith(label)), None)
+        if matched:
+            flush()
+            current_label = matched
+            current_lines = [line[len(matched):].lstrip(":：- ").strip()]
+        elif current_label:
+            current_lines.append(line)
+
+    flush()
+    return sections
+
+
 def _has_meaningful_text(value, *, min_chars: int = 4) -> bool:
     text = _clean_text(value)
     if not text:
@@ -616,6 +658,7 @@ def _normalize_evidence_for_export(ev) -> dict:
     stored_desc = _clean_text(ev.description) or ""
     # Also try to extract from message_text if no description and it's a text evidence
     description = stored_desc or defaults["desc"]
+    enriched_description = _clean_text(getattr(ev, "ai_enriched_description", None))
     message_text = _clean_text(ev.message_text)
     media_url = _clean_text(ev.media_url)
     file_name = _clean_text(ev.file_name)
@@ -651,6 +694,8 @@ def _normalize_evidence_for_export(ev) -> dict:
         "sub_category":  sub_category,
         "tags":          tags,
         "description":   description,
+        "ai_enriched_description": enriched_description,
+        "enriched_sections": _parse_enriched_sections(enriched_description),
         "message_text":  message_text,
         "media_url":     media_url,
         "storage_path":  ev.storage_path,
@@ -740,6 +785,7 @@ def _can_join_image_gallery(first: dict, other: dict) -> bool:
 def _build_image_gallery(items: list[dict]) -> dict:
     first = items[0]
     description = next((item["description"] for item in items if item.get("has_custom_description")), first["description"])
+    enriched_description = next((item.get("ai_enriched_description") for item in items if item.get("ai_enriched_description")), None)
     title = next((item["title"] for item in items if item.get("has_custom_title")), first["title"])
     tags = []
     for item in items:
@@ -753,6 +799,8 @@ def _build_image_gallery(items: list[dict]) -> dict:
         "evidence_type": "image_gallery",
         "title": title,
         "description": description,
+        "ai_enriched_description": enriched_description,
+        "enriched_sections": _parse_enriched_sections(enriched_description),
         "tags": tags[:6],
         "images": items,
         "gallery_count": len(items),
@@ -856,6 +904,23 @@ def _build_performance_analysis(categories: list[dict], total_count: int, stats:
         "مع حضور متوازن لبقية مجالات الأداء المهني. "
         "ويوصى بالاستمرار في تنويع الشواهد بين التخطيط والتنفيذ والتقويم والأنشطة الإثرائية."
     )
+    category_names = {cat["name"] for cat in nonempty}
+    strengths = [
+        f"توفر شواهد نوعية في محور {top['name']} مما يعكس عناية واضحة بهذا الجانب من الأداء المهني.",
+        "تنوع الوسائط المستخدمة يساعد على تقديم صورة أكثر واقعية عن ممارسات المعلم داخل البيئة التعليمية.",
+    ]
+    improvements = []
+    for expected in ("التخطيط", "التقويم", "مصادر تعليمية"):
+        if expected not in category_names:
+            improvements.append(f"تعزيز محور {expected} بشواهد مباشرة يدعم اكتمال الملف المهني.")
+    if not improvements:
+        improvements.append("مواصلة توزيع الشواهد بين التخطيط والتنفيذ والتقويم للحفاظ على توازن الملف.")
+
+    recommendations = [
+        "اختيار الشواهد التي تُظهر أثر الممارسة على تعلم الطلاب وليس النشاط فقط.",
+        "إضافة تأمل مهني قصير بعد كل نشاط بارز يوضح ما نجح وما يمكن تطويره.",
+        "ربط الشواهد المستقبلية بمعايير الأداء مثل التخطيط والتنفيذ والتقويم والتحفيز.",
+    ]
 
     return {
         "top_category": {"name": top["name"], "count": top["count"]},
@@ -863,6 +928,9 @@ def _build_performance_analysis(categories: list[dict], total_count: int, stats:
         "top_media": top_media,
         "total_count": total_count,
         "note": note,
+        "strengths": strengths[:3],
+        "improvements": improvements[:3],
+        "recommendations": recommendations,
     }
 
 
