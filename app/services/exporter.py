@@ -258,6 +258,29 @@ def _link_type_label(category: str, title: str, message_text: str | None) -> str
     return "رابط إثرائي"
 
 
+def _safe_link_href(media_url: str | None, message_text: str | None) -> str | None:
+    for value in (media_url, message_text):
+        text = _clean_text(value)
+        if text and text.lower().startswith(("http://", "https://")):
+            return text
+    return None
+
+
+def _file_type_label(file_name: str | None, evidence_type: str, mime_type: str | None) -> str:
+    name = _clean_text(file_name) or ""
+    suffix = Path(name).suffix.lower()
+    mime = (_clean_text(mime_type) or "").lower()
+    if suffix == ".pdf" or evidence_type == "pdf" or "pdf" in mime:
+        return "PDF"
+    if suffix in {".doc", ".docx"} or "word" in mime:
+        return "مستند"
+    if suffix in _IMAGE_EXTS or mime.startswith("image/"):
+        return "صورة"
+    if suffix in {".ppt", ".pptx"}:
+        return "عرض تقديمي"
+    return "ملف"
+
+
 def _ministry_logo_svg_data_uri() -> str:
     """Full white ministry crest (icon + Arabic name + English name) embedded
     as a single SVG, so the cover renders it as ONE integrated watermark
@@ -592,8 +615,10 @@ def _normalize_evidence_for_export(ev) -> dict:
         "media_available": media_available,
         "file_name":     file_name,
         "file_label":    _friendly_file_label(file_name, ev_type, category),
+        "file_type_label": _file_type_label(file_name, ev_type, mime_type),
         "mime_type":     mime_type,
         "link_type":     _link_type_label(category, title, message_text),
+        "link_href":     _safe_link_href(media_url, message_text),
         "subject":       subject,
         "grade":         grade,
         "created_at":    ev.created_at,
@@ -630,7 +655,7 @@ def _same_gallery_day(first: dict, other: dict) -> bool:
     a = first.get("created_at")
     b = other.get("created_at")
     if not a or not b:
-        return True
+        return False
     return a.date() == b.date()
 
 
@@ -639,18 +664,29 @@ def _can_join_image_gallery(first: dict, other: dict) -> bool:
         return False
     if first.get("category") != other.get("category"):
         return False
+    if first.get("sub_category") != other.get("sub_category"):
+        return False
     if not _same_gallery_day(first, other):
         return False
 
     # Respect deliberate, different captions: do not collapse distinct stories.
     first_desc = first.get("description") if first.get("has_custom_description") else None
     other_desc = other.get("description") if other.get("has_custom_description") else None
+    if bool(first_desc) != bool(other_desc):
+        return False
     if first_desc and other_desc and first_desc != other_desc:
         return False
 
     first_title = first.get("title") if first.get("has_custom_title") else None
     other_title = other.get("title") if other.get("has_custom_title") else None
+    if bool(first_title) != bool(other_title):
+        return False
     if first_title and other_title and first_title != other_title:
+        return False
+
+    if first.get("subject") and other.get("subject") and first["subject"] != other["subject"]:
+        return False
+    if first.get("grade") and other.get("grade") and first["grade"] != other["grade"]:
         return False
 
     return True
@@ -732,6 +768,8 @@ def _build_categories(normalised_evidences: list[dict]) -> list[dict]:
             continue                    # skip empty categories
         items = _group_image_galleries(items)
         count = sum(_evidence_export_count(item) for item in items)
+        if name == "أخرى" and count < 2:
+            continue
         meta = _CATEGORY_META.get(name, _DEFAULT_META)
         result.append({
             "name":      name,
@@ -743,6 +781,35 @@ def _build_categories(normalised_evidences: list[dict]) -> list[dict]:
             "count":     count,
         })
     return result
+
+
+def _split_leading_categories(categories: list[dict]) -> tuple[list[dict], list[dict]]:
+    leading_names = {"التخطيط", "سجل المتابعة"}
+    leading = [cat for cat in categories if cat["name"] in leading_names]
+    remaining = [cat for cat in categories if cat["name"] not in leading_names]
+    return leading, remaining
+
+
+def _build_performance_analysis(categories: list[dict], total_count: int) -> dict:
+    nonempty = [cat for cat in categories if cat["count"] > 0]
+    if not nonempty or total_count <= 0:
+        return {}
+
+    top = max(nonempty, key=lambda cat: cat["count"])
+    low = min(nonempty, key=lambda cat: cat["count"])
+    note = (
+        f"يعكس الملف تركيزًا واضحًا على محور {top['name']}، "
+        "مع تنوّع الشواهد بين المحاور بما يدعم قراءة مهنية متوازنة لأداء المعلم."
+    )
+    if low["name"] != top["name"]:
+        note += f" ويمكن تعزيز محور {low['name']} مستقبلًا بمزيد من الشواهد النوعية عند توفرها."
+
+    return {
+        "top_category": {"name": top["name"], "count": top["count"]},
+        "low_category": {"name": low["name"], "count": low["count"]},
+        "total_count": total_count,
+        "note": note,
+    }
 
 
 def _build_stats(normalised_evidences: list[dict], categories: list[dict]) -> dict:
@@ -842,6 +909,8 @@ def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool 
 
     categories = _build_categories(deduped)
     stats      = _build_stats(deduped, categories)
+    leading_categories, remaining_categories = _split_leading_categories(categories)
+    performance_analysis = _build_performance_analysis(categories, len(deduped))
 
     logger.info(
         "[PDF RENDER] teacher_id=%s evidences=%d categories=%d include_intro_page=%s",
@@ -852,6 +921,9 @@ def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool 
     return template.render(
         teacher=teacher,
         categories=categories,
+        leading_categories=leading_categories,
+        remaining_categories=remaining_categories,
+        performance_analysis=performance_analysis,
         stats=stats,
         total_count=len(deduped),
         academic_year=_academic_year(),

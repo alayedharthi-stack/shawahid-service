@@ -374,6 +374,45 @@
     .tc-num   { font-size: 9.5pt; font-weight: 700; color: var(--teal); min-width: 30px; text-align: center; }
 
     /* ══════════════════════════════════════════════════════════════════
+       PERFORMANCE ANALYSIS
+    ══════════════════════════════════════════════════════════════════ */
+    .analysis-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .analysis-card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-top: 3px solid var(--gold);
+      border-radius: var(--radius);
+      padding: 14px 12px;
+      text-align: center;
+    }
+    .analysis-label {
+      font-size: 8.5pt;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .analysis-value {
+      font-size: 12pt;
+      color: var(--teal-dk);
+      font-weight: 900;
+      line-height: 1.35;
+    }
+    .analysis-note {
+      background: var(--teal-lt);
+      border-right: 4px solid var(--teal);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      padding: 14px 16px;
+      font-size: 10.2pt;
+      color: var(--teal-dk);
+      line-height: 1.8;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
        SECTION TITLE HELPER
     ══════════════════════════════════════════════════════════════════ */
     .sec {
@@ -503,7 +542,7 @@
       border: 1px solid var(--border-dk);
       border-radius: var(--radius);
       overflow: hidden;
-      margin-bottom: 18px;
+      margin-bottom: 12px;
       break-inside: avoid;
       page-break-inside: avoid;
       box-shadow: var(--shadow);
@@ -513,33 +552,33 @@
     .ev-header {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 11px 14px 11px 14px;
+      gap: 10px;
+      padding: 9px 12px;
       background: var(--card);
       border-bottom: 1px solid var(--border);
     }
 
     .ev-badge {
       flex-shrink: 0;
-      width: 38px; height: 38px;
+      width: 32px; height: 32px;
       background: var(--gold);
       border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       color: #fff;
-      font-size: 8pt;
+      font-size: 7.3pt;
       font-weight: 900;
       line-height: 1.2;
       text-align: center;
     }
 
     .ev-title-block { flex: 1; min-width: 0; }
-    .ev-title { font-size: 11.5pt; font-weight: 700; color: var(--teal-dk); }
+    .ev-title { font-size: 11pt; font-weight: 700; color: var(--teal-dk); }
 
     .ev-tags {
       display: flex;
       flex-wrap: wrap;
       gap: 5px;
-      margin-top: 5px;
+      margin-top: 4px;
     }
     .tag {
       font-size: 7.5pt;
@@ -554,7 +593,7 @@
     .t-green { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
 
     /* ── card body ── */
-    .ev-body { padding: 14px 16px; }
+    .ev-body { padding: 10px 12px; }
 
     .field-label {
       font-size: 8.5pt;
@@ -567,9 +606,9 @@
 
     .ev-desc {
       font-size: 10.5pt;
-      line-height: 1.85;
+      line-height: 1.65;
       color: var(--body);
-      margin-bottom: 14px;
+      margin-bottom: 10px;
     }
 
     /* Educational value box */
@@ -577,8 +616,8 @@
       background: var(--gold-lt);
       border: 1px solid #e8cf7a;
       border-radius: 7px;
-      padding: 10px 13px;
-      margin-bottom: 14px;
+      padding: 8px 11px;
+      margin-bottom: 10px;
       display: flex;
       gap: 10px;
       align-items: flex-start;
@@ -586,7 +625,7 @@
     .edu-value-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
     .edu-value-content {}
     .edu-value-label { font-size: 8pt; font-weight: 700; color: var(--gold-dk); margin-bottom: 3px; }
-    .edu-value-text  { font-size: 9.5pt; color: #5a4200; line-height: 1.7; }
+    .edu-value-text  { font-size: 9pt; color: #5a4200; line-height: 1.55; }
 
     /* ── Media ─────────────────────────────────────────────────────── */
     .media-wrap { margin-top: 4px; }
@@ -622,9 +661,9 @@
       display: block;
     }
     .img-grid.g1 img { object-fit: contain; max-height: 220px; }
-    .img-grid.g2 img { height: 190px; }
-    .img-grid.g3 img { height: 150px; }
-    .img-grid.g4 img { height: 150px; }
+    .img-grid.g2 img { height: 170px; }
+    .img-grid.g3 img { height: 135px; }
+    .img-grid.g4 img { height: 135px; }
     .gallery-note {
       margin-top: 7px;
       font-size: 8.5pt;
@@ -639,7 +678,7 @@
       background: var(--teal-lt);
       border: 1px solid #b8d8da;
       border-radius: 7px;
-      padding: 12px 14px;
+      padding: 10px 12px;
     }
     .audio-icon  { font-size: 22px; flex-shrink: 0; }
     .audio-label { font-size: 8pt; font-weight: 700; color: var(--teal); margin-bottom: 4px; }
@@ -648,7 +687,7 @@
     /* Video */
     .video-wrap { position: relative; }
     .video-thumb {
-      width: 100%; max-height: 180px;
+      width: 100%; max-height: 165px;
       object-fit: cover;
       border-radius: 7px;
       border: 1px solid var(--border);
@@ -678,7 +717,7 @@
       background: var(--card);
       border: 1px dashed var(--border-dk);
       border-radius: 7px;
-      padding: 12px 14px;
+      padding: 10px 12px;
       align-items: center;
     }
     .file-icon { font-size: 24px; flex-shrink: 0; }
@@ -692,7 +731,7 @@
       background: var(--gold-lt);
       border: 1px solid #e0c97a;
       border-radius: 7px;
-      padding: 11px 14px;
+      padding: 10px 12px;
       align-items: flex-start;
     }
     .url-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
@@ -700,27 +739,27 @@
     .url-button {
       display: inline-block;
       margin-top: 8px;
-      padding: 5px 15px;
+      padding: 6px 18px;
       border-radius: 999px;
       background: var(--teal);
       color: #fff;
       text-decoration: none;
-      font-size: 8.5pt;
+      font-size: 9pt;
       font-weight: 800;
     }
     .url-type {
       display: inline-block;
       margin-top: 3px;
       color: var(--gold-dk);
-      font-size: 8.3pt;
+      font-size: 8.6pt;
       font-weight: 700;
     }
 
     /* ── card footer ── */
     .ev-footer {
       display: flex;
-      gap: 16px;
-      padding: 7px 14px;
+      gap: 12px;
+      padding: 6px 12px;
       background: var(--card);
       border-top: 1px solid var(--border);
       font-size: 8.5pt;
@@ -966,120 +1005,11 @@
 
 
 <!-- ══════════════════════════════════════════════════════════════════
-     STATISTICS — only when there is real content
-     Guard: page is rendered only when total_count >= 3 AND the portfolio
-     actually has at least one media item (image/video/audio/doc/url).
-     Prevents an "empty stats" page from appearing after the cover.
+     EVIDENCE SECTIONS  (macro reused for leading + remaining sections)
 ══════════════════════════════════════════════════════════════════ -->
-{% set _has_media = (stats.images or 0) + (stats.videos or 0) + (stats.audios or 0) + (stats.documents or 0) + (stats.urls or 0) %}
-{% if total_count >= 3 and _has_media > 0 %}
-<div class="page">
-  <div class="page-header">
-    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
-    <span class="ph-right">ملخص إحصائي</span>
-  </div>
-
-  <div class="sec">
-    <div class="sec-icon">📊</div>
-    <div class="sec-title">ملخص الشواهد والإحصائيات</div>
-    <div class="sec-line"></div>
-  </div>
-
-  <div class="stat-grid">
-    <div class="stat-card stat-card-accent">
-      <div class="stat-icon">📁</div>
-      <div class="stat-num">{{ total_count }}</div>
-      <div class="stat-lbl">إجمالي الشواهد</div>
-    </div>
-    <div class="stat-card stat-card-accent">
-      <div class="stat-icon">📷</div>
-      <div class="stat-num">{{ stats.images }}</div>
-      <div class="stat-lbl">صور توثيقية</div>
-    </div>
-    <div class="stat-card stat-card-accent">
-      <div class="stat-icon">🎥</div>
-      <div class="stat-num">{{ stats.videos }}</div>
-      <div class="stat-lbl">مقاطع فيديو</div>
-    </div>
-    <div class="stat-card stat-card-accent">
-      <div class="stat-icon">🎙</div>
-      <div class="stat-num">{{ stats.audios }}</div>
-      <div class="stat-lbl">تسجيلات صوتية</div>
-    </div>
-    <div class="stat-card stat-card-accent">
-      <div class="stat-icon">📄</div>
-      <div class="stat-num">{{ stats.documents }}</div>
-      <div class="stat-lbl">ملفات ووثائق</div>
-    </div>
-    <div class="stat-card stat-card-accent">
-      <div class="stat-icon">🔗</div>
-      <div class="stat-num">{{ stats.urls }}</div>
-      <div class="stat-lbl">روابط إثرائية</div>
-    </div>
-  </div>
-
-  {% if stats.top_categories %}
-  <div class="sec" style="margin-top:10px; margin-bottom:14px;">
-    <div class="sec-icon">🏆</div>
-    <div class="sec-title">أبرز التصنيفات</div>
-    <div class="sec-line"></div>
-  </div>
-  {% for cat in stats.top_categories %}
-  <div class="top-cat-row">
-    <span class="tc-name">{{ cat.name }}</span>
-    <div class="tc-track"><div class="tc-fill" style="width:{{ cat.pct }}%;"></div></div>
-    <span class="tc-num">{{ cat.count }}</span>
-  </div>
-  {% endfor %}
-  {% endif %}
-</div>
-{% endif %}{# /stats conditional #}
-
-
-<!-- ══════════════════════════════════════════════════════════════════
-     TABLE OF CONTENTS — shown only when there are multiple categories
-══════════════════════════════════════════════════════════════════ -->
-{% set toc_count = categories | selectattr('count', '>', 0) | list | length %}
-{% if toc_count >= 2 %}
-<div class="page">
-  <div class="page-header">
-    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
-    <span class="ph-right">فهرس المحتويات</span>
-  </div>
-
-  <div class="sec">
-    <div class="sec-icon">📋</div>
-    <div class="sec-title">فهرس المحتويات</div>
-    <div class="sec-line"></div>
-  </div>
-
-  <table class="toc-table">
-    {% set ns = namespace(idx=0) %}
-    {% for cat in categories %}
-    {% if cat.count > 0 %}
-    {% set ns.idx = ns.idx + 1 %}
-    <tr>
-      <td class="toc-num">{{ ns.idx }}</td>
-      <td class="toc-name">{{ cat.name }}</td>
-      <td style="text-align:left;"><span class="toc-badge">{{ cat.count }} شاهد</span></td>
-    </tr>
-    {% endif %}
-    {% endfor %}
-  </table>
-
-  <div class="toc-total">
-    <span>الإجمالي</span>
-    <span class="toc-badge" style="font-size:10pt; padding:3px 14px;">{{ total_count }} شاهد</span>
-  </div>
-</div>
-{% endif %}{# /toc conditional #}
-
-
-<!-- ══════════════════════════════════════════════════════════════════
-     EVIDENCE SECTIONS  (no full-teal intro page — clean header band)
-══════════════════════════════════════════════════════════════════ -->
-{% set ns2 = namespace(cat_idx=0) %}
-{% for cat in categories %}
+{% macro render_sections(section_categories, start_idx=0) %}
+{% set ns2 = namespace(cat_idx=start_idx) %}
+{% for cat in section_categories %}
 {% if cat.count > 0 %}
 {% set ns2.cat_idx = ns2.cat_idx + 1 %}
 
@@ -1220,15 +1150,14 @@
 
         {# URL — link card #}
         {% elif ev.evidence_type == 'url' %}
-        {% set url_href = ev.media_url or ev.message_text or '' %}
         <div class="url-card">
           <div class="url-icon">🔗</div>
           <div style="flex:1;">
             <div class="file-name" style="margin-bottom:4px;">{{ ev.title }}</div>
             <div class="url-type">{{ ev.link_type or 'رابط إثرائي' }}</div>
-            {% if url_href %}
+            {% if ev.link_href %}
             <br/>
-            <a class="url-button" href="{{ url_href }}">فتح الرابط</a>
+            <a class="url-button" href="{{ ev.link_href }}">فتح الرابط</a>
             {% endif %}
           </div>
         </div>
@@ -1245,7 +1174,7 @@
           <div style="flex:1;">
             <div class="file-name">{{ ev.file_label or ev.title }}</div>
             <div class="file-type">
-              {% if ev.mime_type %}{{ ev.mime_type.split('/')[-1] | upper }}{% else %}{{ (ev.evidence_type or 'ملف') | upper }}{% endif %}
+              {{ ev.file_type_label or 'ملف' }}
             </div>
           </div>
         </div>
@@ -1287,6 +1216,116 @@
 
 {% endif %}
 {% endfor %}
+{% endmacro %}
+
+
+{{ render_sections(leading_categories, 0) }}
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     STATISTICS — after foundational sections
+══════════════════════════════════════════════════════════════════ -->
+{% set _has_media = (stats.images or 0) + (stats.videos or 0) + (stats.audios or 0) + (stats.documents or 0) + (stats.urls or 0) %}
+{% if total_count >= 3 and _has_media > 0 %}
+<div class="page">
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">ملخص إحصائي</span>
+  </div>
+
+  <div class="sec">
+    <div class="sec-icon">📊</div>
+    <div class="sec-title">ملخص الشواهد والإحصائيات</div>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card stat-card-accent"><div class="stat-icon">📁</div><div class="stat-num">{{ total_count }}</div><div class="stat-lbl">إجمالي الشواهد</div></div>
+    <div class="stat-card stat-card-accent"><div class="stat-icon">📷</div><div class="stat-num">{{ stats.images }}</div><div class="stat-lbl">صور توثيقية</div></div>
+    <div class="stat-card stat-card-accent"><div class="stat-icon">🎥</div><div class="stat-num">{{ stats.videos }}</div><div class="stat-lbl">مقاطع فيديو</div></div>
+    <div class="stat-card stat-card-accent"><div class="stat-icon">🎙</div><div class="stat-num">{{ stats.audios }}</div><div class="stat-lbl">تسجيلات صوتية</div></div>
+    <div class="stat-card stat-card-accent"><div class="stat-icon">📄</div><div class="stat-num">{{ stats.documents }}</div><div class="stat-lbl">ملفات ووثائق</div></div>
+    <div class="stat-card stat-card-accent"><div class="stat-icon">🔗</div><div class="stat-num">{{ stats.urls }}</div><div class="stat-lbl">روابط إثرائية</div></div>
+  </div>
+
+  {% if stats.top_categories %}
+  <div class="sec" style="margin-top:10px; margin-bottom:14px;"><div class="sec-icon">🏆</div><div class="sec-title">أبرز التصنيفات</div><div class="sec-line"></div></div>
+  {% for cat in stats.top_categories %}
+  <div class="top-cat-row">
+    <span class="tc-name">{{ cat.name }}</span>
+    <div class="tc-track"><div class="tc-fill" style="width:{{ cat.pct }}%;"></div></div>
+    <span class="tc-num">{{ cat.count }}</span>
+  </div>
+  {% endfor %}
+  {% endif %}
+</div>
+{% endif %}{# /stats conditional #}
+
+
+{% if total_count > 0 and performance_analysis %}
+<div class="page">
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">تحليل الأداء</span>
+  </div>
+
+  <div class="sec">
+    <div class="sec-icon">📈</div>
+    <div class="sec-title">تحليل الأداء التعليمي</div>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="analysis-grid">
+    <div class="analysis-card"><div class="analysis-label">أعلى محور</div><div class="analysis-value">{{ performance_analysis.top_category.name }}<br/>{{ performance_analysis.top_category.count }} شاهد</div></div>
+    <div class="analysis-card"><div class="analysis-label">أقل محور</div><div class="analysis-value">{{ performance_analysis.low_category.name }}<br/>{{ performance_analysis.low_category.count }} شاهد</div></div>
+    <div class="analysis-card"><div class="analysis-label">إجمالي الشواهد</div><div class="analysis-value">{{ performance_analysis.total_count }} شاهد</div></div>
+  </div>
+
+  <div class="analysis-note">{{ performance_analysis.note }}</div>
+</div>
+{% endif %}
+
+
+<!-- ══════════════════════════════════════════════════════════════════
+     TABLE OF CONTENTS — after context + foundational sections
+══════════════════════════════════════════════════════════════════ -->
+{% set toc_count = categories | selectattr('count', '>', 0) | list | length %}
+{% if toc_count >= 2 %}
+<div class="page">
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">فهرس المحتويات</span>
+  </div>
+
+  <div class="sec">
+    <div class="sec-icon">📋</div>
+    <div class="sec-title">فهرس المحتويات</div>
+    <div class="sec-line"></div>
+  </div>
+
+  <table class="toc-table">
+    {% set ns = namespace(idx=0) %}
+    {% for cat in categories %}
+    {% if cat.count > 0 %}
+    {% set ns.idx = ns.idx + 1 %}
+    <tr>
+      <td class="toc-num">{{ ns.idx }}</td>
+      <td class="toc-name">{{ cat.name }}</td>
+      <td style="text-align:left;"><span class="toc-badge">{{ cat.count }} شاهد</span></td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </table>
+
+  <div class="toc-total">
+    <span>الإجمالي</span>
+    <span class="toc-badge" style="font-size:10pt; padding:3px 14px;">{{ total_count }} شاهد</span>
+  </div>
+</div>
+{% endif %}{# /toc conditional #}
+
+
+{{ render_sections(remaining_categories, leading_categories|length) }}
 
 
 <!-- ══════════════════════════════════════════════════════════════════
