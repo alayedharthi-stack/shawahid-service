@@ -90,7 +90,10 @@
       overflow: hidden;
       position: relative;
       box-sizing: border-box;
-      background: #0f5e57;
+      background:
+        radial-gradient(circle at 18% 14%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.025) 24%, transparent 44%),
+        radial-gradient(circle at 78% 34%, rgba(214,168,74,0.08) 0%, transparent 34%),
+        linear-gradient(135deg, #0d554f 0%, #126c63 46%, #0b4f49 100%);
       color: #ffffff;
       direction: rtl;
       font-family: 'Cairo', 'Tajawal', 'IBM Plex Sans Arabic', 'Tahoma', 'Arial', sans-serif;
@@ -109,9 +112,11 @@
       position: absolute;
       inset: 0;
       background-image:
-        linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
-      background-size: 18mm 18mm;
+        linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px),
+        linear-gradient(135deg, transparent 0%, transparent 62%, rgba(255,255,255,0.035) 62.2%, transparent 63%);
+      background-size: 18mm 18mm, 18mm 18mm, 210mm 297mm;
+      background-repeat: repeat, repeat, no-repeat;
       pointer-events: none;
       z-index: 1;
     }
@@ -125,12 +130,12 @@
       bottom: 0;
       left: 0;
       width: 100%;
-      height: 56%;
+      height: 54%;
       background: linear-gradient(
         to top right,
         #f5f6f0 0%,
-        #f5f6f0 33%,
-        transparent 33.05%
+        #f5f6f0 31.5%,
+        transparent 31.6%
       );
       z-index: 2;
       pointer-events: none;
@@ -145,10 +150,10 @@
        mark down so it sits behind the headline rather than competing. */
     .tcover-moe-logo {
       position: absolute;
-      top: 24mm;
+      top: 21mm;
       left: 22mm;
-      width: 50mm;
-      max-width: 50mm;
+      width: 48mm;
+      max-width: 48mm;
       height: auto;
       max-height: 50mm;
       opacity: 0.88;
@@ -159,7 +164,7 @@
     /* Top-right block: ministry line (small) + gold pill */
     .tcover-top {
       position: absolute;
-      top: 28mm;
+      top: 25mm;
       right: 22mm;
       z-index: 5;
       text-align: center;
@@ -192,7 +197,7 @@
        comfortable line-height. NO letter-spacing on Arabic. */
     .tcover-headline {
       position: absolute;
-      top: 70mm;
+      top: 68mm;
       right: 22mm;
       width: 130mm;
       text-align: right;
@@ -220,7 +225,7 @@
        element after the headline. */
     .tcover-teacher {
       position: absolute;
-      top: 144mm;
+      top: 131mm;
       right: 22mm;
       width: 130mm;
       text-align: right;
@@ -250,15 +255,15 @@
        white wedge, exactly like the reference. */
     .tcover-card {
       position: absolute;
-      bottom: 38mm;
+      bottom: 47mm;
       right: 22mm;
       width: 132mm;
-      max-height: 88mm;
+      max-height: 76mm;
       overflow: hidden;
       background: #ffffff;
       color: #1a3833;
       border-radius: 4mm;
-      padding: 8mm 9mm 9mm;
+      padding: 7mm 8mm 8mm;
       box-shadow:
         0 4mm 10mm rgba(0,0,0,0.07),    /* softer print-grade shadow */
         0 0.6mm 1.2mm rgba(0,0,0,0.04);
@@ -267,7 +272,7 @@
     .tcover-card-title {
       font-size: 14pt;
       font-weight: 800;
-      margin: 0 0 5mm 0;
+      margin: 0 0 4mm 0;
       color: #0f5e57;
       text-align: right;
       line-height: 1.2;
@@ -275,13 +280,13 @@
     .tcover-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 4mm;
+      gap: 3.2mm;
     }
     .tcover-field {
       background: #f7f8f5;
       border: 1px solid #e3eae6;
       border-radius: 2.5mm;
-      padding: 4mm 4.5mm;
+      padding: 3.4mm 4mm;
       text-align: right;
       overflow: hidden;
     }
@@ -304,7 +309,7 @@
        so it stays visible against the bottom-left light area. */
     .tcover-note {
       position: absolute;
-      bottom: 18mm;
+      bottom: 20mm;
       right: 22mm;
       width: 132mm;
       text-align: center;
@@ -318,13 +323,13 @@
        gives the empty triangle intentional brand presence without noise. */
     .tcover-watermark {
       position: absolute;
-      bottom: 36mm;
-      left: 12mm;
-      font-size: 9pt;
+      top: 116mm;
+      left: 16mm;
+      font-size: 34pt;
       font-weight: 800;
       letter-spacing: 4px;
-      color: rgba(15,94,87,0.07);
-      z-index: 3;
+      color: rgba(255,255,255,0.035);
+      z-index: 4;
       pointer-events: none;
       white-space: nowrap;
       text-transform: uppercase;
