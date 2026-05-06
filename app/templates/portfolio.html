@@ -353,6 +353,55 @@
     .stat-num  { font-size: 24pt; font-weight: 900; color: var(--teal); line-height: 1; margin-bottom: 4px; }
     .stat-lbl  { font-size: 9pt; color: var(--muted); font-weight: 600; }
 
+    .media-chart {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin: -10px 0 20px;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .chart-title {
+      font-size: 10.5pt;
+      font-weight: 800;
+      color: var(--teal);
+      margin-bottom: 10px;
+      padding-right: 8px;
+      border-right: 3px solid var(--gold);
+    }
+    .media-row {
+      display: grid;
+      grid-template-columns: 82px 1fr 34px;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .media-row:last-child { margin-bottom: 0; }
+    .media-label {
+      font-size: 9pt;
+      color: var(--text);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .media-track {
+      height: 10px;
+      background: var(--teal-lt);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .media-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--teal), var(--teal-mid));
+      border-radius: 999px;
+    }
+    .media-count {
+      font-size: 9pt;
+      color: var(--teal);
+      font-weight: 900;
+      text-align: center;
+    }
+
     .top-cats-title {
       font-size: 11pt;
       font-weight: 700;
@@ -709,6 +758,17 @@
       color: var(--body);
       font-style: italic;
     }
+    .media-action {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 6px 18px;
+      border-radius: 999px;
+      background: var(--teal);
+      color: #fff;
+      text-decoration: none;
+      font-size: 9pt;
+      font-weight: 800;
+    }
 
     /* File */
     .file-card {
@@ -722,7 +782,7 @@
     }
     .file-icon { font-size: 24px; flex-shrink: 0; }
     .file-name { font-size: 10pt; font-weight: 700; color: var(--teal-dk); }
-    .file-type { font-size: 8.5pt; color: var(--muted); }
+    .file-type { font-size: 8.5pt; color: var(--muted); font-weight: 700; }
 
     /* URL */
     .url-card {
@@ -1153,6 +1213,9 @@
         {% if ev.message_text and ev.message_text|length > 3 %}
         <div class="video-caption">{{ ev.message_text[:500] }}</div>
         {% endif %}
+        {% if ev.media_url %}
+        <a class="media-action" href="{{ ev.media_url }}">مشاهدة الفيديو</a>
+        {% endif %}
 
         {# URL — link card #}
         {% elif ev.evidence_type == 'url' %}
@@ -1182,6 +1245,9 @@
             <div class="file-type">
               {{ ev.file_type_label or 'ملف' }}
             </div>
+            {% if ev.media_url %}
+            <a class="media-action" href="{{ ev.media_url }}">تحميل الملف</a>
+            {% endif %}
           </div>
         </div>
 
@@ -1251,6 +1317,35 @@
     <div class="stat-card stat-card-accent"><div class="stat-icon">🎙</div><div class="stat-num">{{ stats.audios }}</div><div class="stat-lbl">تسجيلات صوتية</div></div>
     <div class="stat-card stat-card-accent"><div class="stat-icon">📄</div><div class="stat-num">{{ stats.documents }}</div><div class="stat-lbl">ملفات ووثائق</div></div>
     <div class="stat-card stat-card-accent"><div class="stat-icon">🔗</div><div class="stat-num">{{ stats.urls }}</div><div class="stat-lbl">روابط إثرائية</div></div>
+  </div>
+
+  <div class="media-chart">
+    <div class="chart-title">توزيع الوسائط داخل الملف</div>
+    <div class="media-row">
+      <span class="media-label">الصور</span>
+      <div class="media-track"><div class="media-fill" style="width: {{ stats.images / total_count * 100 }}%;"></div></div>
+      <span class="media-count">{{ stats.images }}</span>
+    </div>
+    <div class="media-row">
+      <span class="media-label">الفيديو</span>
+      <div class="media-track"><div class="media-fill" style="width: {{ stats.videos / total_count * 100 }}%;"></div></div>
+      <span class="media-count">{{ stats.videos }}</span>
+    </div>
+    <div class="media-row">
+      <span class="media-label">الصوتيات</span>
+      <div class="media-track"><div class="media-fill" style="width: {{ stats.audios / total_count * 100 }}%;"></div></div>
+      <span class="media-count">{{ stats.audios }}</span>
+    </div>
+    <div class="media-row">
+      <span class="media-label">الملفات</span>
+      <div class="media-track"><div class="media-fill" style="width: {{ stats.documents / total_count * 100 }}%;"></div></div>
+      <span class="media-count">{{ stats.documents }}</span>
+    </div>
+    <div class="media-row">
+      <span class="media-label">الروابط</span>
+      <div class="media-track"><div class="media-fill" style="width: {{ stats.urls / total_count * 100 }}%;"></div></div>
+      <span class="media-count">{{ stats.urls }}</span>
+    </div>
   </div>
 
   {% if stats.top_categories %}
