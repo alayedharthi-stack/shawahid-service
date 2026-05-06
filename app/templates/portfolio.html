@@ -115,11 +115,13 @@
     }
 
     /* Top band: ministry logo (LEFT) + pill (RIGHT) — clamped inside the page */
+    /* Top band — gives the logo room to breathe (top:24mm, sides:22mm)
+       and aligns it cleanly with the page's safe area (no edge clipping). */
     .tcover-band {
       position: absolute;
-      top: 18mm;
-      left: 18mm;
-      right: 18mm;
+      top: 24mm;
+      left: 22mm;
+      right: 22mm;
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
@@ -128,17 +130,19 @@
     .tcover-logo-wrap {
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
-      gap: 2.5mm;
+      align-items: flex-start;   /* In RTL, flex-start = right edge → logo + ministry aligned right */
+      text-align: right;
+      gap: 3.5mm;                /* breathing space between logo and ministry text */
       max-width: 70mm;
     }
-    /* Logo: hard-bounded so it can NEVER overflow the safe area */
+    /* Logo: hard-bounded — slightly smaller for a more refined, balanced look,
+       and never allowed to overflow the safe area. */
     .tcover-logo {
       display: block;
-      width: 42mm;
-      max-width: 42mm;
+      width: 38mm;
+      max-width: 38mm;
       height: auto;
-      max-height: 28mm;
+      max-height: 26mm;
       object-fit: contain;
     }
     .tcover-ministry-ar {
@@ -146,6 +150,7 @@
       font-weight: 700;
       color: #f8f8f2;
       line-height: 1.2;
+      text-align: right;
     }
     .tcover-ministry-en {
       font-size: 8.5pt;
@@ -153,6 +158,7 @@
       color: rgba(248,248,242,0.78);
       line-height: 1.2;
       direction: ltr;
+      text-align: right;
     }
     .tcover-pill {
       background: #caa64a;
