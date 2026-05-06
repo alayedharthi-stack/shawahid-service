@@ -778,6 +778,7 @@ def _normalize_evidence_for_export(ev) -> dict:
         "has_custom_description": bool(stored_desc),
         "raw_export_text": raw_export_text,
         "was_normalised": stored_desc == "" or raw_title.lower() in _RAW_TITLE_PATTERNS,
+        "is_excluded_from_export": bool(getattr(ev, "is_excluded_from_export", False)),
     }
 
 
@@ -1092,8 +1093,9 @@ def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool 
         logger.info("[PDF NORMALISE] %d/%d evidences had missing metadata — defaults applied",
                     n_fixed, len(normalised))
 
-    # ── Step 2: Filter noisy export-only records, then deduplicate ────────────
-    normalised = [ev for ev in normalised if _should_export_evidence(ev)]
+    # ── Step 2: Filter noisy export-only records + teacher-excluded ones ─────
+    # is_excluded_from_export is set by the review page — never deletes from DB.
+    normalised = [ev for ev in normalised if _should_export_evidence(ev) and not ev.get("is_excluded_from_export")]
 
     # ── Step 3: Deduplicate before rendering ──────────────────────────────────
     # Safety net: removes duplicate evidences that slipped through save-time checks

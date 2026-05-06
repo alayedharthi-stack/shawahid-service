@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, String, Text, DateTime, ForeignKey, func
+from sqlalchemy import BigInteger, Boolean, String, Text, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
@@ -25,6 +25,8 @@ class Evidence(Base):
 
     grade: Mapped[str | None] = mapped_column(Text)
     subject: Mapped[str | None] = mapped_column(Text)
+
+    is_excluded_from_export: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
     content_hash: Mapped[str | None] = mapped_column(String(64), index=True)  # SHA-256 of media bytes or cleaned text
     ai_status: Mapped[str] = mapped_column(String(30), default="pending")

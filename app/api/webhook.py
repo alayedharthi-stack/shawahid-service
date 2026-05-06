@@ -308,6 +308,14 @@ def _parse_export_mode(text: str | None) -> str | None:
     return None
 
 
+def _is_direct_export_request(text: str | None) -> bool:
+    """Return True if teacher wants to skip review and export directly."""
+    if not text:
+        return False
+    t = text.strip()
+    return t in ("صدر الآن", "صدر مباشرة", "صدر على أي حال", "تصدير على أي حال", "تصدير مباشر")
+
+
 def _export_mode_question() -> str:
     return (
         "كيف تحب ملفك؟ 📘\n\n"
@@ -470,6 +478,33 @@ async def whatsapp_webhook(
             send_whatsapp_message, teacher.phone, reply, teacher_id=teacher.id, context="profile_update_followup"
         )
         return {"ok": True, "teacher_id": teacher.id, "intent": "profile_update_followup"}
+
+    # ── Direct export shortcut (skip review) ─────────────────────────────────
+    if _is_direct_export_request(text) and not media_id:
+        if not sub_active:
+            try:
+                payment_url = await _create_moyasar_link(
+                    db, teacher.id, teacher.name or "", teacher.phone or ""
+                )
+            except Exception as exc:
+                logger.error("Moyasar invoice creation failed: %s", exc)
+                payment_url = get_payment_link(teacher.id)
+            background_tasks.add_task(
+                send_whatsapp_message,
+                teacher.phone,
+                build_payment_link_message(payment_url, teacher.name or ""),
+                teacher_id=teacher.id,
+                context="payment_link",
+            )
+            return {"ok": False, "teacher_id": teacher.id, "reason": "subscription_required"}
+
+        _PENDING_EXPORT_REQUESTS.add(teacher.id)
+        background_tasks.add_task(
+            send_export_options_buttons,
+            teacher.phone,
+            teacher_id=teacher.id,
+        )
+        return {"ok": True, "teacher_id": teacher.id, "intent": "direct_export_requested", "awaiting_export_mode": True}
 
     # ── Export mode selection shortcut ────────────────────────────────────────
     # After the user is asked "كيف تحب ملفك؟", their next message may be "1/2/3".
@@ -765,15 +800,29 @@ async def whatsapp_webhook(
                 "payment_url": payment_url,
             }
 
-        # active_paid → allow export
+        # active_paid → offer review-first or direct export
         logger.info("[EXPORT MODE REQUESTED] teacher_id=%d evidence_count=%d", teacher.id, evidence_count)
-        _PENDING_EXPORT_REQUESTS.add(teacher.id)
-        background_tasks.add_task(
-            send_export_options_buttons,
-            teacher.phone,
-            teacher_id=teacher.id,
+
+        from app.services.teachers import get_or_create_review_token
+        review_token = get_or_create_review_token(db, teacher)
+        review_url   = f"{settings.effective_base_url}/review/{review_token}"
+
+        review_msg = (
+            "ملفك جاهز تقريبًا 📘\n\n"
+            "تقدر تراجع الشواهد وتُخفي غير المناسب قبل التصدير:\n"
+            f"👉 {review_url}\n\n"
+            "أو اكتب:\n"
+            "صدر الآن\n"
+            "لتصدير الملف مباشرة بدون مراجعة."
         )
-        return {"ok": True, "teacher_id": teacher.id, "intent": intent, "awaiting_export_mode": True}
+        background_tasks.add_task(
+            send_whatsapp_message,
+            teacher.phone,
+            review_msg,
+            teacher_id=teacher.id,
+            context="export_review_offer",
+        )
+        return {"ok": True, "teacher_id": teacher.id, "intent": intent, "awaiting_review_or_export": True}
 
     elif decision["should_save"]:
         # GPT decided to save evidence (intents: evidence | batch_save | url_link)

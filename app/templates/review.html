@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>مراجعة الشواهد — {{ teacher.name or 'المعلم' }}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --teal: #155e2e;
+    --teal-lt: #e8f2ee;
+    --gold: #b48a00;
+    --border: #d9e3df;
+    --muted: #6b7280;
+    --white: #ffffff;
+    --body: #1f2937;
+    --radius: 10px;
+  }
+  body {
+    font-family: 'Segoe UI', 'Tahoma', 'Cairo', Arial, sans-serif;
+    background: #f0f4f2;
+    color: var(--body);
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .top-bar {
+    background: var(--teal);
+    color: #fff;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  }
+  .top-bar h1 { font-size: 16px; font-weight: 700; }
+  .top-bar .subtitle { font-size: 12px; opacity: .75; margin-top: 2px; }
+
+  .export-btn {
+    background: #f5c842;
+    color: #1a3a00;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    text-decoration: none;
+    display: inline-block;
+  }
+  .export-btn:hover { background: #e6b800; }
+  .export-btn:disabled { opacity: .5; cursor: wait; }
+
+  /* ── Stats strip ── */
+  .stats-strip {
+    display: flex;
+    gap: 10px;
+    padding: 12px 16px;
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .stats-strip strong { color: var(--teal); }
+
+  /* ── Grid ── */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+    padding: 16px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  /* ── Card ── */
+  .card {
+    background: var(--white);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color .15s, opacity .15s;
+  }
+  .card.excluded {
+    opacity: .5;
+    border-color: #f87171;
+    border-style: dashed;
+  }
+  .card-thumb {
+    width: 100%;
+    height: 160px;
+    object-fit: cover;
+    display: block;
+    background: var(--teal-lt);
+  }
+  .card-thumb-placeholder {
+    width: 100%;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    background: var(--teal-lt);
+  }
+  .card-body { padding: 11px 13px; }
+  .card-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--body);
+    margin-bottom: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .card-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .badge {
+    background: var(--teal-lt);
+    color: var(--teal);
+    border-radius: 20px;
+    padding: 2px 9px;
+    font-weight: 600;
+    font-size: 11px;
+  }
+  .card-desc {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+    max-height: 48px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--border);
+    padding: 9px 13px;
+    background: #fafafa;
+  }
+  .excluded-label {
+    font-size: 11px;
+    color: #b91c1c;
+    font-weight: 600;
+    display: none;
+  }
+  .card.excluded .excluded-label { display: block; }
+  .toggle-btn {
+    border: none;
+    border-radius: 7px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .toggle-btn.hide-btn {
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fca5a5;
+  }
+  .toggle-btn.hide-btn:hover { background: #fee2e2; }
+  .toggle-btn.restore-btn {
+    background: #f0fdf4;
+    color: var(--teal);
+    border: 1px solid #86efac;
+  }
+  .toggle-btn.restore-btn:hover { background: var(--teal-lt); }
+  .toggle-btn:disabled { opacity: .5; cursor: wait; }
+
+  /* ── Empty state ── */
+  .empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 60px 20px;
+    font-size: 15px;
+  }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(60px);
+    background: #1f2937;
+    color: #fff;
+    padding: 10px 22px;
+    border-radius: 8px;
+    font-size: 13px;
+    transition: transform .25s;
+    z-index: 9999;
+    pointer-events: none;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* ── Export overlay ── */
+  #export-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.45);
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+  }
+  #export-overlay.active { display: flex; }
+  .overlay-box {
+    background: var(--white);
+    border-radius: 14px;
+    padding: 28px 24px;
+    max-width: 340px;
+    width: 90%;
+    text-align: center;
+  }
+  .overlay-box h3 { font-size: 17px; margin-bottom: 10px; color: var(--teal); }
+  .overlay-box p { font-size: 13px; color: var(--muted); margin-bottom: 18px; line-height: 1.6; }
+  .overlay-actions { display: flex; flex-direction: column; gap: 10px; }
+  .overlay-btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 9px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .overlay-btn.primary { background: var(--teal); color: #fff; }
+  .overlay-btn.secondary { background: #f3f4f6; color: var(--body); }
+  .overlay-btn.close-btn { background: transparent; color: var(--muted); font-size: 13px; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ── Top bar ── -->
+<div class="top-bar">
+  <div>
+    <h1>📋 مراجعة الشواهد</h1>
+    <div class="subtitle">{{ teacher.name or 'المعلم' }} — اضغط إخفاء لاستبعاد الشاهد من الملف</div>
+  </div>
+  <button class="export-btn" onclick="showExportOverlay()">📘 تصدير الملف</button>
+</div>
+
+<!-- ── Stats strip ── -->
+{% set visible = items | selectattr('is_excluded', 'equalto', false) | list | length %}
+{% set excluded = items | selectattr('is_excluded', 'equalto', true) | list | length %}
+<div class="stats-strip">
+  <span>إجمالي الشواهد: <strong>{{ items|length }}</strong></span>
+  <span>سيُصدَّر: <strong>{{ visible }}</strong></span>
+  {% if excluded > 0 %}<span>مُستبعَد: <strong style="color:#b91c1c;">{{ excluded }}</strong></span>{% endif %}
+</div>
+
+<!-- ── Grid ── -->
+<div class="grid" id="grid">
+  {% if items %}
+  {% for ev in items %}
+  {% set type_icon = {'image': '📷', 'video': '🎥', 'audio': '🎙', 'voice': '🎙', 'pdf': '📄', 'document': '📄', 'url': '🔗', 'text': '📝'} %}
+  <div class="card {% if ev.is_excluded %}excluded{% endif %}" id="card-{{ ev.id }}">
+    {% if ev.thumb %}
+    <img class="card-thumb" src="{{ ev.thumb }}" alt="{{ ev.title }}" loading="lazy" onerror="this.style.display='none'" />
+    {% else %}
+    <div class="card-thumb-placeholder">{{ type_icon.get(ev.evidence_type, '📌') }}</div>
+    {% endif %}
+    <div class="card-body">
+      <div class="card-title">{{ ev.title }}</div>
+      <div class="card-meta">
+        <span class="badge">{{ ev.category }}</span>
+        <span>{{ ev.evidence_type }}</span>
+        {% if ev.created_at %}<span>{{ ev.created_at }}</span>{% endif %}
+      </div>
+      {% if ev.description %}
+      <div class="card-desc">{{ ev.description }}</div>
+      {% endif %}
+    </div>
+    <div class="card-footer">
+      <span class="excluded-label">🚫 مستبعد من الملف</span>
+      {% if not ev.is_excluded %}
+      <button class="toggle-btn hide-btn" onclick="toggleEvidence({{ ev.id }}, this)">🗑 إخفاء من الملف</button>
+      {% else %}
+      <button class="toggle-btn restore-btn" onclick="toggleEvidence({{ ev.id }}, this)">↩ استعادة</button>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="empty" style="grid-column: 1/-1;">لا توجد شواهد مسجّلة بعد.</div>
+  {% endif %}
+</div>
+
+<!-- ── Export overlay ── -->
+<div id="export-overlay">
+  <div class="overlay-box">
+    <h3>📘 تصدير ملف الشواهد</h3>
+    <p>سنرسل لك رسالة واتساب لاختيار نوع الملف (كامل / ذكي / مختصر)، ثم يُنشأ الملف مباشرة.</p>
+    <div class="overlay-actions">
+      <button class="overlay-btn primary" id="confirm-export-btn" onclick="confirmExport()">إرسال رسالة التصدير على واتساب</button>
+      <button class="overlay-btn secondary close-btn" onclick="closeExportOverlay()">إلغاء</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast ── -->
+<div id="toast"></div>
+
+<script>
+  const TOKEN = "{{ token }}";
+  const BASE  = "{{ base_url }}";
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2000);
+  }
+
+  async function toggleEvidence(id, btn) {
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${BASE}/review/${TOKEN}/toggle/${id}`, { method: 'POST' });
+      const data = await res.json();
+      const card = document.getElementById('card-' + id);
+      if (data.excluded) {
+        card.classList.add('excluded');
+        btn.className = 'toggle-btn restore-btn';
+        btn.textContent = '↩ استعادة';
+        btn.onclick = () => toggleEvidence(id, btn);
+        showToast('تم إخفاء الشاهد من الملف');
+      } else {
+        card.classList.remove('excluded');
+        btn.className = 'toggle-btn hide-btn';
+        btn.textContent = '🗑 إخفاء من الملف';
+        btn.onclick = () => toggleEvidence(id, btn);
+        showToast('تمت استعادة الشاهد');
+      }
+      // Update counts
+      const all     = document.querySelectorAll('.card').length;
+      const excl    = document.querySelectorAll('.card.excluded').length;
+      const visible = all - excl;
+    } catch (e) {
+      showToast('حدث خطأ، حاول مجددًا');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function showExportOverlay() {
+    document.getElementById('export-overlay').classList.add('active');
+  }
+  function closeExportOverlay() {
+    document.getElementById('export-overlay').classList.remove('active');
+  }
+
+  async function confirmExport() {
+    const btn = document.getElementById('confirm-export-btn');
+    btn.disabled = true;
+    btn.textContent = 'جاري الإرسال…';
+    try {
+      const res = await fetch(`${BASE}/review/${TOKEN}/export`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        btn.textContent = '✅ تم إرسال رسالة واتساب';
+        showToast('تحقق من واتساب لاختيار نوع الملف');
+        setTimeout(closeExportOverlay, 2500);
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'إرسال رسالة التصدير على واتساب';
+        showToast('حدث خطأ، حاول مجددًا');
+      }
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = 'إرسال رسالة التصدير على واتساب';
+      showToast('حدث خطأ في الاتصال');
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,3 +1,4 @@
+import secrets
 from sqlalchemy.orm import Session
 from app.models.teacher import Teacher
 from app.core.phone import normalize_phone
@@ -29,3 +30,16 @@ def update_teacher(db: Session, teacher: Teacher, data: dict) -> Teacher:
 
 def get_teacher_by_id(db: Session, teacher_id: int) -> Teacher | None:
     return db.query(Teacher).filter(Teacher.id == teacher_id).first()
+
+
+def get_or_create_review_token(db: Session, teacher: Teacher) -> str:
+    """Return existing review token or create a fresh one."""
+    if not teacher.review_token:
+        teacher.review_token = secrets.token_urlsafe(32)
+        db.commit()
+        db.refresh(teacher)
+    return teacher.review_token
+
+
+def get_teacher_by_review_token(db: Session, token: str) -> Teacher | None:
+    return db.query(Teacher).filter(Teacher.review_token == token).first()

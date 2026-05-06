@@ -16,6 +16,7 @@ class Teacher(Base):
     principal_name: Mapped[str | None] = mapped_column(Text)
     region: Mapped[str | None] = mapped_column(Text)           # المنطقة التعليمية (e.g. الرياض)
     education_admin: Mapped[str | None] = mapped_column(Text)  # إدارة التعليم (e.g. إدارة تعليم الرياض)
+    review_token: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     welcomed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     welcome_sent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
     voice_hint_sent_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
