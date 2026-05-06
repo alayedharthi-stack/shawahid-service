@@ -31,7 +31,10 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Cairo', 'Arial', sans-serif;
+      /* Stable Arabic font stack: Cairo (web) → Tahoma (best Arabic on
+         Chromium) → Arial → Segoe UI. Avoids any letter-spacing glitches
+         in Playwright when the Google font fails to load. */
+      font-family: 'Cairo', 'Tahoma', 'Arial', 'Segoe UI', sans-serif;
       font-size: 10.5pt;
       color: var(--body);
       background: var(--white);
@@ -65,350 +68,231 @@
     .ph-right { color: rgba(255,255,255,0.6); font-size: 8.5pt; }
 
     /* ══════════════════════════════════════════════════════════════════
-       COVER PAGE — final design (mirrors teacher_cover.html)
-       A4 fixed dimensions, overflow:hidden → guaranteed single page,
-       no phantom second page from cover overflow.
-       All classes are prefixed with `tcover-` to avoid any conflict
-       with the rest of the report's CSS (.page, .stat-card, etc.).
+       COVER PAGE — STABLE LAYOUT (DO NOT REINTRODUCE clip-path / 297mm absolutes)
+       ─────────────────────────────────────────────────────────────────
+       Hard contract:
+         • Single A4 page, no overflow, no phantom second page.
+         • Logo never clipped (kept inside the safe box with hard limits).
+         • Negative margins cancel Playwright's outer page margins so the
+           cover fills the full A4 (210×297mm) without splitting.
+         • All values fit comfortably inside 297mm height and 210mm width.
+         • Classes are `tcover-*` only — they never collide with .page/.cover.
+       Font: same Cairo + Tahoma/Arial fallback as the rest of the report.
     ══════════════════════════════════════════════════════════════════ */
-    .tcover-vars {
-      --tc-green:      #064f45;
-      --tc-green-grid: rgba(255, 255, 255, 0.045);
-      --tc-white:      #f8f8f2;
-      --tc-card:       #ffffff;
-      --tc-gold:       #caa64a;
-      --tc-gold-dark:  #aa8734;
-      --tc-text:       #064f45;
-      --tc-border:     #dbe6e3;
-    }
-
-    .tcover {
-      position: relative;
+    .tcover-page {
+      /* Negative margins cancel Playwright's outer page margins
+         (top:18mm bottom:18mm left:15mm right:15mm in _generate_pdf),
+         so the cover fills the full A4 (210×297mm) without splitting. */
+      margin: -18mm -15mm 0 -15mm;
       width: 210mm;
       height: 297mm;
+      max-height: 297mm;
       overflow: hidden;
-      background: var(--tc-white);
-      color: var(--tc-text);
-      font-family: 'Cairo', Arial, "Tahoma", sans-serif;
+      position: relative;
+      box-sizing: border-box;
+      background: #064f45;
+      color: #ffffff;
       direction: rtl;
-      break-after: page;
+      font-family: 'Cairo', 'Tahoma', 'Arial', 'Segoe UI', sans-serif;
       page-break-after: always;
-      margin: 0;
+      break-after: page;
       padding: 0;
     }
+    .tcover-page * { box-sizing: border-box; }
 
-    .tcover-green-plane {
+    /* Subtle grid texture in the upper-right area */
+    .tcover-page::before {
+      content: "";
       position: absolute;
-      inset: 0;
-      background: var(--tc-green);
-      clip-path: polygon(50.5% 0, 100% 0, 100% 48.2%, 45.4% 43%, 0 82.5%, 0 37.5%);
+      top: 0; right: 0;
+      width: 100%; height: 60%;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+      background-size: 20mm 20mm;
+      pointer-events: none;
       z-index: 1;
     }
-    .tcover-green-plane::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background-image:
-        linear-gradient(var(--tc-green-grid) 1px, transparent 1px),
-        linear-gradient(90deg, var(--tc-green-grid) 1px, transparent 1px);
-      background-size: 20mm 20mm;
-    }
-    .tcover-green-plane::after {
-      content: "";
+
+    /* Top band: ministry logo (LEFT) + pill (RIGHT) — clamped inside the page */
+    .tcover-band {
       position: absolute;
       top: 18mm;
-      right: 16.5mm;
-      width: 178mm;
-      height: 108mm;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      border-radius: 4mm;
-    }
-
-    .tcover-white-corner {
-      position: absolute;
-      left: 0; top: 0;
-      width: 117mm; height: 112mm;
-      background: var(--tc-white);
-      clip-path: polygon(0 0, 100% 0, 0 100%);
-      z-index: 3;
-    }
-    .tcover-left-fold {
-      position: absolute;
-      left: 0; top: 134mm;
-      width: 32mm; height: 50mm;
-      background: #d9e2de;
-      clip-path: polygon(0 36%, 100% 0, 0 100%);
+      left: 18mm;
+      right: 18mm;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
       z-index: 4;
     }
-    .tcover-middle-shape {
-      position: absolute;
-      left: 47mm; top: 124mm;
-      width: 128mm; height: 30mm;
-      background: var(--tc-white);
-      clip-path: polygon(20% 0, 100% 67%, 38% 67%, 26% 45%, 0 45%);
-      z-index: 5;
+    .tcover-logo-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2.5mm;
+      max-width: 70mm;
     }
-
-    .tcover-logo-block {
-      position: absolute;
-      top: 20mm; left: 20mm;
-      width: 50mm;
-      text-align: left;
-      direction: ltr;
-      z-index: 6;
-    }
-    .tcover-logo-block img {
+    /* Logo: hard-bounded so it can NEVER overflow the safe area */
+    .tcover-logo {
       display: block;
       width: 42mm;
+      max-width: 42mm;
       height: auto;
-      margin-bottom: 3.2mm;
+      max-height: 28mm;
+      object-fit: contain;
     }
     .tcover-ministry-ar {
-      font-size: 18px;
-      line-height: 1.15;
+      font-size: 11pt;
       font-weight: 700;
-      color: #32877f;
-      letter-spacing: -0.2px;
-      direction: rtl;
-      text-align: left;
+      color: #f8f8f2;
+      line-height: 1.2;
     }
     .tcover-ministry-en {
-      margin-top: 1mm;
-      font-size: 12px;
+      font-size: 8.5pt;
+      font-weight: 400;
+      color: rgba(248,248,242,0.78);
       line-height: 1.2;
-      color: #3f938d;
       direction: ltr;
-      text-align: left;
-    }
-
-    .tcover-kingdom {
-      position: absolute;
-      top: 56mm; left: 14mm;
-      font-size: 8.5px;
-      line-height: 1;
-      color: rgba(6, 79, 69, 0.46);
-      z-index: 6;
-      direction: rtl;
-      white-space: nowrap;
-    }
-
-    .tcover-pill-area {
-      position: absolute;
-      top: 30mm; right: 21mm;
-      width: 54mm; height: 25mm;
-      z-index: 7;
-      color: #ffffff;
-    }
-    .tcover-pill-note {
-      position: absolute;
-      top: 0; right: 2mm;
-      font-size: 10px;
-      color: rgba(255, 255, 255, 0.88);
-      white-space: nowrap;
-    }
-    .tcover-pill-line {
-      position: absolute;
-      top: 7mm; right: 0;
-      width: 2mm; height: 24mm;
-      background: var(--tc-gold);
-      border-radius: 2mm;
-    }
-    .tcover-pill-dot {
-      position: absolute;
-      top: 2.7mm; right: -1.7mm;
-      width: 5mm; height: 5mm;
-      border-radius: 50%;
-      background: #ffffff;
     }
     .tcover-pill {
-      position: absolute;
-      top: 13.5mm; right: 5.8mm;
-      width: 36mm; height: 10mm;
-      background: var(--tc-gold);
+      background: #caa64a;
       color: #ffffff;
-      border-radius: 7mm;
-      font-size: 13px;
+      padding: 6px 18px;
+      border-radius: 24px;
+      font-size: 11pt;
       font-weight: 700;
-      line-height: 10mm;
-      text-align: center;
-      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
-    }
-    .tcover-pill::after {
-      content: "";
-      position: absolute;
-      top: 3mm; left: 28.5mm;
-      width: 3.4mm; height: 3.4mm;
-      border-radius: 50%;
-      background: #ffffff;
-      opacity: 0.95;
+      white-space: nowrap;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.08);
     }
 
+    /* Headline */
     .tcover-headline {
       position: absolute;
-      top: 76mm; right: 25mm;
-      width: 86mm;
-      z-index: 7;
-      text-align: right;
-      color: #ffffff;
+      top: 95mm;
+      left: 18mm;
+      right: 18mm;
+      text-align: center;
+      z-index: 4;
     }
     .tcover-headline h1 {
-      font-size: 38px;
-      font-weight: 800;
-      line-height: 1.38;
-      letter-spacing: -0.8px;
-      margin: 0;
-    }
-    .tcover-rule {
-      width: 58mm;
-      height: 1.2mm;
-      margin-top: 1.8mm;
-      background: var(--tc-gold);
-      border-radius: 2mm;
-    }
-
-    .tcover-teacher {
-      position: absolute;
-      top: 111mm; right: 25mm;
-      width: 95mm;
-      z-index: 7;
-      color: #ffffff;
-      text-align: right;
-    }
-    .tcover-teacher-name {
-      font-size: 23px;
-      line-height: 1.15;
-      font-weight: 800;
-      letter-spacing: -0.25px;
-    }
-    .tcover-teacher-meta {
-      margin-top: 0.5mm;
-      font-size: 14px;
-      line-height: 1.35;
-      font-weight: 700;
-      color: rgba(255, 255, 255, 0.98);
-    }
-
-    .tcover-info-card {
-      position: absolute;
-      top: 139.5mm; left: 54mm;
-      width: 130mm; height: 75mm;
-      z-index: 10;
-      background: var(--tc-card);
-      border-radius: 4.4mm;
-      border: 1px solid rgba(219, 230, 227, 0.92);
-      box-shadow: 0 8mm 12mm rgba(0, 0, 0, 0.17);
-      padding: 18mm 9mm 8mm;
-    }
-    .tcover-info-card::before {
-      content: "";
-      position: absolute;
-      top: 0; left: 44mm;
-      width: 62mm; height: 1.2mm;
-      background: linear-gradient(90deg, var(--tc-gold) 0 38%, var(--tc-green) 38% 100%);
-      border-radius: 0 0 2mm 2mm;
-    }
-
-    .tcover-print-badge {
-      position: absolute;
-      top: 6.8mm; left: 9mm;
-      width: 23mm; height: 23mm;
-      border: 0.45mm solid var(--tc-gold-dark);
-      border-radius: 50%;
-      color: var(--tc-gold-dark);
-      font-size: 12px;
+      font-size: 34pt;
       font-weight: 800;
       line-height: 1.25;
-      text-align: center;
-      padding-top: 5.2mm;
-      background: #ffffff;
+      margin: 0;
+      color: #ffffff;
+    }
+    .tcover-headline .tcover-sub {
+      font-size: 16pt;
+      font-weight: 700;
+      color: rgba(255,255,255,0.92);
+      margin-top: 3mm;
+    }
+    .tcover-rule {
+      width: 60mm;
+      height: 1.5mm;
+      background: #caa64a;
+      border-radius: 2mm;
+      margin: 6mm auto 0;
     }
 
-    .tcover-card-title {
+    /* Teacher name + meta */
+    .tcover-teacher {
       position: absolute;
-      top: 19mm; right: 9mm;
-      font-size: 24px;
-      line-height: 1;
-      color: var(--tc-text);
+      top: 158mm;
+      left: 18mm;
+      right: 18mm;
+      text-align: center;
+      color: #ffffff;
+      z-index: 4;
+    }
+    .tcover-teacher-name {
+      font-size: 22pt;
       font-weight: 800;
-      letter-spacing: -0.3px;
+      line-height: 1.2;
+      margin-bottom: 2mm;
+    }
+    .tcover-teacher-meta {
+      font-size: 12pt;
+      font-weight: 600;
+      color: rgba(255,255,255,0.9);
+      line-height: 1.35;
     }
 
-    .tcover-info-grid {
+    /* Info card (school data) — positioned safely well above the brand */
+    .tcover-card {
+      position: absolute;
+      top: 195mm;
+      left: 22mm;
+      right: 22mm;
+      max-height: 60mm;
+      overflow: hidden;
+      background: #ffffff;
+      color: #064f45;
+      border-radius: 4mm;
+      padding: 6mm 7mm 5mm;
+      box-shadow: 0 4mm 12mm rgba(0,0,0,0.18);
+      z-index: 5;
+    }
+    .tcover-card-title {
+      font-size: 13pt;
+      font-weight: 800;
+      margin: 0 0 4mm 0;
+      text-align: center;
+      color: #064f45;
+    }
+    .tcover-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 4.4mm 3.6mm;
-      margin-top: 10mm;
+      gap: 3mm 5mm;
     }
     .tcover-field {
-      height: 21.8mm;
-      border: 1px solid var(--tc-border);
+      border: 1px solid #dbe6e3;
       border-radius: 2mm;
+      padding: 2.5mm 3.5mm;
       background: #fbfdfc;
-      padding: 5.2mm 5mm 3mm;
-      text-align: right;
       overflow: hidden;
     }
     .tcover-field-label {
-      font-size: 13px;
-      line-height: 1.1;
-      color: var(--tc-text);
-      font-weight: 800;
-      margin-bottom: 2mm;
+      font-size: 9pt;
+      font-weight: 700;
+      color: #064f45;
+      margin-bottom: 1mm;
+      line-height: 1.2;
     }
     .tcover-field-value {
-      font-size: 11px;
-      line-height: 1.45;
+      font-size: 9.5pt;
       color: #2f3e3b;
-      font-weight: 400;
+      line-height: 1.3;
+      word-break: break-word;
     }
 
-    .tcover-bottom-brand {
+    /* Brand mark at the bottom — clamped inside 297mm */
+    .tcover-brand {
       position: absolute;
-      top: 239mm; right: 58mm;
-      width: 95mm;
-      z-index: 8;
+      bottom: 12mm;
+      left: 18mm;
+      right: 18mm;
       text-align: center;
-      color: var(--tc-text);
+      color: #ffffff;
+      z-index: 4;
     }
     .tcover-brand-word {
-      font-size: 52px;
-      line-height: 1;
+      font-size: 22pt;
       font-weight: 800;
-      letter-spacing: -1px;
+      letter-spacing: -0.5px;
+      line-height: 1;
     }
     .tcover-brand-rule {
-      width: 9.5mm;
-      height: 0.9mm;
-      margin: 9mm auto 3.5mm;
-      background: var(--tc-gold);
+      width: 18mm;
+      height: 0.8mm;
+      background: #caa64a;
       border-radius: 2mm;
+      margin: 3mm auto 2mm;
     }
-    .tcover-brand-subtitle {
-      font-size: 9.5px;
+    .tcover-brand-sub {
+      font-size: 8.5pt;
+      color: rgba(255,255,255,0.72);
       line-height: 1.3;
-      color: #657b77;
-    }
-
-    .tcover-footer-mark {
-      position: absolute;
-      bottom: 14mm; left: 15mm;
-      z-index: 8;
-      display: flex;
-      align-items: flex-end;
-      gap: 3mm;
-      color: var(--tc-text);
-    }
-    .tcover-footer-dots {
-      width: 18mm; height: 4mm;
-      background-image: radial-gradient(circle, var(--tc-text) 0 0.75mm, transparent 0.85mm);
-      background-size: 4.7mm 4mm;
-      background-repeat: repeat-x;
-      opacity: 0.95;
-    }
-    .tcover-footer-text {
-      font-size: 9px;
-      line-height: 1;
-      font-weight: 800;
     }
 
     /* ══════════════════════════════════════════════════════════════════
@@ -872,52 +756,42 @@
 <body>
 
 <!-- ══════════════════════════════════════════════════════════════════
-     COVER — final design (kept in sync with app/templates/teacher_cover.html)
-     Single A4 page, overflow:hidden → no phantom second page.
-     Variables come from the same render context as the rest of the report.
+     COVER — STABLE single A4 page.
+     Re-built (not copied) from teacher_cover.html design with strict A4
+     boundaries, hard-bounded logo, and Cairo/Tahoma font fallback.
+     Negative margin on .tcover-page cancels Playwright outer margins so
+     the cover fills the full A4 without splitting into two pages.
 ══════════════════════════════════════════════════════════════════ -->
-<main class="tcover tcover-vars">
-  <section class="tcover-green-plane" aria-hidden="true"></section>
-  <section class="tcover-white-corner" aria-hidden="true"></section>
-  <section class="tcover-left-fold" aria-hidden="true"></section>
-  <section class="tcover-middle-shape" aria-hidden="true"></section>
-
-  <header class="tcover-logo-block">
-    {% if ministry_logo %}<img src="{{ ministry_logo }}" alt="وزارة التعليم">{% endif %}
-    <div class="tcover-ministry-ar">وزارة التعليم</div>
-    <div class="tcover-ministry-en">Ministry of Education</div>
-  </header>
-
-  <div class="tcover-kingdom">المملكة العربية السعودية - وزارة التعليم</div>
-
-  <div class="tcover-pill-area">
-    <div class="tcover-pill-note">أهداف ملف المعلم</div>
-    <div class="tcover-pill-dot"></div>
-    <div class="tcover-pill-line"></div>
+<div class="tcover-page">
+  <div class="tcover-band">
+    <div class="tcover-logo-wrap">
+      {% if ministry_logo %}<img class="tcover-logo" src="{{ ministry_logo }}" alt="وزارة التعليم">{% endif %}
+      <div class="tcover-ministry-ar">وزارة التعليم</div>
+      <div class="tcover-ministry-en">Ministry of Education</div>
+    </div>
     <div class="tcover-pill">ملف الشواهد</div>
   </div>
 
-  <section class="tcover-headline">
-    <h1>ملف الشواهد{% if teacher.subject %}<br>لمعلم {{ teacher.subject }}{% endif %}</h1>
+  <div class="tcover-headline">
+    <h1>ملف الشواهد</h1>
+    {% if teacher.subject %}<div class="tcover-sub">لمعلم {{ teacher.subject }}</div>{% endif %}
     <div class="tcover-rule"></div>
-  </section>
+  </div>
 
-  <section class="tcover-teacher">
+  <div class="tcover-teacher">
     <div class="tcover-teacher-name">{{ teacher.name or '—' }}</div>
     {% if teacher.stage or teacher.grades %}
     <div class="tcover-teacher-meta">
       {% if teacher.stage %}{{ teacher.stage }}{% endif %}
-      {% if teacher.stage and teacher.grades %} - {% endif %}
+      {% if teacher.stage and teacher.grades %} · {% endif %}
       {% if teacher.grades %}الصفوف: {{ teacher.grades }}{% endif %}
     </div>
     {% endif %}
-  </section>
+  </div>
 
-  <section class="tcover-info-card">
-    <div class="tcover-print-badge">جاهز<br>للطباعة</div>
-    <h2 class="tcover-card-title">بيانات الملف</h2>
-
-    <div class="tcover-info-grid">
+  <div class="tcover-card">
+    <div class="tcover-card-title">بيانات الملف</div>
+    <div class="tcover-grid">
       <div class="tcover-field">
         <div class="tcover-field-label">المدرسة</div>
         <div class="tcover-field-value">{{ teacher.school_name or '—' }}</div>
@@ -935,19 +809,14 @@
         <div class="tcover-field-value">{{ academic_year or '—' }}</div>
       </div>
     </div>
-  </section>
+  </div>
 
-  <section class="tcover-bottom-brand">
+  <div class="tcover-brand">
     <div class="tcover-brand-word">شواهد</div>
     <div class="tcover-brand-rule"></div>
-    <div class="tcover-brand-subtitle">إعداد وتنظيم الشواهد بصيغة رقمية جاهزة للطباعة</div>
-  </section>
-
-  <footer class="tcover-footer-mark">
-    <div class="tcover-footer-dots"></div>
-    <div class="tcover-footer-text">شواهد</div>
-  </footer>
-</main>
+    <div class="tcover-brand-sub">إعداد وتنظيم الشواهد بصيغة رقمية جاهزة للطباعة</div>
+  </div>
+</div>
 
 
 <!-- ══════════════════════════════════════════════════════════════════
@@ -1305,13 +1174,13 @@
 
 
 <!-- ══════════════════════════════════════════════════════════════════
-     CLOSING
-     Guard: rendered only when there is real content to close (at least one
-     evidence exists). Also gated by `include_intro_page` so it can be
-     suppressed entirely from the export config when not needed.
+     CLOSING — original footer / signatures / WhatsApp CTA / dev credit.
+     RESTORED: this page must always render (it is the report's footer).
+     The only guard is a sanity check that there is something meaningful
+     to close (teacher name or at least one evidence).
 ══════════════════════════════════════════════════════════════════ -->
 {% set _closing_has_content = (total_count or 0) > 0 or teacher.name or teacher.principal_name or teacher.school_name %}
-{% if include_intro_page and _closing_has_content %}
+{% if _closing_has_content %}
 <div class="page">
   <div class="page-header">
     <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
