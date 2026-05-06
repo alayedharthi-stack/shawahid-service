@@ -79,10 +79,9 @@
          • Classes are `tcover-*` only — they never collide with .page/.cover.
        Font: same Cairo + Tahoma/Arial fallback as the rest of the report.
     ══════════════════════════════════════════════════════════════════ */
-    /* ══ COVER PAGE — Premium Ministry Reference Style ══
-       Matches the reference design: teal gradient + diagonal wedge +
-       glass headline card + white data card at bottom-right.
-       Single A4, no overflow, no clip-path.                              */
+    /* ══ COVER PAGE — Reference-match: right-side white triangle ══════
+       A4 fixed. No overflow. All absolute elements stay inside bounds.
+    ════════════════════════════════════════════════════════════════════ */
     .tcover-page {
       margin: -18mm -15mm 0 -15mm;
       width: 210mm;
@@ -92,9 +91,8 @@
       position: relative;
       box-sizing: border-box;
       background:
-        radial-gradient(circle at 18% 14%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.025) 24%, transparent 44%),
-        radial-gradient(circle at 78% 34%, rgba(214,168,74,0.07) 0%, transparent 34%),
-        linear-gradient(135deg, #0b5f61 0%, #127a78 48%, #0f6f70 100%);
+        radial-gradient(circle at 52% 36%, rgba(255,255,255,0.10) 0%, transparent 42%),
+        linear-gradient(135deg, #0A5558 0%, #0F6F70 46%, #127A78 100%);
       color: #ffffff;
       direction: rtl;
       font-family: 'Cairo', 'Tajawal', 'IBM Plex Sans Arabic', 'Tahoma', 'Arial', sans-serif;
@@ -108,164 +106,153 @@
     }
     .tcover-page * { box-sizing: border-box; }
 
-    /* Ultra-subtle grid texture */
-    .tcover-page::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px),
-        linear-gradient(135deg, transparent 0%, transparent 62%, rgba(255,255,255,0.028) 62.2%, transparent 63%);
-      background-size: 18mm 18mm, 18mm 18mm, 210mm 297mm;
-      background-repeat: repeat, repeat, no-repeat;
-      pointer-events: none;
-      z-index: 1;
-    }
+    /* No grid texture */
+    .tcover-page::before { display: none; }
 
-    /* Diagonal white wedge from the bottom-left — matches reference */
+    /* White geometric area — from the RIGHT side, diagonal to lower-left */
     .tcover-page::after {
       content: "";
       position: absolute;
       bottom: 0;
       left: 0;
+      right: 0;
       width: 100%;
-      height: 54%;
-      background: linear-gradient(
-        to top right,
-        #f5f6f0 0%,
-        #f5f6f0 31.5%,
-        transparent 31.6%
-      );
+      height: 125mm;
+      background: #F5F6F0;
+      clip-path: polygon(54% 0, 100% 0, 100% 100%, 0% 100%);
       z-index: 2;
       pointer-events: none;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
 
-    /* ── Ministry of Education logo — white SVG from exporter ───────── */
-    .tcover-moe-logo {
-      position: absolute;
-      top: 21mm;
-      left: 22mm;
-      width: 48mm;
-      max-width: 48mm;
-      height: auto;
-      max-height: 50mm;
-      opacity: 0.88;
-      object-fit: contain;
-      z-index: 5;
-      background: transparent;
-    }
-    /* Hide the new PNG logo block — use SVG from exporter instead */
-    .tcover-moe-logo-img   { display: none; }
-    .tcover-moe-logo-block { display: none; }
-
-    /* ── Top-right: ministry breadcrumb + gold pill ─────────────────── */
-    .tcover-top {
-      position: absolute;
-      top: 25mm;
-      right: 22mm;
-      z-index: 5;
-      text-align: right;
-      max-width: 90mm;
-    }
-    .tcover-ministry {
-      font-size: 9.5pt;
-      font-weight: 400;
-      color: rgba(255,255,255,0.78);
-      line-height: 1.4;
-      margin-bottom: 5mm;
-      white-space: nowrap;
-    }
-    .tcover-pill {
-      display: inline-block;
-      background: #d6a84a;
-      color: #ffffff;
-      padding: 3.5mm 9mm;
-      border-radius: 30px;
-      font-size: 11.5pt;
-      font-weight: 700;
-      line-height: 1;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.14);
-    }
-
-    /* ── Hero glass card — covers headline + teacher name ───────────── */
+    /* ── Large glass hero card (encompasses logo + badge + title + teacher) ─ */
     .tcover-hero-card {
       position: absolute;
-      top: 62mm;
-      right: 20mm;
-      width: 136mm;
+      top: 18mm;
+      left: 14mm;
+      right: 14mm;
+      min-height: 150mm;
+      border-radius: 8mm;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.20);
       z-index: 5;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.09);
-      border-radius: 16px;
-      padding: 7mm 8mm 7mm;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top bar: logo (RTL-left = visual-left) + badge wrap (RTL-right = visual-right) */
+    .tc-topbar {
+      display: flex;
+      flex-direction: row-reverse;   /* logo ends up on left visually in RTL */
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 9mm 10mm 0mm 10mm;
+    }
+    .tc-logo {
+      width: 44mm;
+      height: auto;
+      max-height: 46mm;
+      object-fit: contain;
+      opacity: 0.88;
+    }
+    .tc-topright {
+      text-align: right;
+    }
+    .tc-breadcrumb {
+      font-size: 8.5pt;
+      color: rgba(255,255,255,0.70);
+      margin-bottom: 3.5mm;
+      line-height: 1.3;
+      white-space: nowrap;
+    }
+    .tc-badge {
+      display: inline-block;
+      background: #D8B354;
+      color: #ffffff;
+      padding: 3.5mm 10mm;
+      border-radius: 999px;
+      font-size: 11pt;
+      font-weight: 700;
+      line-height: 1;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    }
+
+    /* Main content area inside hero card */
+    .tc-main {
+      flex: 1;
+      padding: 7mm 12mm 10mm;
       text-align: right;
     }
 
-    /* Headline inside hero card */
-    .tcover-headline {
-      margin-bottom: 4mm;
-    }
+    /* ── Headline ─────────────────────────────────────────────────────────── */
+    .tcover-headline { margin-bottom: 0; }
     .tcover-headline h1 {
-      font-size: 42pt;
+      font-size: 40pt;
       font-weight: 800;
-      line-height: 1.25;
+      line-height: 1.28;
       margin: 0;
-      color: #ffffff;
+      color: rgba(255,255,255,0.94);
       word-spacing: 0;
     }
     .tcover-headline h1 .tcover-line2 {
       display: block;
-      margin-top: 1mm;
-      font-size: 36pt;
+      font-size: 34pt;
       font-weight: 800;
-      color: #ffffff;
-      line-height: 1.3;
+      color: rgba(255,255,255,0.88);
+      margin-top: 1mm;
     }
 
-    /* Teacher block inside hero card */
-    .tcover-teacher { }
+    /* ── Teacher block ────────────────────────────────────────────────────── */
+    .tcover-teacher { margin-top: 0; }
     .tcover-teacher-rule {
       width: 42mm;
       height: 0.45mm;
-      background: rgba(218,176,82,0.45);
-      margin-bottom: 4mm;
+      background: rgba(216,179,84,0.45);
+      margin: 6mm 0 4mm;
     }
     .tcover-teacher-name {
-      font-size: 22pt;
+      font-size: 20pt;
       font-weight: 800;
       color: #e2b85b;
       line-height: 1.25;
-      margin-bottom: 3.5mm;
+      margin-bottom: 3mm;
     }
     .tcover-teacher-meta {
-      font-size: 11.5pt;
+      font-size: 10.5pt;
       font-weight: 500;
-      color: rgba(255,255,255,0.92);
+      color: rgba(255,255,255,0.88);
       line-height: 1.5;
     }
 
-    /* ── Data card — white card bottom-right, over the wedge ────────── */
+    /* ── Legacy elements (replaced by tc-topbar inside card) ─────────────── */
+    .tcover-moe-logo       { display: none; }
+    .tcover-moe-logo-img   { display: none; }
+    .tcover-moe-logo-block { display: none; }
+    .tcover-top            { display: none; }
+    .tcover-ministry       { display: none; }
+    .tcover-pill           { display: none; }
+
+    /* ── White data card — bottom-right, inside the white wedge ─────────── */
     .tcover-card {
       position: absolute;
-      bottom: 28mm;
-      right: 22mm;
-      width: 118mm;
-      max-height: 80mm;
-      overflow: hidden;
-      background: #ffffff;
+      right: 20mm;
+      bottom: 22mm;
+      width: 122mm;
+      background: rgba(255,255,255,0.97);
       color: #1a3833;
-      border-radius: 4mm;
-      padding: 6mm 7mm 7mm;
-      box-shadow:
-        0 3mm 8mm rgba(0,0,0,0.10),
-        0 0.5mm 1mm rgba(0,0,0,0.05);
+      border-radius: 7mm;
+      padding: 8mm 10mm 9mm;
+      box-shadow: 0 14px 28px rgba(0,0,0,0.13);
       z-index: 6;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     .tcover-card-title {
       font-size: 14pt;
       font-weight: 800;
-      margin: 0 0 4mm 0;
+      margin: 0 0 5mm 0;
       color: #0f5e57;
       text-align: right;
       line-height: 1.2;
@@ -273,35 +260,34 @@
     .tcover-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 3.2mm;
+      gap: 3mm;
     }
     .tcover-field {
-      background: #f7f8f5;
-      border: 1px solid #e3eae6;
-      border-radius: 2.5mm;
-      padding: 3.4mm 4mm;
+      background: #F7F9F8;
+      border: 1px solid #E0E7E5;
+      border-radius: 4mm;
+      padding: 4mm 5mm;
       text-align: right;
-      overflow: hidden;
     }
     .tcover-field-label {
-      font-size: 10pt;
+      font-size: 9pt;
       font-weight: 700;
       color: #0f5e57;
       margin-bottom: 1.5mm;
-      line-height: 1.25;
+      line-height: 1.2;
     }
     .tcover-field-value {
-      font-size: 9.5pt;
+      font-size: 9pt;
       font-weight: 400;
       color: #324e49;
       line-height: 1.5;
       word-break: break-word;
     }
 
-    /* ── Bottom note — sits just below the data card in the white area ─ */
+    /* ── Footer note ─────────────────────────────────────────────────────── */
     .tcover-note {
       position: absolute;
-      bottom: 12mm;
+      bottom: 11mm;
       left: 0;
       right: 0;
       text-align: center;
@@ -311,15 +297,15 @@
       z-index: 7;
     }
 
-    /* ── Watermark — stays inside the teal area above the wedge ─────── */
+    /* ── Subtle watermark ────────────────────────────────────────────────── */
     .tcover-watermark {
       position: absolute;
-      top: 118mm;
+      top: 126mm;
       left: 14mm;
-      font-size: 32pt;
+      font-size: 28pt;
       font-weight: 800;
       letter-spacing: 4px;
-      color: rgba(255,255,255,0.035);
+      color: rgba(255,255,255,0.03);
       z-index: 4;
       pointer-events: none;
       white-space: nowrap;
@@ -1046,39 +1032,47 @@
 ═══════════════════════════════════════════════════════════════════ -->
 <div class="tcover-page">
 
-  <!-- Ministry of Education logo — white SVG (icon + Arabic + English), from exporter -->
-  <img class="tcover-moe-logo" src="{{ ministry_logo }}" alt="وزارة التعليم - Ministry of Education">
-
-  <!-- Top-right: gold pill badge -->
-  <div class="tcover-top">
-    <div class="tcover-pill">ملف الشواهد</div>
-  </div>
-
-  <!-- Hero glass card: headline + teacher name -->
+  <!-- ═══ LARGE GLASS HERO CARD: logo + badge + title + teacher ═══ -->
   <div class="tcover-hero-card">
-    <div class="tcover-headline">
-      <h1>
-        ملف الشواهد
-        {% if teacher.subject %}<span class="tcover-line2">لمعلم {{ subject_with_al or teacher.subject }}</span>{% endif %}
-      </h1>
-    </div>
-    <div class="tcover-teacher">
-      <div class="tcover-teacher-rule"></div>
-      {% if teacher.name %}<div class="tcover-teacher-name">{{ teacher.name }}</div>{% endif %}
-      {% if teacher.stage or teacher.grades %}
-      <div class="tcover-teacher-meta">
-        {% if teacher.stage %}{{ teacher.stage }}{% endif %}
-        {% if teacher.stage and teacher.grades %} — {% endif %}
-        {% if teacher.grades %}الصفوف: {{ teacher.grades }}{% endif %}
-      </div>
-      {% endif %}
-    </div>
-  </div>
 
-  <!-- Subtle watermark text in teal area -->
+    <!-- Top bar: Ministry logo (left) + breadcrumb + gold badge (right) -->
+    <div class="tc-topbar">
+      <!-- Logo on the left (flex-direction: row-reverse makes this end up on the left) -->
+      <img class="tc-logo" src="{{ ministry_logo }}" alt="وزارة التعليم - Ministry of Education">
+      <!-- Badge on the right -->
+      <div class="tc-topright">
+        <div class="tc-breadcrumb">المملكة العربية السعودية &nbsp;–&nbsp; وزارة التعليم</div>
+        <div class="tc-badge">ملف الشواهد</div>
+      </div>
+    </div>
+
+    <!-- Main: headline + teacher name -->
+    <div class="tc-main">
+      <div class="tcover-headline">
+        <h1>
+          ملف الشواهد
+          {% if teacher.subject %}<span class="tcover-line2">لمعلم {{ subject_with_al or teacher.subject }}</span>{% endif %}
+        </h1>
+      </div>
+      <div class="tcover-teacher">
+        <div class="tcover-teacher-rule"></div>
+        {% if teacher.name %}<div class="tcover-teacher-name">{{ teacher.name }}</div>{% endif %}
+        {% if teacher.stage or teacher.grades %}
+        <div class="tcover-teacher-meta">
+          {% if teacher.stage %}{{ teacher.stage }}{% endif %}
+          {% if teacher.stage and teacher.grades %} &nbsp;–&nbsp; {% endif %}
+          {% if teacher.grades %}الصفوف: {{ teacher.grades }}{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div><!-- /tcover-hero-card -->
+
+  <!-- Subtle watermark in teal area -->
   <div class="tcover-watermark">SHAWAHID</div>
 
-  <!-- White data card — bottom-right, inside the white wedge area -->
+  <!-- White data card — inside the white wedge area, bottom-right -->
   <div class="tcover-card">
     <div class="tcover-card-title">بيانات الملف</div>
     <div class="tcover-grid">
@@ -1102,6 +1096,7 @@
   </div>
 
   <div class="tcover-note">إعداد وتنظيم الشواهد بصيغة PDF جاهزة للطباعة &nbsp;|&nbsp; {{ academic_year }}</div>
+
 </div>
 
 
