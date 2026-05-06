@@ -149,6 +149,7 @@
       left: 22mm;
       width: 60mm;
       z-index: 5;
+      text-align: left;
     }
     .tcover-moe-logo {
       display: block;
@@ -157,26 +158,29 @@
       height: auto;
       max-height: 34mm;
       filter: brightness(0) invert(1);
-      opacity: 0.86;
+      opacity: 0.88;
       object-fit: contain;
     }
+    /* Caption sits CLOSE under the logo and reads as ONE identity block:
+       Arabic line on top (clear, readable), English line directly below
+       in a smaller, slightly fainter weight. Same opacity family so
+       they belong together. */
     .tcover-moe-caption {
-      margin-top: 4mm;
-      font-size: 8pt;
-      font-weight: 500;
-      color: rgba(255,255,255,0.72);
-      line-height: 1.35;
-      white-space: nowrap;
-      text-align: left;
+      margin-top: 2.5mm;
     }
-    .tcover-moe-caption .sep {
-      margin: 0 1.5mm;
-      color: rgba(255,255,255,0.42);
-      font-weight: 300;
+    .tcover-moe-caption .ar {
+      font-size: 10.5pt;
+      font-weight: 700;
+      color: rgba(255,255,255,0.88);
+      line-height: 1.2;
     }
     .tcover-moe-caption .en {
-      font-size: 7.5pt;
-      color: rgba(255,255,255,0.58);
+      margin-top: 0.6mm;
+      font-size: 8pt;
+      font-weight: 500;
+      color: rgba(255,255,255,0.66);
+      line-height: 1.2;
+      letter-spacing: 0.2px;
     }
 
     /* Top-right block: ministry line (small) + gold pill */
@@ -831,7 +835,8 @@
     <img class="tcover-moe-logo" src="{{ ministry_logo }}" alt="وزارة التعليم">
     {% endif %}
     <div class="tcover-moe-caption">
-      وزارة التعليم<span class="sep">|</span><span class="en">Ministry of Education</span>
+      <div class="ar">وزارة التعليم</div>
+      <div class="en">Ministry of Education</div>
     </div>
   </div>
 

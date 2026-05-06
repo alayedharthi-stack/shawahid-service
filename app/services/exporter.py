@@ -600,9 +600,15 @@ async def run_export_background(teacher_id: int, export_id: int, export_mode: st
         await _generate_pdf(html, output_path)
         logger.info("[PDF GENERATED] path=%s", output_path)
 
+        # Use the branded /d/ download UX (loading page + proper PDF headers)
+        # instead of the raw /files/ static mount. This eliminates the blank-tab
+        # flash on iOS Safari/Chrome and gives the user immediate visual
+        # feedback that the system is working.
+        # Backwards-compat: the raw /files/ URL still works for any legacy
+        # WhatsApp message that already went out.
         pdf_url = (
-            f"{settings.effective_base_url}/files"
-            f"/teachers/{teacher_id}/exports/{filename}"
+            f"{settings.effective_base_url}/d"
+            f"/{teacher_id}/{filename}"
         )
         record.storage_path = str(output_path)
         record.pdf_url      = pdf_url
