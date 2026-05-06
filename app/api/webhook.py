@@ -697,9 +697,12 @@ async def whatsapp_webhook(
     )
 
     logger.info(
-        "[GPT DECISION] teacher_id=%d intent=%s should_save=%s confidence=%.2f title=%r",
+        "[GPT DECISION] teacher_id=%d intent=%s should_save=%s confidence=%.2f title=%r "
+        "is_system_instruction=%s is_low_quality=%s is_lesson_plan=%s reply_style=%s",
         teacher.id, decision["intent"], decision["should_save"],
         decision["confidence"], decision["title"],
+        decision.get("is_system_instruction"), decision.get("is_low_quality"),
+        decision.get("is_lesson_plan"), decision.get("reply_style"),
     )
 
     intent = decision["intent"]
@@ -733,8 +736,20 @@ async def whatsapp_webhook(
         "url":      "رابط إثرائي",
     }
 
-    if media_id and not decision["should_save"] and intent not in ("failure",):
-        # GPT classified this as non-evidence (e.g. smalltalk), but media exists → force save
+    # AI-first: if GPT explicitly identified this as a system instruction,
+    # never force-save it — even if media was attached. GPT's semantic judgment
+    # overrides the blanket media-save rule.
+    _is_system_instruction = bool(decision.get("is_system_instruction", False))
+    if _is_system_instruction:
+        logger.info(
+            "[SYSTEM INSTRUCTION] teacher_id=%d — GPT flagged as system command, skipping save. "
+            "intent=%s confidence=%.2f",
+            teacher.id, intent, decision.get("confidence", 0.0),
+        )
+
+    if media_id and not decision["should_save"] and intent not in ("failure",) and not _is_system_instruction:
+        # GPT classified this as non-evidence (e.g. smalltalk), but media exists → force save.
+        # EXCEPTION: if GPT explicitly says is_system_instruction, never force-save.
         forced_cat   = decision["category"] or _MEDIA_DEFAULT_CATEGORY.get(evidence_type, "نشاط صفي")
         forced_title = decision["title"] or f"شاهد {evidence_type}"
         logger.warning(
@@ -742,15 +757,13 @@ async def whatsapp_webhook(
             "Forcing save with category=%r title=%r",
             teacher.id, intent, forced_cat, forced_title,
         )
-        # Patch decision so the save branch below executes.
-        # ai_status=force_saved lets the admin panel and normaliser identify these records.
         decision = {
             **decision,
             "intent":      "evidence",
             "should_save": True,
             "category":    forced_cat,
             "title":       forced_title,
-            "_force_saved": True,       # internal marker (stored in ai_raw)
+            "_force_saved": True,
         }
         intent = "evidence"
 

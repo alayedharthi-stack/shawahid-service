@@ -60,12 +60,19 @@ class GPTDecision(TypedDict):
     should_save: bool
     reply: str
     title: str | None
-    description: str | None  # educational description to store in DB and render in PDF
+    description: str | None       # educational description → DB + PDF
     category: str | None
-    grade: str | None         # المرحلة الدراسية (if extractable)
-    subject: str | None       # المادة (if extractable)
+    sub_category: str | None      # more specific grouping within category
+    grade: str | None             # المرحلة الدراسية (if extractable)
+    subject: str | None           # المادة (if extractable)
     confidence: float
     profile_update: dict | None
+    # ── AI-first semantic flags ──────────────────────────────────────
+    is_system_instruction: bool   # true → command TO the system, not evidence
+    is_lesson_plan: bool          # true → lesson plan / curriculum document
+    is_low_quality: bool          # true → vague/meaningless, low educational value
+    needs_reply: bool             # true → teacher expects a conversational reply
+    reply_style: str              # "short" | "medium" | "full"
 
 
 # ── System prompt ─────────────────────────────────────────────────────────────
@@ -233,6 +240,42 @@ name, subject, stage, grades, school_name, principal_name, region, education_adm
 
 إذا لم يسأل عن الطريقة، لا تشرح من نفسك ولا تفتح بيعًا مباشرًا.
 
+══ الحقول الدلالية الجديدة (AI-first flags) ══
+
+is_system_instruction:
+  true  → الرسالة هي أمر للنظام وليست شاهدًا تعليميًا.
+  أمثلة: "عدّل القالب", "لا تحفظ هذا", "غيّر المادة", "حدّث بياناتي", "وش فهمت؟"
+  أي رسالة تبدو موجهة للنظام كتعليمات → true
+  false → أي محتوى تعليمي حقيقي أو استفسار طبيعي
+
+is_lesson_plan:
+  true  → الملف أو النص هو خطة درس أو توزيع منهج أو خطة فصل.
+  أمثلة: PDF يحتوي أهدافًا وخطوات، نص "هذه خطة الفصل الثاني"
+  false → شاهد تنفيذي عادي
+
+is_low_quality:
+  true  → المحتوى ضعيف جدًا: غامض، قصير جدًا بلا معنى، أو لا يدل على نشاط حقيقي.
+  أمثلة: صورة فارغة، نص "هههه", "تم", "موجودة", رسالة لا يمكن فهمها
+  false → المحتوى ذو قيمة تعليمية حتى لو بسيط
+
+needs_reply:
+  true  → المعلم يتوقع ردًا (سأل سؤالاً، أرسل شيئًا يحتاج تأكيدًا، طلب معلومات)
+  false → أرسل مجرد ملف/صورة ضمن دفعة بدون توقع رد طويل (batch_save)
+
+reply_style:
+  "short"  → دفعة أو تأكيد سريع (batch_save, تحديث بسيط)
+  "medium" → إجابة لسؤال أو شاهد عادي
+  "full"   → شاهد مفرد مهم أو سؤال عن إمكانيات أو طلب تفصيلي
+
+sub_category:
+  تصنيف فرعي أدق داخل category. مثال: category="نشاط صفي" و sub_category="تعلم تعاوني"
+  null إذا لم يكن هناك تصنيف فرعي واضح.
+
+══ الفلسفة الذكية ══
+أنت المحلل الأول والوحيد. الكود لا يفكر — أنت تفكر.
+كل قرار يبدأ منك: هل يُحفظ؟ هل يُرفض؟ هل يحتاج سؤالًا؟ هل هذا أمر للنظام؟
+الكود يُنفّذ فقط ما تقرره.
+
 أرجع JSON فقط (بدون أي نص خارجه):
 {
   "intent": "...",
@@ -241,10 +284,16 @@ name, subject, stage, grades, school_name, principal_name, region, education_adm
   "title": "عنوان الشاهد — جملة قصيرة وصفية — null إذا لم يكن شاهدًا",
   "description": "وصف تربوي مهني جملتين — null إذا لم يكن شاهدًا",
   "category": "أحد التصنيفات المعتمدة أو null",
+  "sub_category": "تصنيف فرعي أدق أو null",
   "grade": "المرحلة الدراسية إن وُجدت أو null",
   "subject": "المادة الدراسية إن وُجدت أو null",
   "confidence": 0.95,
-  "profile_update": null
+  "profile_update": null,
+  "is_system_instruction": false,
+  "is_lesson_plan": false,
+  "is_low_quality": false,
+  "needs_reply": true,
+  "reply_style": "medium"
 }
 
 ملاحظة: profile_update يمكن أن يحتوي على أي مزيج من:
@@ -497,36 +546,51 @@ def _coerce(data: dict) -> GPTDecision:
     """
     Normalise raw GPT JSON into a typed GPTDecision.
     GPT's reply is used as-is — never replaced with canned strings.
+    New semantic flags are surfaced to the caller so the rest of the system
+    can rely on GPT's judgment rather than keyword rules.
     """
     intent      = str(data.get("intent", "smalltalk"))
     should_save = bool(data.get("should_save", False))
 
     # Enforce save rules based on intent
     if intent in _SAVE_INTENTS:
-        should_save = True                  # batch_save / url_link must always save
+        should_save = True
     elif intent in _NOSAVE_INTENTS:
-        should_save = False                 # these must never save
+        should_save = False
 
-    # For batch_save: reply should be short — if GPT wrote too much, keep it
-    # (we trust GPT to follow the system prompt for brief replies)
+    # System instructions are never evidence
+    is_system_instruction = bool(data.get("is_system_instruction", False))
+    if is_system_instruction:
+        should_save = False
 
-    # Use GPT's reply directly
     reply = (data.get("reply") or "").strip()
     if not reply:
-        # Only truly empty: short placeholder for batch_save, else ellipsis
         reply = "📥" if intent == "batch_save" else "..."
 
+    # reply_style defaults: batch_save → short, else medium
+    raw_style = str(data.get("reply_style") or "")
+    if raw_style in ("short", "medium", "full"):
+        reply_style = raw_style
+    else:
+        reply_style = "short" if intent == "batch_save" else "medium"
+
     return {
-        "intent":         intent,
-        "should_save":    should_save,
-        "reply":          reply,
-        "title":          data.get("title") or None,
-        "description":    data.get("description") or None,
-        "category":       data.get("category") or None,
-        "grade":          data.get("grade") or None,
-        "subject":        data.get("subject") or None,
-        "confidence":     float(data.get("confidence", 0.5)),
-        "profile_update": data.get("profile_update") or None,
+        "intent":               intent,
+        "should_save":          should_save,
+        "reply":                reply,
+        "title":                data.get("title") or None,
+        "description":          data.get("description") or None,
+        "category":             data.get("category") or None,
+        "sub_category":         data.get("sub_category") or None,
+        "grade":                data.get("grade") or None,
+        "subject":              data.get("subject") or None,
+        "confidence":           float(data.get("confidence", 0.5)),
+        "profile_update":       data.get("profile_update") or None,
+        "is_system_instruction": is_system_instruction,
+        "is_lesson_plan":       bool(data.get("is_lesson_plan", False)),
+        "is_low_quality":       bool(data.get("is_low_quality", False)),
+        "needs_reply":          bool(data.get("needs_reply", True)),
+        "reply_style":          reply_style,
     }
 
 
@@ -536,14 +600,20 @@ def _failure_decision() -> GPTDecision:
     Webhook sends this interim message then schedules a background retry.
     """
     return {
-        "intent":         "failure",
-        "should_save":    False,
-        "reply":          "يبدو أن هناك ضغطًا بسيطًا الآن 🌿 جرّب بعد لحظات",
-        "title":          None,
-        "description":    None,
-        "category":       None,
-        "grade":          None,
-        "subject":        None,
-        "confidence":     0.0,
-        "profile_update": None,
+        "intent":               "failure",
+        "should_save":          False,
+        "reply":                "يبدو أن هناك ضغطًا بسيطًا الآن 🌿 جرّب بعد لحظات",
+        "title":                None,
+        "description":          None,
+        "category":             None,
+        "sub_category":         None,
+        "grade":                None,
+        "subject":              None,
+        "confidence":           0.0,
+        "profile_update":       None,
+        "is_system_instruction": False,
+        "is_lesson_plan":       False,
+        "is_low_quality":       False,
+        "needs_reply":          True,
+        "reply_style":          "medium",
     }
