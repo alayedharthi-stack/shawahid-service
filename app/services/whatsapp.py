@@ -245,6 +245,96 @@ async def send_whatsapp_button(
         return False
 
 
+async def send_review_offer(
+    to_phone: str,
+    review_url: str,
+    *,
+    teacher_id: int | None = None,
+) -> bool:
+    """
+    Send a WhatsApp CTA-URL interactive message offering the review page.
+
+    Shows as:
+      body text explaining the two options
+      [🔍 مراجعة الملف]  ← tappable button that opens review_url
+
+    Falls back to a clean short text message if the interactive API call fails.
+    Never raises.
+    """
+    body_text = (
+        "ملفك جاهز تقريبًا 📘\n\n"
+        "تقدر تراجع الشواهد وتُخفي غير المناسب قبل التصدير.\n\n"
+        "أو اكتب: صدر الآن\n"
+        "لتصدير الملف مباشرة."
+    )
+
+    if not settings.WHATSAPP_ACCESS_TOKEN or not settings.WHATSAPP_PHONE_NUMBER_ID:
+        logger.info(
+            "[WhatsApp review offer stub] teacher_id=%s To=%s url=%s",
+            teacher_id, to_phone, review_url[:60],
+        )
+        return True
+
+    api_url = (
+        f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}"
+        f"/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+    )
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_phone,
+        "type": "interactive",
+        "interactive": {
+            "type": "cta_url",
+            "body": {"text": body_text},
+            "action": {
+                "name": "cta_url",
+                "parameters": {
+                    "display_text": "🔍 مراجعة الملف",
+                    "url": review_url,
+                },
+            },
+        },
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(api_url, json=payload, headers=headers)
+
+        if resp.status_code == 200:
+            logger.info(
+                "[REVIEW OFFER BUTTON SENT] teacher_id=%s phone=%s", teacher_id, to_phone
+            )
+            return True
+
+        logger.warning(
+            "[REVIEW OFFER BUTTON FAILED] teacher_id=%s status=%d body=%s — falling back to text",
+            teacher_id, resp.status_code, resp.text[:300],
+        )
+    except Exception as exc:
+        logger.warning(
+            "[REVIEW OFFER BUTTON EXCEPTION] teacher_id=%s error=%s — falling back to text",
+            teacher_id, exc,
+        )
+
+    # Fallback: clean text without raw URL on its own line
+    fallback_msg = (
+        "ملفك جاهز تقريبًا 📘\n\n"
+        "راجع الشواهد قبل التصدير:\n"
+        f"{review_url}\n\n"
+        "أو اكتب: صدر الآن"
+    )
+    return await send_whatsapp_message(
+        to_phone,
+        fallback_msg,
+        teacher_id=teacher_id,
+        context="export_review_offer_fallback",
+    )
+
+
 async def send_export_options_buttons(
     to_phone: str,
     *,

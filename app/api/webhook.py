@@ -44,6 +44,7 @@ from app.services.whatsapp import (
     send_whatsapp_message,
     send_whatsapp_button,
     send_export_options_buttons,
+    send_review_offer,
     build_payment_link_message,
     build_payment_receipt_message,
     build_subscription_activated_message,
@@ -807,20 +808,11 @@ async def whatsapp_webhook(
         review_token = get_or_create_review_token(db, teacher)
         review_url   = f"{settings.effective_base_url}/review/{review_token}"
 
-        review_msg = (
-            "ملفك جاهز تقريبًا 📘\n\n"
-            "تقدر تراجع الشواهد وتُخفي غير المناسب قبل التصدير:\n"
-            f"👉 {review_url}\n\n"
-            "أو اكتب:\n"
-            "صدر الآن\n"
-            "لتصدير الملف مباشرة بدون مراجعة."
-        )
         background_tasks.add_task(
-            send_whatsapp_message,
+            send_review_offer,
             teacher.phone,
-            review_msg,
+            review_url,
             teacher_id=teacher.id,
-            context="export_review_offer",
         )
         return {"ok": True, "teacher_id": teacher.id, "intent": intent, "awaiting_review_or_export": True}
 
