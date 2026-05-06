@@ -79,9 +79,9 @@
          • Classes are `tcover-*` only — they never collide with .page/.cover.
        Font: same Cairo + Tahoma/Arial fallback as the rest of the report.
     ══════════════════════════════════════════════════════════════════ */
-    /* ══ COVER PAGE — Premium Ministry Style ══
-       Single A4, no overflow. Gradient: lighter teal for warmth and depth.
-       All elements z-indexed above decorative layers (z 1-4).            */
+    /* ══ COVER PAGE — Final Ministry Style ══
+       Full teal background, no white wedge, no data card.
+       One big glass hero card covers headline + teacher block.           */
     .tcover-page {
       margin: -18mm -15mm 0 -15mm;
       width: 210mm;
@@ -91,10 +91,8 @@
       position: relative;
       box-sizing: border-box;
       background:
-        radial-gradient(ellipse at 20% 12%, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.04) 26%, transparent 48%),
-        radial-gradient(ellipse at 80% 30%, rgba(210,255,240,0.06) 0%, transparent 38%),
-        radial-gradient(ellipse at 50% 55%, rgba(255,255,255,0.04) 0%, transparent 42%),
-        linear-gradient(140deg, #0f766e 0%, #147d75 42%, #1a8b82 80%, #1e9688 100%);
+        radial-gradient(ellipse at 22% 18%, rgba(255,255,255,0.10) 0%, transparent 44%),
+        linear-gradient(150deg, #14827a 0%, #1a9080 55%, #1d9685 100%);
       color: #ffffff;
       direction: rtl;
       font-family: 'Cairo', 'Tajawal', 'IBM Plex Sans Arabic', 'Tahoma', 'Arial', sans-serif;
@@ -108,81 +106,31 @@
     }
     .tcover-page * { box-sizing: border-box; }
 
-    /* Ultra-subtle grid texture — barely visible, acts as paper texture only */
-    .tcover-page::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.014) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.011) 1px, transparent 1px);
-      background-size: 16mm 16mm;
-      pointer-events: none;
-      z-index: 1;
-    }
+    /* No pseudo-elements — clean solid teal background */
+    .tcover-page::before { display: none; }
+    .tcover-page::after  { display: none; }
 
-    /* Diagonal white wedge from the bottom-left corner */
-    .tcover-page::after {
-      content: "";
+    /* ── Ministry of Education actual logo (white PNG) ───────────────── */
+    .tcover-moe-logo-img {
       position: absolute;
-      bottom: 0;
-      left: 0;
-      width: 100%;
-      height: 54%;
-      background: linear-gradient(
-        to top right,
-        #f3f5f0 0%,
-        #f3f5f0 31%,
-        transparent 31.4%
-      );
-      z-index: 2;
-      pointer-events: none;
-    }
-
-    /* ── Ministry of Education logo block (left side) ───────────────── */
-    .tcover-moe-logo-block {
-      position: absolute;
-      top: 28mm;
-      left: 20mm;
-      z-index: 6;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0;
-    }
-    /* The dots mark — inline SVG rendered white */
-    .tcover-moe-dots {
-      width: 46mm;
+      top: 22mm;
+      left: 18mm;
+      width: 52mm;
       height: auto;
-      opacity: 0.92;
+      max-height: 56mm;
+      object-fit: contain;
+      opacity: 0.95;
+      z-index: 6;
     }
-    .tcover-moe-name-ar {
-      font-size: 11.5pt;
-      font-weight: 700;
-      color: rgba(255,255,255,0.90);
-      letter-spacing: 2.5px;
-      text-align: center;
-      margin-top: 2.5mm;
-      line-height: 1;
-    }
-    .tcover-moe-name-en {
-      font-size: 7.5pt;
-      font-weight: 400;
-      color: rgba(255,255,255,0.65);
-      letter-spacing: 0.8px;
-      text-align: center;
-      margin-top: 1mm;
-      line-height: 1;
-    }
-
-    /* Legacy img logo — hidden if block logo is used */
-    .tcover-moe-logo { display: none; }
+    /* Hide legacy elements */
+    .tcover-moe-logo       { display: none; }
+    .tcover-moe-logo-block { display: none; }
 
     /* ── Top-right: ministry breadcrumb + gold pill ─────────────────── */
     .tcover-top {
       position: absolute;
-      top: 28mm;
-      right: 22mm;
+      top: 24mm;
+      right: 20mm;
       z-index: 6;
       text-align: right;
       max-width: 90mm;
@@ -190,9 +138,9 @@
     .tcover-ministry {
       font-size: 9pt;
       font-weight: 400;
-      color: rgba(255,255,255,0.72);
+      color: rgba(255,255,255,0.70);
       line-height: 1.4;
-      margin-bottom: 4.5mm;
+      margin-bottom: 4mm;
       white-space: nowrap;
     }
     .tcover-pill {
@@ -209,23 +157,28 @@
         inset 0 1px 0 rgba(255,255,255,0.18);
     }
 
-    /* ── Headline block — glass card behind title ───────────────────── */
-    .tcover-headline {
+    /* ── Hero glass card — unified card for headline + teacher ──────── */
+    .tcover-hero-card {
       position: absolute;
-      top: 70mm;
-      right: 20mm;
-      width: 136mm;
-      text-align: right;
+      top: 68mm;
+      right: 18mm;
+      width: 144mm;
       z-index: 6;
-      background: rgba(255,255,255,0.045);
-      border: 1px solid rgba(255,255,255,0.09);
-      border-radius: 16px;
-      padding: 6mm 7mm 5mm;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 20px;
+      padding: 8mm 9mm 8mm;
+      text-align: right;
+    }
+
+    /* Headline inside the hero card */
+    .tcover-headline {
+      margin-bottom: 5mm;
     }
     .tcover-headline h1 {
       font-size: 41pt;
       font-weight: 800;
-      line-height: 1.25;
+      line-height: 1.22;
       margin: 0;
       color: #ffffff;
       word-spacing: 0;
@@ -235,117 +188,62 @@
       margin-top: 1mm;
       font-size: 34pt;
       font-weight: 700;
-      color: rgba(255,255,255,0.93);
-      line-height: 1.28;
+      color: rgba(255,255,255,0.92);
+      line-height: 1.25;
     }
 
-    /* ── Teacher name block — closer to headline ────────────────────── */
-    .tcover-teacher {
-      position: absolute;
-      top: 123mm;
-      right: 22mm;
-      width: 130mm;
-      text-align: right;
-      z-index: 6;
-    }
+    /* Teacher block inside the hero card */
+    .tcover-teacher { }
     .tcover-teacher-rule {
-      width: 38mm;
+      width: 36mm;
       height: 0.4mm;
-      background: rgba(218,180,82,0.50);
+      background: rgba(218,180,82,0.55);
       margin-bottom: 3.5mm;
-      margin-right: 0;
     }
     .tcover-teacher-name {
-      font-size: 23pt;
+      font-size: 22pt;
       font-weight: 800;
       color: #f0cc6a;
       line-height: 1.2;
-      margin-bottom: 3mm;
+      margin-bottom: 2.5mm;
     }
     .tcover-teacher-meta {
       font-size: 11pt;
       font-weight: 400;
       color: rgba(255,255,255,0.88);
-      line-height: 1.55;
+      line-height: 1.5;
     }
 
-    /* ── Data card — premium warm white ────────────────────────────── */
-    .tcover-card {
-      position: absolute;
-      bottom: 44mm;
-      right: 20mm;
-      width: 134mm;
-      max-height: 80mm;
-      overflow: hidden;
-      background: #fefefe;
-      color: #1a3833;
-      border-radius: 5mm;
-      padding: 6.5mm 7.5mm 7mm;
-      box-shadow:
-        0 6mm 18mm rgba(0,0,0,0.10),
-        0 1mm 2mm rgba(0,0,0,0.05),
-        inset 0 0 0 0.5px rgba(200,220,215,0.8);
-      z-index: 7;
-      border-top: 2px solid #d4a843;
-    }
-    .tcover-card-title {
-      font-size: 13.5pt;
-      font-weight: 800;
-      margin: 0 0 4mm 0;
-      color: #0f6159;
-      text-align: right;
-      line-height: 1.2;
-    }
-    .tcover-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 3mm;
-    }
-    .tcover-field {
-      background: #f6f8f6;
-      border: 1px solid #dde9e5;
-      border-radius: 2.5mm;
-      padding: 3.2mm 4mm;
-      text-align: right;
-      overflow: hidden;
-    }
-    .tcover-field-label {
-      font-size: 9.5pt;
-      font-weight: 700;
-      color: #0f6159;
-      margin-bottom: 1.2mm;
-      line-height: 1.25;
-    }
-    .tcover-field-value {
-      font-size: 9pt;
-      font-weight: 400;
-      color: #2e4c47;
-      line-height: 1.5;
-      word-break: break-word;
-    }
+    /* ── Data card — HIDDEN ─────────────────────────────────────────── */
+    .tcover-card        { display: none; }
+    .tcover-card-title  { display: none; }
+    .tcover-grid        { display: none; }
+    .tcover-field       { display: none; }
+    .tcover-field-label { display: none; }
+    .tcover-field-value { display: none; }
 
     /* ── Bottom note ─────────────────────────────────────────────────── */
     .tcover-note {
       position: absolute;
-      bottom: 18mm;
-      right: 22mm;
-      width: 132mm;
+      bottom: 14mm;
+      left: 0;
+      right: 0;
       text-align: center;
       font-size: 8pt;
-      color: rgba(15,94,87,0.58);
+      color: rgba(255,255,255,0.35);
       line-height: 1.4;
-      z-index: 7;
+      z-index: 6;
     }
 
     /* ── Watermark ───────────────────────────────────────────────────── */
     .tcover-watermark {
       position: absolute;
-      top: 118mm;
+      bottom: 32mm;
       left: 14mm;
-      font-size: 32pt;
+      font-size: 30pt;
       font-weight: 800;
-      letter-spacing: 4px;
-      color: rgba(255,255,255,0.028);
+      letter-spacing: 5px;
+      color: rgba(255,255,255,0.04);
       z-index: 3;
       pointer-events: none;
       white-space: nowrap;
@@ -1072,103 +970,30 @@
 ═══════════════════════════════════════════════════════════════════ -->
 <div class="tcover-page">
 
-  <!-- Ministry of Education logo — inline SVG (white), exact dots pattern -->
-  <div class="tcover-moe-logo-block">
-    <svg class="tcover-moe-dots" viewBox="0 0 320 130" xmlns="http://www.w3.org/2000/svg" fill="white">
-      <!-- Row 1 (top) - large dots -->
-      <circle cx="22"  cy="18" r="9.5"/>
-      <circle cx="52"  cy="18" r="9.5"/>
-      <circle cx="82"  cy="18" r="9.5"/>
-      <circle cx="120" cy="14" r="11"/>
-      <circle cx="152" cy="14" r="11"/>
-      <!-- gap -->
-      <circle cx="208" cy="14" r="11"/>
-      <circle cx="240" cy="14" r="11"/>
-      <circle cx="272" cy="14" r="11"/>
-      <!-- Row 2 -->
-      <circle cx="22"  cy="48" r="8"/>
-      <circle cx="52"  cy="48" r="8"/>
-      <circle cx="82"  cy="48" r="8"/>
-      <circle cx="120" cy="44" r="9.5"/>
-      <circle cx="152" cy="44" r="9.5"/>
-      <!-- gap -->
-      <circle cx="208" cy="44" r="9.5"/>
-      <circle cx="240" cy="44" r="9.5"/>
-      <circle cx="272" cy="44" r="9.5"/>
-      <!-- Row 3 (bottom) - smaller -->
-      <circle cx="22"  cy="74" r="6.5"/>
-      <circle cx="52"  cy="74" r="6.5"/>
-      <circle cx="82"  cy="74" r="6.5"/>
-      <circle cx="120" cy="70" r="7.5"/>
-      <circle cx="152" cy="70" r="7.5"/>
-      <!-- centre dot -->
-      <circle cx="180" cy="80" r="6"/>
-      <!-- right cluster -->
-      <circle cx="208" cy="70" r="7.5"/>
-      <circle cx="240" cy="70" r="7.5"/>
-      <circle cx="272" cy="70" r="7.5"/>
-      <!-- small row 4 -->
-      <circle cx="37"  cy="96" r="5"/>
-      <circle cx="67"  cy="96" r="5"/>
-      <circle cx="136" cy="92" r="5.5"/>
-      <circle cx="222" cy="92" r="5.5"/>
-      <circle cx="256" cy="92" r="5.5"/>
-      <!-- dots row 5 (mini) -->
-      <circle cx="52"  cy="114" r="3.5"/>
-      <circle cx="152" cy="110" r="4"/>
-      <circle cx="208" cy="110" r="4"/>
-    </svg>
-    <div class="tcover-moe-name-ar">وزارة التعليم</div>
-    <div class="tcover-moe-name-en">Ministry of Education</div>
-  </div>
+  <!-- Ministry of Education official white logo (PNG, white-on-transparent) -->
+  <img class="tcover-moe-logo-img" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAMKCAYAAAAbITZrAAATH0lEQVR4nO3YwQ3AIBDAMOj+Ox9ToErEniDv7JmZBQAAADzt+zsAAAAAuM8AAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAABgve8AuUMKEFaIl9EAAAAASUVORK5CYII=" alt="وزارة التعليم - Ministry of Education">
 
   <div class="tcover-top">
     <div class="tcover-ministry">المملكة العربية السعودية &nbsp;–&nbsp; وزارة التعليم</div>
     <div class="tcover-pill">ملف الشواهد</div>
   </div>
 
-  <div class="tcover-headline">
-    <h1>
-      ملف الشواهد
-      {% if teacher.subject %}<span class="tcover-line2">لمعلم {{ subject_with_al or teacher.subject }}</span>{% endif %}
-    </h1>
-  </div>
-
-  <div class="tcover-teacher">
-    <div class="tcover-teacher-rule"></div>
-    {% if teacher.name %}<div class="tcover-teacher-name">{{ teacher.name }}</div>{% endif %}
-    {% if teacher.stage or teacher.grades %}
-    <div class="tcover-teacher-meta">
-      {% if teacher.stage %}{{ teacher.stage }}{% endif %}
-      {% if teacher.stage and teacher.grades %} - {% endif %}
-      {% if teacher.grades %}الصفوف: {{ teacher.grades }}{% endif %}
+  <!-- Hero glass card: headline + teacher name + grades in one unified card -->
+  <div class="tcover-hero-card">
+    <div class="tcover-headline">
+      <h1>
+        ملف الشواهد
+        {% if teacher.subject %}<span class="tcover-line2">لمعلم {{ subject_with_al or teacher.subject }}</span>{% endif %}
+      </h1>
     </div>
-    {% endif %}
-  </div>
-
-  <div class="tcover-card">
-    <h2 class="tcover-card-title">بيانات الملف</h2>
-    <div class="tcover-grid">
-      {% if teacher.principal_name %}
-      <div class="tcover-field">
-        <div class="tcover-field-label">مدير المدرسة</div>
-        <div class="tcover-field-value">{{ teacher.principal_name }}</div>
-      </div>
-      {% endif %}
-      {% if teacher.school_name %}
-      <div class="tcover-field">
-        <div class="tcover-field-label">المدرسة</div>
-        <div class="tcover-field-value">{{ teacher.school_name }}</div>
-      </div>
-      {% endif %}
-      <div class="tcover-field">
-        <div class="tcover-field-label">محور النسخة</div>
-        <div class="tcover-field-value">شواهد {{ academic_year or '' }}</div>
-      </div>
-      {% if teacher.subject %}
-      <div class="tcover-field">
-        <div class="tcover-field-label">المادة</div>
-        <div class="tcover-field-value">{{ teacher.subject }}</div>
+    <div class="tcover-teacher">
+      <div class="tcover-teacher-rule"></div>
+      {% if teacher.name %}<div class="tcover-teacher-name">{{ teacher.name }}</div>{% endif %}
+      {% if teacher.stage or teacher.grades %}
+      <div class="tcover-teacher-meta">
+        {% if teacher.stage %}{{ teacher.stage }}{% endif %}
+        {% if teacher.stage and teacher.grades %} - {% endif %}
+        {% if teacher.grades %}الصفوف: {{ teacher.grades }}{% endif %}
       </div>
       {% endif %}
     </div>
