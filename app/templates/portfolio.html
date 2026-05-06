@@ -378,7 +378,7 @@
     ══════════════════════════════════════════════════════════════════ */
     .analysis-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 12px;
       margin-bottom: 18px;
     }
@@ -918,7 +918,7 @@
 
   <div class="tcover-teacher">
     <div class="tcover-teacher-rule"></div>
-    <div class="tcover-teacher-name">{{ teacher.name or '—' }}</div>
+    {% if teacher.name %}<div class="tcover-teacher-name">{{ teacher.name }}</div>{% endif %}
     {% if teacher.stage or teacher.grades %}
     <div class="tcover-teacher-meta">
       {% if teacher.stage %}{{ teacher.stage }}{% endif %}
@@ -931,22 +931,28 @@
   <div class="tcover-card">
     <h2 class="tcover-card-title">بيانات الملف</h2>
     <div class="tcover-grid">
+      {% if teacher.principal_name %}
       <div class="tcover-field">
         <div class="tcover-field-label">مدير المدرسة</div>
-        <div class="tcover-field-value">{{ teacher.principal_name or '—' }}</div>
+        <div class="tcover-field-value">{{ teacher.principal_name }}</div>
       </div>
+      {% endif %}
+      {% if teacher.school_name %}
       <div class="tcover-field">
         <div class="tcover-field-label">المدرسة</div>
-        <div class="tcover-field-value">{{ teacher.school_name or '—' }}</div>
+        <div class="tcover-field-value">{{ teacher.school_name }}</div>
       </div>
+      {% endif %}
       <div class="tcover-field">
         <div class="tcover-field-label">محور النسخة</div>
         <div class="tcover-field-value">شواهد {{ academic_year or '' }}</div>
       </div>
+      {% if teacher.subject %}
       <div class="tcover-field">
         <div class="tcover-field-label">المادة</div>
-        <div class="tcover-field-value">{{ teacher.subject or '—' }}</div>
+        <div class="tcover-field-value">{{ teacher.subject }}</div>
       </div>
+      {% endif %}
     </div>
   </div>
 
@@ -1225,8 +1231,7 @@
 <!-- ══════════════════════════════════════════════════════════════════
      STATISTICS — after foundational sections
 ══════════════════════════════════════════════════════════════════ -->
-{% set _has_media = (stats.images or 0) + (stats.videos or 0) + (stats.audios or 0) + (stats.documents or 0) + (stats.urls or 0) %}
-{% if total_count >= 3 and _has_media > 0 %}
+{% if total_count > 0 %}
 <div class="page">
   <div class="page-header">
     <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
@@ -1278,6 +1283,7 @@
   <div class="analysis-grid">
     <div class="analysis-card"><div class="analysis-label">أعلى محور</div><div class="analysis-value">{{ performance_analysis.top_category.name }}<br/>{{ performance_analysis.top_category.count }} شاهد</div></div>
     <div class="analysis-card"><div class="analysis-label">أقل محور</div><div class="analysis-value">{{ performance_analysis.low_category.name }}<br/>{{ performance_analysis.low_category.count }} شاهد</div></div>
+    <div class="analysis-card"><div class="analysis-label">أكثر نوع وسائط</div><div class="analysis-value">{{ performance_analysis.top_media.name }}<br/>{{ performance_analysis.top_media.count }} شاهد</div></div>
     <div class="analysis-card"><div class="analysis-label">إجمالي الشواهد</div><div class="analysis-value">{{ performance_analysis.total_count }} شاهد</div></div>
   </div>
 
@@ -1346,7 +1352,7 @@
     <h3>خاتمة الملف</h3>
     <p>
       يُعدّ هذا الملف توثيقًا أمينًا لجهود المعلم
-      <strong style="color:var(--gold);">{{ teacher.name or '' }}</strong>
+      {% if teacher.name %}<strong style="color:var(--gold);">{{ teacher.name }}</strong>{% endif %}
       خلال العام الدراسي {{ academic_year }}.
       وقد حرص على تنويع شواهد أدائه المهني لتشمل التخطيط والتنفيذ والتقويم
       والأنشطة الإثرائية، سعيًا نحو تحقيق الجودة التعليمية ورفع مستوى التحصيل.
@@ -1360,14 +1366,16 @@
   <div class="sig-row">
     <div class="sig-block">
       <strong>المعلم</strong><br/>
-      {{ teacher.name or '—' }}<br/>
-      {% if teacher.subject %}{{ teacher.subject }}{% if teacher.school_name %} — {% endif %}{% endif %}{{ teacher.school_name or '' }}<br/>
+      {% if teacher.name %}{{ teacher.name }}<br/>{% endif %}
+      {% if teacher.subject or teacher.school_name %}
+      {% if teacher.subject %}{{ teacher.subject }}{% endif %}{% if teacher.subject and teacher.school_name %} — {% endif %}{% if teacher.school_name %}{{ teacher.school_name }}{% endif %}<br/>
+      {% endif %}
       <div class="sig-line">التوقيع: ___________________________</div>
     </div>
     <div class="sig-block" style="text-align:left;">
       <strong>مدير المدرسة</strong><br/>
-      {{ teacher.principal_name or '—' }}<br/>
-      {{ teacher.school_name or '' }}<br/>
+      {% if teacher.principal_name %}{{ teacher.principal_name }}<br/>{% endif %}
+      {% if teacher.school_name %}{{ teacher.school_name }}<br/>{% endif %}
       <div class="sig-line">التوقيع: ___________________________</div>
     </div>
   </div>

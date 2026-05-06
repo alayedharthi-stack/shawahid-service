@@ -790,23 +790,32 @@ def _split_leading_categories(categories: list[dict]) -> tuple[list[dict], list[
     return leading, remaining
 
 
-def _build_performance_analysis(categories: list[dict], total_count: int) -> dict:
+def _build_performance_analysis(categories: list[dict], total_count: int, stats: dict | None = None) -> dict:
     nonempty = [cat for cat in categories if cat["count"] > 0]
     if not nonempty or total_count <= 0:
         return {}
 
     top = max(nonempty, key=lambda cat: cat["count"])
     low = min(nonempty, key=lambda cat: cat["count"])
+    media_counts = [
+        {"name": "الصور", "count": (stats or {}).get("images", 0)},
+        {"name": "الفيديو", "count": (stats or {}).get("videos", 0)},
+        {"name": "الصوتيات", "count": (stats or {}).get("audios", 0)},
+        {"name": "الملفات", "count": (stats or {}).get("documents", 0)},
+        {"name": "الروابط", "count": (stats or {}).get("urls", 0)},
+        {"name": "النصوص", "count": (stats or {}).get("texts", 0)},
+    ]
+    top_media = max(media_counts, key=lambda item: item["count"])
     note = (
-        f"يعكس الملف تركيزًا واضحًا على محور {top['name']}، "
-        "مع تنوّع الشواهد بين المحاور بما يدعم قراءة مهنية متوازنة لأداء المعلم."
+        f"يعكس توزيع الشواهد تركيز المعلم على محور {top['name']}، "
+        "مع حضور متوازن لبقية مجالات الأداء المهني. "
+        "ويوصى بالاستمرار في تنويع الشواهد بين التخطيط والتنفيذ والتقويم والأنشطة الإثرائية."
     )
-    if low["name"] != top["name"]:
-        note += f" ويمكن تعزيز محور {low['name']} مستقبلًا بمزيد من الشواهد النوعية عند توفرها."
 
     return {
         "top_category": {"name": top["name"], "count": top["count"]},
         "low_category": {"name": low["name"], "count": low["count"]},
+        "top_media": top_media,
         "total_count": total_count,
         "note": note,
     }
@@ -910,7 +919,7 @@ def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool 
     categories = _build_categories(deduped)
     stats      = _build_stats(deduped, categories)
     leading_categories, remaining_categories = _split_leading_categories(categories)
-    performance_analysis = _build_performance_analysis(categories, len(deduped))
+    performance_analysis = _build_performance_analysis(categories, len(deduped), stats)
 
     logger.info(
         "[PDF RENDER] teacher_id=%s evidences=%d categories=%d include_intro_page=%s",
