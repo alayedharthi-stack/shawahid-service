@@ -135,6 +135,25 @@
       pointer-events: none;
     }
 
+    /* Ministry logo, top-LEFT corner, fills the empty green space.
+       Uses the same {{ ministry_logo }} asset already loaded by the
+       exporter, but recolored to pure white via CSS filter so it sits
+       cleanly on the deep-teal background (no separate white asset
+       needed, no extra HTTP request, Playwright-safe). */
+    .tcover-moe-logo {
+      position: absolute;
+      top: 26mm;
+      left: 22mm;
+      width: 44mm;
+      max-width: 44mm;
+      height: auto;
+      max-height: 38mm;
+      filter: brightness(0) invert(1);
+      opacity: 0.92;
+      object-fit: contain;
+      z-index: 5;
+    }
+
     /* Top-right block: ministry line (small) + gold pill */
     .tcover-top {
       position: absolute;
@@ -166,6 +185,9 @@
 
     /* Main headline ("ملف الشواهد" + "لمعلم {subject}") — RIGHT-aligned,
        both lines at the same large weight as in the reference. */
+    /* Headline — bigger and stronger for premium clarity in iPhone PDF
+       preview. Both lines use the same heavy weight (900) and a
+       comfortable line-height. NO letter-spacing on Arabic. */
     .tcover-headline {
       position: absolute;
       top: 70mm;
@@ -175,9 +197,9 @@
       z-index: 5;
     }
     .tcover-headline h1 {
-      font-size: 38pt;
-      font-weight: 800;
-      line-height: 1.25;
+      font-size: 42pt;
+      font-weight: 900;
+      line-height: 1.3;
       margin: 0;
       color: #ffffff;
       word-spacing: 0;
@@ -185,37 +207,40 @@
     .tcover-headline h1 .tcover-line2 {
       display: block;
       margin-top: 1mm;
-      font-size: 32pt;
-      font-weight: 800;
+      font-size: 36pt;
+      font-weight: 900;
       color: #ffffff;
+      line-height: 1.3;
     }
 
-    /* Teacher block: thin gold rule + gold name + light meta */
+    /* Teacher block: thin gold rule + bigger, brighter gold name +
+       slightly stronger meta line. Name is the second-most prominent
+       element after the headline. */
     .tcover-teacher {
       position: absolute;
-      top: 138mm;
+      top: 144mm;
       right: 22mm;
       width: 130mm;
       text-align: right;
       z-index: 5;
     }
     .tcover-teacher-rule {
-      width: 48mm;
-      height: 0.5mm;
-      background: rgba(214,168,74,0.55);
-      margin-bottom: 3.5mm;
+      width: 50mm;
+      height: 0.6mm;
+      background: rgba(218,176,82,0.65);
+      margin-bottom: 4mm;
     }
     .tcover-teacher-name {
-      font-size: 18pt;
-      font-weight: 700;
-      color: #d6a84a;
+      font-size: 22pt;
+      font-weight: 800;
+      color: #e2b85b;
       line-height: 1.25;
-      margin-bottom: 3mm;
+      margin-bottom: 3.5mm;
     }
     .tcover-teacher-meta {
-      font-size: 11pt;
-      font-weight: 400;
-      color: rgba(255,255,255,0.88);
+      font-size: 11.5pt;
+      font-weight: 500;
+      color: rgba(255,255,255,0.92);
       line-height: 1.5;
     }
 
@@ -760,6 +785,10 @@
      Single A4 page, overflow:hidden, no clip-path (gradients only).
 ═══════════════════════════════════════════════════════════════════ -->
 <div class="tcover-page">
+  {% if ministry_logo %}
+  <img class="tcover-moe-logo" src="{{ ministry_logo }}" alt="وزارة التعليم">
+  {% endif %}
+
   <div class="tcover-top">
     <div class="tcover-ministry">المملكة العربية السعودية &nbsp;-&nbsp; وزارة التعليم</div>
     <div class="tcover-pill">ملف الشواهد</div>
