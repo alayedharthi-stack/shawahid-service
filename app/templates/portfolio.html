@@ -351,11 +351,17 @@
       padding: 16px 12px;
       text-align: center;
       background: var(--white);
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
 
-    .stat-card-accent { border-top: 3px solid var(--teal); }
+    .stat-card-accent {
+      border-top: 3px solid #155e2e;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
     .stat-icon { font-size: 22px; margin-bottom: 8px; }
-    .stat-num  { font-size: 24pt; font-weight: 900; color: var(--teal); line-height: 1; margin-bottom: 4px; }
+    .stat-num  { font-size: 24pt; font-weight: 900; color: #155e2e; line-height: 1; margin-bottom: 4px; }
     .stat-lbl  { font-size: 9pt; color: var(--muted); font-weight: 600; }
 
     .media-chart {
@@ -364,6 +370,8 @@
       border-radius: var(--radius);
       padding: 14px 16px;
       margin: -10px 0 20px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
       break-inside: avoid;
       page-break-inside: avoid;
     }
@@ -391,14 +399,27 @@
     }
     .media-track {
       height: 10px;
-      background: var(--teal-lt);
+      background: #e8f2ee;
       border-radius: 999px;
       overflow: hidden;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     .media-fill {
       height: 100%;
-      background: linear-gradient(90deg, var(--teal), var(--teal-mid));
       border-radius: 999px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      background: #155e2e; /* default teal */
+    }
+    .media-fill.mf-images { background: #155e2e; }
+    .media-fill.mf-videos { background: #1e3a8a; }
+    .media-fill.mf-audio  { background: #92400e; }
+    .media-fill.mf-files  { background: #5b21b6; }
+    .media-fill.mf-links  { background: #0c4a6e; }
+    .media-chart {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     .media-count {
       font-size: 9pt;
@@ -1423,27 +1444,27 @@
     <div class="chart-title">توزيع الوسائط</div>
     <div class="media-row">
       <span class="media-label">الصور</span>
-      <div class="media-track"><div class="media-fill" style="width: {{ image_count / total_count * 100 }}%;"></div></div>
+      <div class="media-track"><div class="media-fill mf-images" style="width: {{ (image_count / total_count * 100)|round(1) }}%;"></div></div>
       <span class="media-count">{{ image_count }}</span>
     </div>
     <div class="media-row">
       <span class="media-label">الفيديو</span>
-      <div class="media-track"><div class="media-fill" style="width: {{ video_count / total_count * 100 }}%;"></div></div>
+      <div class="media-track"><div class="media-fill mf-videos" style="width: {{ (video_count / total_count * 100)|round(1) }}%;"></div></div>
       <span class="media-count">{{ video_count }}</span>
     </div>
     <div class="media-row">
       <span class="media-label">الصوتيات</span>
-      <div class="media-track"><div class="media-fill" style="width: {{ audio_count / total_count * 100 }}%;"></div></div>
+      <div class="media-track"><div class="media-fill mf-audio" style="width: {{ (audio_count / total_count * 100)|round(1) }}%;"></div></div>
       <span class="media-count">{{ audio_count }}</span>
     </div>
     <div class="media-row">
       <span class="media-label">الملفات</span>
-      <div class="media-track"><div class="media-fill" style="width: {{ file_count / total_count * 100 }}%;"></div></div>
+      <div class="media-track"><div class="media-fill mf-files" style="width: {{ (file_count / total_count * 100)|round(1) }}%;"></div></div>
       <span class="media-count">{{ file_count }}</span>
     </div>
     <div class="media-row">
       <span class="media-label">الروابط</span>
-      <div class="media-track"><div class="media-fill" style="width: {{ url_count / total_count * 100 }}%;"></div></div>
+      <div class="media-track"><div class="media-fill mf-links" style="width: {{ (url_count / total_count * 100)|round(1) }}%;"></div></div>
       <span class="media-count">{{ url_count }}</span>
     </div>
   </div>

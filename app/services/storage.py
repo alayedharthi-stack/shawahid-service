@@ -1,3 +1,4 @@
+import io
 import logging
 import mimetypes
 import re
@@ -59,6 +60,8 @@ async def download_and_save(
             resp = await client.get(media_url, headers=headers)
             resp.raise_for_status()
             raw_bytes = resp.content
+            # Auto-correct EXIF orientation for images so they render upright in PDF
+            raw_bytes = _correct_image_orientation(raw_bytes, mime_type)
             dest_path.write_bytes(raw_bytes)
     except Exception as exc:
         logger.error("Failed to download media for teacher %d from %s: %s", teacher_id, media_url, exc)
@@ -66,6 +69,37 @@ async def download_and_save(
 
     content_hash = hashlib.sha256(raw_bytes).hexdigest()
     return str(dest_path), safe_name, content_hash
+
+
+_IMAGE_MIME_PREFIXES = ("image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif")
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+
+
+def _correct_image_orientation(raw_bytes: bytes, mime_type: str | None) -> bytes:
+    """Apply EXIF-based auto-rotation using Pillow so images appear upright in PDF.
+
+    Only operates on supported image types.  Returns the original bytes unchanged
+    if Pillow is unavailable or the file is not a recognisable image.
+    Saves as JPEG (quality=92) to preserve detail while stripping EXIF orientation.
+    """
+    mt = (mime_type or "").lower()
+    is_image_mime = any(mt.startswith(p) for p in _IMAGE_MIME_PREFIXES)
+    if not is_image_mime:
+        return raw_bytes
+    try:
+        from PIL import Image, ImageOps
+        img = Image.open(io.BytesIO(raw_bytes))
+        img = ImageOps.exif_transpose(img)
+        buf = io.BytesIO()
+        save_fmt = "JPEG" if img.mode in ("RGB", "L") else "PNG"
+        if img.mode not in ("RGB", "RGBA", "L"):
+            img = img.convert("RGB")
+            save_fmt = "JPEG"
+        img.save(buf, format=save_fmt, quality=92)
+        return buf.getvalue()
+    except Exception as exc:
+        logger.warning("EXIF transpose failed, using original bytes: %s", exc)
+        return raw_bytes
 
 
 def detect_evidence_type(mime_type: str | None, file_name: str | None, text: str | None) -> str:

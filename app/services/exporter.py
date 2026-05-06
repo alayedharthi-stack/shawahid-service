@@ -246,6 +246,62 @@ def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
     return any(keyword in haystack for keyword in keywords)
 
 
+# ── Instruction/system-command detection ──────────────────────────────────────
+# These phrases indicate the teacher was giving a system command, updating their
+# profile, or asking a question — NOT documenting evidence. Records matching
+# these patterns should be excluded from the PDF export (not deleted from DB).
+_INSTRUCTION_KEYWORDS: tuple[str, ...] = (
+    "حدث بياناتي",
+    "حدث بيانات",
+    "غير المادة",
+    "اكتب في الملف",
+    "عدل القالب",
+    "ماذا فهمت",
+    "هذا ليس شاهد",
+    "لا تحفظه",
+    "أضف بيانات",
+    "اضف بيانات",
+    "اسمي ",
+    "مدرستي ",
+    "مادتي ",
+    "صفوفي ",
+    "تحديث البيانات",
+    "غيّر البيانات",
+    "غير بياناتي",
+    "غير اسمي",
+    "غير مدرستي",
+    "غير مادتي",
+    "بياناتي الشخصية",
+    "سجل بياناتي",
+    "ادخل بياناتي",
+    "احفظ بياناتي",
+    "اكتب اسمي",
+    "تعديل البيانات",
+    "تعديل بياناتي",
+)
+
+# Minimum content length for an audio/voice evidence to be exported.
+# Very short audios without any instructional text are likely noise.
+_AUDIO_MIN_TEXT_CHARS = 20
+
+
+def is_instruction_evidence(ev_dict: dict) -> bool:
+    """Return True if this evidence looks like a system instruction, not a real evidence."""
+    ev_type = (ev_dict.get("evidence_type") or "").lower()
+    # Only apply instruction filtering to audio, voice, and text evidence.
+    if ev_type not in ("audio", "voice", "text"):
+        return False
+    text_parts = [
+        ev_dict.get("title") or "",
+        ev_dict.get("description") or "",
+        ev_dict.get("message_text") or "",
+    ]
+    combined = " ".join(p for p in text_parts if p).strip()
+    if not combined:
+        return False
+    return _contains_any(combined, _INSTRUCTION_KEYWORDS)
+
+
 _PLANNING_KEYWORDS = (
     "خطة المعلم",
     "الخطة الدراسية",
@@ -313,13 +369,18 @@ def _is_safe_public_url(url: str | None) -> bool:
     if not text:
         return False
     lowered = text.lower()
+    # These hosts serve temporary/auth-gated media that will return 401 for end users
     blocked_hosts = (
         "lookaside.fbsbx.com",
+        "lookaside.facebook.com",
+        "fbsbx.com",
         "fbcdn.net",
         "facebook.com",
         "graph.facebook.com",
-        "lookaside.facebook.com",
         "whatsapp.net",
+        "whatsapp.com",
+        "mmg.whatsapp.net",
+        "media.whatsapp.net",
     )
     return lowered.startswith(("http://", "https://")) and not any(host in lowered for host in blocked_hosts)
 
@@ -722,6 +783,10 @@ def _normalize_evidence_for_export(ev) -> dict:
 
 def _should_export_evidence(ev: dict) -> bool:
     """Filter only export-noise records; never deletes anything from DB."""
+    # Exclude system instructions regardless of category
+    if is_instruction_evidence(ev):
+        return False
+
     if ev["category"] != "أخرى":
         return True
 
