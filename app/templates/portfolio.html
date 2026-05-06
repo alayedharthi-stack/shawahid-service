@@ -79,10 +79,10 @@
          • Classes are `tcover-*` only — they never collide with .page/.cover.
        Font: same Cairo + Tahoma/Arial fallback as the rest of the report.
     ══════════════════════════════════════════════════════════════════ */
+    /* Page shell: full A4, negative margins cancel Playwright outer page
+       margins so the cover fills the page without splitting. Background
+       is the official deep-teal from the reference design. */
     .tcover-page {
-      /* Negative margins cancel Playwright's outer page margins
-         (top:18mm bottom:18mm left:15mm right:15mm in _generate_pdf),
-         so the cover fills the full A4 (210×297mm) without splitting. */
       margin: -18mm -15mm 0 -15mm;
       width: 210mm;
       height: 297mm;
@@ -90,215 +90,201 @@
       overflow: hidden;
       position: relative;
       box-sizing: border-box;
-      background: #064f45;
+      background: #0f5e57;
       color: #ffffff;
       direction: rtl;
-      font-family: 'Cairo', 'Tahoma', 'Arial', 'Segoe UI', sans-serif;
+      font-family: 'Cairo', 'Tajawal', 'IBM Plex Sans Arabic', 'Tahoma', 'Arial', sans-serif;
+      font-feature-settings: "kern" 1, "liga" 1;
+      -webkit-font-smoothing: antialiased;
       page-break-after: always;
       break-after: page;
       padding: 0;
     }
     .tcover-page * { box-sizing: border-box; }
 
-    /* Subtle grid texture in the upper-right area */
+    /* Subtle grid texture across the green plane (very low opacity) */
     .tcover-page::before {
       content: "";
       position: absolute;
-      top: 0; right: 0;
-      width: 100%; height: 60%;
+      inset: 0;
       background-image:
-        linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
-      background-size: 20mm 20mm;
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 18mm 18mm;
       pointer-events: none;
       z-index: 1;
     }
 
-    /* Top band: ministry logo (LEFT) + pill (RIGHT) — clamped inside the page */
-    /* Top band — gives the logo room to breathe (top:24mm, sides:22mm)
-       and aligns it cleanly with the page's safe area (no edge clipping). */
-    .tcover-band {
+    /* Diagonal white wedge from the bottom-left corner, mirroring the
+       reference design. Implemented with a linear-gradient (NOT clip-path)
+       so Playwright cannot mis-paint or split the layer. */
+    .tcover-page::after {
+      content: "";
       position: absolute;
-      top: 24mm;
-      left: 22mm;
-      right: 22mm;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      z-index: 4;
-    }
-    .tcover-logo-wrap {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;   /* In RTL, flex-start = right edge → logo + ministry aligned right */
-      text-align: right;
-      gap: 3.5mm;                /* breathing space between logo and ministry text */
-      max-width: 70mm;
-    }
-    /* Logo: hard-bounded — slightly smaller for a more refined, balanced look,
-       and never allowed to overflow the safe area. */
-    .tcover-logo {
-      display: block;
-      width: 38mm;
-      max-width: 38mm;
-      height: auto;
-      max-height: 26mm;
-      object-fit: contain;
-    }
-    .tcover-ministry-ar {
-      font-size: 11pt;
-      font-weight: 700;
-      color: #f8f8f2;
-      line-height: 1.2;
-      text-align: right;
-    }
-    .tcover-ministry-en {
-      font-size: 8.5pt;
-      font-weight: 400;
-      color: rgba(248,248,242,0.78);
-      line-height: 1.2;
-      direction: ltr;
-      text-align: right;
-    }
-    .tcover-pill {
-      background: #caa64a;
-      color: #ffffff;
-      padding: 6px 18px;
-      border-radius: 24px;
-      font-size: 11pt;
-      font-weight: 700;
-      white-space: nowrap;
-      box-shadow: 0 1px 0 rgba(0,0,0,0.08);
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 56%;
+      background: linear-gradient(
+        to top right,
+        #f5f6f0 0%,
+        #f5f6f0 33%,
+        transparent 33.05%
+      );
+      z-index: 2;
+      pointer-events: none;
     }
 
-    /* Headline */
+    /* Top-right block: ministry line (small) + gold pill */
+    .tcover-top {
+      position: absolute;
+      top: 28mm;
+      right: 22mm;
+      z-index: 5;
+      text-align: center;
+      max-width: 90mm;
+    }
+    .tcover-ministry {
+      font-size: 9.5pt;
+      font-weight: 400;
+      color: rgba(255,255,255,0.78);
+      line-height: 1.4;
+      margin-bottom: 5mm;
+      white-space: nowrap;
+    }
+    .tcover-pill {
+      display: inline-block;
+      background: #d6a84a;
+      color: #ffffff;
+      padding: 3.5mm 9mm;
+      border-radius: 30px;
+      font-size: 11.5pt;
+      font-weight: 700;
+      line-height: 1;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.14);
+    }
+
+    /* Main headline ("ملف الشواهد" + "لمعلم {subject}") — RIGHT-aligned,
+       both lines at the same large weight as in the reference. */
     .tcover-headline {
       position: absolute;
-      top: 95mm;
-      left: 18mm;
-      right: 18mm;
-      text-align: center;
-      z-index: 4;
+      top: 70mm;
+      right: 22mm;
+      width: 130mm;
+      text-align: right;
+      z-index: 5;
     }
     .tcover-headline h1 {
-      font-size: 34pt;
+      font-size: 38pt;
       font-weight: 800;
       line-height: 1.25;
       margin: 0;
       color: #ffffff;
+      word-spacing: 0;
     }
-    .tcover-headline .tcover-sub {
-      font-size: 16pt;
-      font-weight: 700;
-      color: rgba(255,255,255,0.92);
-      margin-top: 3mm;
-    }
-    .tcover-rule {
-      width: 60mm;
-      height: 1.5mm;
-      background: #caa64a;
-      border-radius: 2mm;
-      margin: 6mm auto 0;
+    .tcover-headline h1 .tcover-line2 {
+      display: block;
+      margin-top: 1mm;
+      font-size: 32pt;
+      font-weight: 800;
+      color: #ffffff;
     }
 
-    /* Teacher name + meta */
+    /* Teacher block: thin gold rule + gold name + light meta */
     .tcover-teacher {
       position: absolute;
-      top: 158mm;
-      left: 18mm;
-      right: 18mm;
-      text-align: center;
-      color: #ffffff;
-      z-index: 4;
-    }
-    .tcover-teacher-name {
-      font-size: 22pt;
-      font-weight: 800;
-      line-height: 1.2;
-      margin-bottom: 2mm;
-    }
-    .tcover-teacher-meta {
-      font-size: 12pt;
-      font-weight: 600;
-      color: rgba(255,255,255,0.9);
-      line-height: 1.35;
-    }
-
-    /* Info card (school data) — positioned safely well above the brand */
-    .tcover-card {
-      position: absolute;
-      top: 195mm;
-      left: 22mm;
+      top: 138mm;
       right: 22mm;
-      max-height: 60mm;
-      overflow: hidden;
-      background: #ffffff;
-      color: #064f45;
-      border-radius: 4mm;
-      padding: 6mm 7mm 5mm;
-      box-shadow: 0 4mm 12mm rgba(0,0,0,0.18);
+      width: 130mm;
+      text-align: right;
       z-index: 5;
     }
+    .tcover-teacher-rule {
+      width: 48mm;
+      height: 0.5mm;
+      background: rgba(214,168,74,0.55);
+      margin-bottom: 3.5mm;
+    }
+    .tcover-teacher-name {
+      font-size: 18pt;
+      font-weight: 700;
+      color: #d6a84a;
+      line-height: 1.25;
+      margin-bottom: 3mm;
+    }
+    .tcover-teacher-meta {
+      font-size: 11pt;
+      font-weight: 400;
+      color: rgba(255,255,255,0.88);
+      line-height: 1.5;
+    }
+
+    /* Bottom-right white card (school info) — floats over the diagonal
+       white wedge, exactly like the reference. */
+    .tcover-card {
+      position: absolute;
+      bottom: 38mm;
+      right: 22mm;
+      width: 132mm;
+      max-height: 88mm;
+      overflow: hidden;
+      background: #ffffff;
+      color: #1a3833;
+      border-radius: 4mm;
+      padding: 8mm 9mm 9mm;
+      box-shadow:
+        0 8mm 18mm rgba(0,0,0,0.12),
+        0 1mm 2mm rgba(0,0,0,0.06);
+      z-index: 6;
+    }
     .tcover-card-title {
-      font-size: 13pt;
+      font-size: 14pt;
       font-weight: 800;
-      margin: 0 0 4mm 0;
-      text-align: center;
-      color: #064f45;
+      margin: 0 0 5mm 0;
+      color: #0f5e57;
+      text-align: right;
+      line-height: 1.2;
     }
     .tcover-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 3mm 5mm;
+      gap: 4mm;
     }
     .tcover-field {
-      border: 1px solid #dbe6e3;
-      border-radius: 2mm;
-      padding: 2.5mm 3.5mm;
-      background: #fbfdfc;
+      background: #f7f8f5;
+      border: 1px solid #e3eae6;
+      border-radius: 2.5mm;
+      padding: 4mm 4.5mm;
+      text-align: right;
       overflow: hidden;
     }
     .tcover-field-label {
-      font-size: 9pt;
+      font-size: 10pt;
       font-weight: 700;
-      color: #064f45;
-      margin-bottom: 1mm;
-      line-height: 1.2;
+      color: #0f5e57;
+      margin-bottom: 1.5mm;
+      line-height: 1.25;
     }
     .tcover-field-value {
       font-size: 9.5pt;
-      color: #2f3e3b;
-      line-height: 1.3;
+      font-weight: 400;
+      color: #324e49;
+      line-height: 1.5;
       word-break: break-word;
     }
 
-    /* Brand mark at the bottom — clamped inside 297mm */
-    .tcover-brand {
+    /* Bottom-center note (single quiet line) — placed inside the white wedge
+       so it stays visible against the bottom-left light area. */
+    .tcover-note {
       position: absolute;
-      bottom: 12mm;
-      left: 18mm;
-      right: 18mm;
+      bottom: 18mm;
+      right: 22mm;
+      width: 132mm;
       text-align: center;
-      color: #ffffff;
-      z-index: 4;
-    }
-    .tcover-brand-word {
-      font-size: 22pt;
-      font-weight: 800;
-      letter-spacing: -0.5px;
-      line-height: 1;
-    }
-    .tcover-brand-rule {
-      width: 18mm;
-      height: 0.8mm;
-      background: #caa64a;
-      border-radius: 2mm;
-      margin: 3mm auto 2mm;
-    }
-    .tcover-brand-sub {
       font-size: 8.5pt;
-      color: rgba(255,255,255,0.72);
-      line-height: 1.3;
+      color: rgba(15,94,87,0.62);
+      line-height: 1.4;
+      z-index: 7;
     }
 
     /* ══════════════════════════════════════════════════════════════════
@@ -762,66 +748,65 @@
 <body>
 
 <!-- ══════════════════════════════════════════════════════════════════
-     COVER — STABLE single A4 page.
-     Re-built (not copied) from teacher_cover.html design with strict A4
-     boundaries, hard-bounded logo, and Cairo/Tahoma font fallback.
-     Negative margin on .tcover-page cancels Playwright outer margins so
-     the cover fills the full A4 without splitting into two pages.
-══════════════════════════════════════════════════════════════════ -->
+     COVER — refined to match the reference design:
+       • Deep-teal background with a faint grid texture.
+       • Diagonal white wedge from the bottom-left corner.
+       • Top-right: small ministry line + gold "ملف الشواهد" pill.
+       • Right-aligned headline in two strong white lines
+         ("ملف الشواهد" / "لمعلم {subject}").
+       • Gold thin rule + bold gold teacher name + light meta line.
+       • Floating white card (bottom-right) with 4 school-info fields.
+       • Quiet centered note at the very bottom.
+     Single A4 page, overflow:hidden, no clip-path (gradients only).
+═══════════════════════════════════════════════════════════════════ -->
 <div class="tcover-page">
-  <div class="tcover-band">
-    <div class="tcover-logo-wrap">
-      {% if ministry_logo %}<img class="tcover-logo" src="{{ ministry_logo }}" alt="وزارة التعليم">{% endif %}
-      <div class="tcover-ministry-ar">وزارة التعليم</div>
-      <div class="tcover-ministry-en">Ministry of Education</div>
-    </div>
+  <div class="tcover-top">
+    <div class="tcover-ministry">المملكة العربية السعودية &nbsp;-&nbsp; وزارة التعليم</div>
     <div class="tcover-pill">ملف الشواهد</div>
   </div>
 
   <div class="tcover-headline">
-    <h1>ملف الشواهد</h1>
-    {% if teacher.subject %}<div class="tcover-sub">لمعلم {{ teacher.subject }}</div>{% endif %}
-    <div class="tcover-rule"></div>
+    <h1>
+      ملف الشواهد
+      {% if teacher.subject %}<span class="tcover-line2">لمعلم {{ teacher.subject }}</span>{% endif %}
+    </h1>
   </div>
 
   <div class="tcover-teacher">
+    <div class="tcover-teacher-rule"></div>
     <div class="tcover-teacher-name">{{ teacher.name or '—' }}</div>
     {% if teacher.stage or teacher.grades %}
     <div class="tcover-teacher-meta">
       {% if teacher.stage %}{{ teacher.stage }}{% endif %}
-      {% if teacher.stage and teacher.grades %} · {% endif %}
+      {% if teacher.stage and teacher.grades %} - {% endif %}
       {% if teacher.grades %}الصفوف: {{ teacher.grades }}{% endif %}
     </div>
     {% endif %}
   </div>
 
   <div class="tcover-card">
-    <div class="tcover-card-title">بيانات الملف</div>
+    <h2 class="tcover-card-title">بيانات الملف</h2>
     <div class="tcover-grid">
-      <div class="tcover-field">
-        <div class="tcover-field-label">المدرسة</div>
-        <div class="tcover-field-value">{{ teacher.school_name or '—' }}</div>
-      </div>
       <div class="tcover-field">
         <div class="tcover-field-label">مدير المدرسة</div>
         <div class="tcover-field-value">{{ teacher.principal_name or '—' }}</div>
       </div>
       <div class="tcover-field">
-        <div class="tcover-field-label">المادة</div>
-        <div class="tcover-field-value">{{ teacher.subject or '—' }}</div>
+        <div class="tcover-field-label">المدرسة</div>
+        <div class="tcover-field-value">{{ teacher.school_name or '—' }}</div>
       </div>
       <div class="tcover-field">
-        <div class="tcover-field-label">العام الدراسي</div>
-        <div class="tcover-field-value">{{ academic_year or '—' }}</div>
+        <div class="tcover-field-label">محور النسخة</div>
+        <div class="tcover-field-value">شواهد {{ academic_year or '' }}</div>
+      </div>
+      <div class="tcover-field">
+        <div class="tcover-field-label">المادة</div>
+        <div class="tcover-field-value">{{ teacher.subject or '—' }}</div>
       </div>
     </div>
   </div>
 
-  <div class="tcover-brand">
-    <div class="tcover-brand-word">شواهد</div>
-    <div class="tcover-brand-rule"></div>
-    <div class="tcover-brand-sub">إعداد وتنظيم الشواهد بصيغة رقمية جاهزة للطباعة</div>
-  </div>
+  <div class="tcover-note">إعداد وتنظيم الشواهد بصيغة PDF جاهزة للطباعة</div>
 </div>
 
 
