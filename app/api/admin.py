@@ -45,6 +45,7 @@ from app.services.whatsapp import (
     build_payment_link_message,
 )
 from app.services import exporter as exporter_svc
+from app.services.followups import run_inactive_user_followups
 from app.core.config import settings
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -122,6 +123,22 @@ def admin_dashboard(request: Request, db: Session = Depends(get_db), _: str = De
         "active_subs": active_subs,
         "recent_teachers": enriched,
     })
+
+
+@router.post("/followups/run")
+async def admin_run_followups(
+    dry_run: bool = False,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    """Run segmented inactive-user follow-ups once.
+
+    Intended for manual admin use or an external cron. The service itself still
+    enforces one follow-up per teacher via `Teacher.followup_sent_at`.
+    """
+    limit = max(1, min(limit, 500))
+    return await run_inactive_user_followups(db, limit=limit, dry_run=dry_run)
 
 
 # ─── Teachers list ──────────────────────────────────────────────────────────
