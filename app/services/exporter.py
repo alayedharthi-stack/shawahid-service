@@ -168,6 +168,94 @@ _SUB_TO_MAIN_CATEGORY = {
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 _SUPPORT_WHATSAPP = "966544761054"
+_NULLISH_TEXT = {"", "null", "none", "undefined", "nan"}
+
+
+def _clean_text(value) -> str | None:
+    """Return clean display text, treating DB/null placeholders as absent."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if text.lower() in _NULLISH_TEXT:
+        return None
+    return text
+
+
+def _has_meaningful_text(value, *, min_chars: int = 4) -> bool:
+    text = _clean_text(value)
+    if not text:
+        return False
+    compact = "".join(ch for ch in text if ch.isalnum())
+    return len(compact) >= min_chars
+
+
+def _looks_malformed_text(value) -> bool:
+    text = _clean_text(value)
+    if not text:
+        return False
+    question_marks = text.count("?") + text.count("؟")
+    if question_marks >= 3 and question_marks >= len(text.strip()) // 2:
+        return True
+    return not any(ch.isalnum() for ch in text)
+
+
+def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
+    haystack = text.lower()
+    return any(keyword in haystack for keyword in keywords)
+
+
+_PLANNING_KEYWORDS = (
+    "خطة المعلم",
+    "الخطة الدراسية",
+    "خطة دراسية",
+    "توزيع منهج",
+    "التخطيط",
+)
+_FOLLOW_UP_KEYWORDS = (
+    "سجل متابعة",
+    "سجل المتابعة",
+    "متابعة الطالب",
+    "سجل الطالب",
+    "لوحة الأداء",
+)
+
+
+def _official_category_from_content(category: str, *parts: str | None) -> str:
+    """Promote official planning/follow-up documents to their expected axes."""
+    text = " ".join(part for part in parts if part)
+    if _contains_any(text, _PLANNING_KEYWORDS):
+        return "التخطيط"
+    if _contains_any(text, _FOLLOW_UP_KEYWORDS):
+        return "سجل المتابعة"
+    return category
+
+
+def _friendly_file_label(file_name: str | None, evidence_type: str, category: str) -> str:
+    name = _clean_text(file_name)
+    suffix = Path(name).suffix.lower() if name else ""
+    lower_name = name.lower() if name else ""
+    is_technical = (
+        not name
+        or lower_name.startswith(("file_", "document_", "media_"))
+        or len(Path(name).stem) > 32
+    )
+
+    if suffix == ".pdf" or evidence_type == "pdf":
+        return "ملف PDF مرفق" if is_technical else name
+    if category == "ملفات إدارية":
+        return "ملف إداري مرفق" if is_technical else name
+    if evidence_type == "document":
+        return "وثيقة تعليمية" if is_technical else name
+    return "ملف مرفق" if is_technical else name
+
+
+def _link_type_label(category: str, title: str, message_text: str | None) -> str:
+    text = f"{title} {message_text or ''}"
+    if "فيديو" in text or "youtube" in text.lower() or "youtu.be" in text.lower():
+        return "فيديو"
+    if "مصدر" in text or category == "مصادر تعليمية":
+        return "مصدر"
+    return "رابط إثرائي"
 
 
 def _ministry_logo_svg_data_uri() -> str:
@@ -425,33 +513,48 @@ def _normalize_evidence_for_export(ev) -> dict:
 
     The returned dict is what the PDF template receives — no raw fields reach the PDF.
     """
-    ev_type  = (ev.evidence_type or "text").lower()
+    ev_type  = (_clean_text(ev.evidence_type) or "text").lower()
     defaults = _TYPE_EXPORT_DEFAULTS.get(ev_type, _DEFAULT_EXPORT)
 
     # ── Title ─────────────────────────────────────────────────────────────────
-    raw_title = (ev.title or "").strip()
+    raw_title = _clean_text(ev.title) or ""
+    has_custom_title = bool(raw_title and raw_title.lower() not in _RAW_TITLE_PATTERNS)
     title = (
         raw_title
-        if raw_title and raw_title.lower() not in _RAW_TITLE_PATTERNS
+        if has_custom_title
         else defaults["title"]
     )
 
     # ── Category / tags ───────────────────────────────────────────────────────
-    raw_cat  = (ev.category or "").strip()
-    sub_category = raw_cat if raw_cat in ALLOWED_CATEGORIES else defaults["category"]
+    raw_cat  = _clean_text(ev.category) or ""
+    valid_categories = set(ALLOWED_CATEGORIES) | set(_MAIN_CATEGORY_ORDER) | set(_CATEGORY_META)
+    sub_category = raw_cat if raw_cat in valid_categories else defaults["category"]
     category = _SUB_TO_MAIN_CATEGORY.get(sub_category, sub_category)
+    category = _official_category_from_content(
+        category,
+        raw_title,
+        _clean_text(ev.description),
+        _clean_text(ev.message_text),
+        raw_cat,
+    )
     if category not in _MAIN_CATEGORY_ORDER and category not in _CATEGORY_META:
         category = _SUB_TO_MAIN_CATEGORY.get(defaults["category"], "التنفيذ داخل الصف")
 
     tags = []
-    for value in (sub_category, ev.subject, ev.grade):
-        if value and value not in tags and value != category:
+    subject = _clean_text(ev.subject)
+    grade = _clean_text(ev.grade)
+    for value in (sub_category, subject, grade):
+        if value and value.lower() not in _NULLISH_TEXT and value not in tags and value != category:
             tags.append(value)
 
     # ── Description ───────────────────────────────────────────────────────────
-    stored_desc = (ev.description or "").strip()
+    stored_desc = _clean_text(ev.description) or ""
     # Also try to extract from message_text if no description and it's a text evidence
     description = stored_desc or defaults["desc"]
+    message_text = _clean_text(ev.message_text)
+    media_url = _clean_text(ev.media_url)
+    file_name = _clean_text(ev.file_name)
+    mime_type = _clean_text(ev.mime_type)
 
     media_src: str | None = None
     media_available = False
@@ -464,11 +567,15 @@ def _normalize_evidence_for_export(ev) -> dict:
         media_src = _image_data_uri(ev.storage_path)
         media_available = bool(media_src or ev.storage_path)
     elif ev_type in ("audio", "voice"):
-        media_available = bool(ev.message_text or ev.storage_path)
-    elif ev_type in ("pdf", "document") or ev.file_name:
+        media_available = bool(message_text or ev.storage_path)
+    elif ev_type in ("pdf", "document") or file_name:
         media_available = True
     elif ev_type == "url":
-        media_available = bool(ev.message_text or ev.media_url)
+        media_available = bool(message_text or media_url)
+
+    raw_export_text = " ".join(
+        value for value in (raw_title, raw_cat, stored_desc, message_text, file_name) if value
+    )
 
     return {
         "id":            ev.id,
@@ -478,19 +585,131 @@ def _normalize_evidence_for_export(ev) -> dict:
         "sub_category":  sub_category,
         "tags":          tags,
         "description":   description,
-        "message_text":  ev.message_text,
-        "media_url":     ev.media_url,
+        "message_text":  message_text,
+        "media_url":     media_url,
         "storage_path":  ev.storage_path,
         "media_src":     media_src,
         "media_available": media_available,
-        "file_name":     ev.file_name,
-        "mime_type":     ev.mime_type,
-        "subject":       ev.subject,
-        "grade":         ev.grade,
+        "file_name":     file_name,
+        "file_label":    _friendly_file_label(file_name, ev_type, category),
+        "mime_type":     mime_type,
+        "link_type":     _link_type_label(category, title, message_text),
+        "subject":       subject,
+        "grade":         grade,
         "created_at":    ev.created_at,
         "content_hash":  getattr(ev, "content_hash", None),  # used by export dedup
+        "has_custom_title": has_custom_title,
+        "has_custom_description": bool(stored_desc),
+        "raw_export_text": raw_export_text,
         "was_normalised": stored_desc == "" or raw_title.lower() in _RAW_TITLE_PATTERNS,
     }
+
+
+def _should_export_evidence(ev: dict) -> bool:
+    """Filter only export-noise records; never deletes anything from DB."""
+    if ev["category"] != "أخرى":
+        return True
+
+    meaningful_parts = [
+        ev.get("title"),
+        ev.get("description") if ev.get("has_custom_description") else None,
+        ev.get("message_text"),
+        ev.get("file_name"),
+        ev.get("media_url"),
+    ]
+    meaningful_text = " ".join(part for part in meaningful_parts if _has_meaningful_text(part))
+    raw_text = ev.get("raw_export_text") or ""
+    if _looks_malformed_text(raw_text):
+        return False
+    if ev["evidence_type"] == "text" and not _has_meaningful_text(meaningful_text, min_chars=8):
+        return False
+    return True
+
+
+def _same_gallery_day(first: dict, other: dict) -> bool:
+    a = first.get("created_at")
+    b = other.get("created_at")
+    if not a or not b:
+        return True
+    return a.date() == b.date()
+
+
+def _can_join_image_gallery(first: dict, other: dict) -> bool:
+    if other.get("evidence_type") != "image" or not other.get("media_src"):
+        return False
+    if first.get("category") != other.get("category"):
+        return False
+    if not _same_gallery_day(first, other):
+        return False
+
+    # Respect deliberate, different captions: do not collapse distinct stories.
+    first_desc = first.get("description") if first.get("has_custom_description") else None
+    other_desc = other.get("description") if other.get("has_custom_description") else None
+    if first_desc and other_desc and first_desc != other_desc:
+        return False
+
+    first_title = first.get("title") if first.get("has_custom_title") else None
+    other_title = other.get("title") if other.get("has_custom_title") else None
+    if first_title and other_title and first_title != other_title:
+        return False
+
+    return True
+
+
+def _build_image_gallery(items: list[dict]) -> dict:
+    first = items[0]
+    description = next((item["description"] for item in items if item.get("has_custom_description")), first["description"])
+    title = next((item["title"] for item in items if item.get("has_custom_title")), first["title"])
+    tags = []
+    for item in items:
+        for tag in item.get("tags", []):
+            if tag not in tags:
+                tags.append(tag)
+
+    return {
+        **first,
+        "id": f"gallery-{first['id']}",
+        "evidence_type": "image_gallery",
+        "title": title,
+        "description": description,
+        "tags": tags[:6],
+        "images": items,
+        "gallery_count": len(items),
+        "has_custom_title": any(item.get("has_custom_title") for item in items),
+        "has_custom_description": any(item.get("has_custom_description") for item in items),
+    }
+
+
+def _group_image_galleries(evidences: list[dict]) -> list[dict]:
+    grouped: list[dict] = []
+    i = 0
+    while i < len(evidences):
+        current = evidences[i]
+        if current.get("evidence_type") != "image" or not current.get("media_src"):
+            grouped.append(current)
+            i += 1
+            continue
+
+        run = [current]
+        j = i + 1
+        while j < len(evidences) and len(run) < 4 and _can_join_image_gallery(current, evidences[j]):
+            run.append(evidences[j])
+            j += 1
+
+        if len(run) >= 2:
+            grouped.append(_build_image_gallery(run))
+            i += len(run)
+        else:
+            grouped.append(current)
+            i += 1
+
+    return grouped
+
+
+def _evidence_export_count(ev: dict) -> int:
+    if ev.get("evidence_type") == "image_gallery":
+        return len(ev.get("images") or [])
+    return 1
 
 
 def _build_categories(normalised_evidences: list[dict]) -> list[dict]:
@@ -511,6 +730,8 @@ def _build_categories(normalised_evidences: list[dict]) -> list[dict]:
         items = grouped.get(name, [])
         if not items:
             continue                    # skip empty categories
+        items = _group_image_galleries(items)
+        count = sum(_evidence_export_count(item) for item in items)
         meta = _CATEGORY_META.get(name, _DEFAULT_META)
         result.append({
             "name":      name,
@@ -519,7 +740,7 @@ def _build_categories(normalised_evidences: list[dict]) -> list[dict]:
             "desc":      meta.get("desc", ""),
             "value":     meta.get("value", ""),
             "evidences": items,
-            "count":     len(items),
+            "count":     count,
         })
     return result
 
@@ -608,7 +829,10 @@ def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool 
         logger.info("[PDF NORMALISE] %d/%d evidences had missing metadata — defaults applied",
                     n_fixed, len(normalised))
 
-    # ── Step 2: Deduplicate before rendering ──────────────────────────────────
+    # ── Step 2: Filter noisy export-only records, then deduplicate ────────────
+    normalised = [ev for ev in normalised if _should_export_evidence(ev)]
+
+    # ── Step 3: Deduplicate before rendering ──────────────────────────────────
     # Safety net: removes duplicate evidences that slipped through save-time checks
     # (e.g. evidences added before dedup system was deployed, or content_hash=None).
     deduped   = deduplicate_for_export(normalised)

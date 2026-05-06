@@ -621,6 +621,16 @@
       border: 1px solid var(--border);
       display: block;
     }
+    .img-grid.g1 img { object-fit: contain; max-height: 220px; }
+    .img-grid.g2 img { height: 190px; }
+    .img-grid.g3 img { height: 150px; }
+    .img-grid.g4 img { height: 150px; }
+    .gallery-note {
+      margin-top: 7px;
+      font-size: 8.5pt;
+      color: var(--muted);
+      text-align: center;
+    }
 
     /* Audio */
     .audio-card {
@@ -687,6 +697,24 @@
     }
     .url-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
     .url-text  { font-size: 9.5pt; color: var(--teal-dk); word-break: break-all; font-weight: 600; }
+    .url-button {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 5px 15px;
+      border-radius: 999px;
+      background: var(--teal);
+      color: #fff;
+      text-decoration: none;
+      font-size: 8.5pt;
+      font-weight: 800;
+    }
+    .url-type {
+      display: inline-block;
+      margin-top: 3px;
+      color: var(--gold-dk);
+      font-size: 8.3pt;
+      font-weight: 700;
+    }
 
     /* ── card footer ── */
     .ev-footer {
@@ -1090,7 +1118,8 @@
           <span class="tag t-teal">{{ tag }}</span>
           {% endfor %}
           <span class="tag t-gray">
-            {%- if ev.evidence_type == 'image'    %}📷 صورة
+            {%- if ev.evidence_type == 'image_gallery' %}📷 {{ ev.gallery_count }} صور
+            {%- elif ev.evidence_type == 'image'    %}📷 صورة
             {%- elif ev.evidence_type == 'video'  %}🎥 فيديو
             {%- elif ev.evidence_type in ('audio', 'voice')  %}🎙 صوت
             {%- elif ev.evidence_type in ('pdf','document') %}📄 ملف
@@ -1129,13 +1158,24 @@
       <!-- ── MEDIA ─────────────────────────────────────────────────── -->
       <div class="media-wrap">
 
+        {# IMAGE GALLERY — grouped export-only layout; media_src remains unchanged #}
+        {% if ev.evidence_type == 'image_gallery' %}
+          {% set gsize = ev.images|length %}
+          <div class="img-grid g{{ gsize if gsize <= 4 else 4 }}">
+            {% for image in ev.images[:4] %}
+            <img src="{{ image.media_src }}"
+                 alt="{{ image.title }}"
+                 onerror="this.style.display='none';" />
+            {% endfor %}
+          </div>
+          <div class="gallery-note">مجموعة صور توثيقية لنفس النشاط — {{ gsize }} صور</div>
+
         {# IMAGE — show actual image, fallback to placeholder badge #}
-        {% if ev.evidence_type == 'image' %}
+        {% elif ev.evidence_type == 'image' %}
           {% if ev.media_src %}
           <div class="img-grid g1">
             <img src="{{ ev.media_src }}"
                  alt="{{ ev.title }}"
-                 style="max-height:220px; width:100%; object-fit:contain; border-radius:8px; border:1px solid var(--border);"
                  onerror="this.parentElement.innerHTML='<div class=\'media-placeholder\'>📷 صورة توثيقية — ' + '{{ ev.title | e }}' + '</div>';" />
           </div>
           {% else %}
@@ -1180,13 +1220,15 @@
 
         {# URL — link card #}
         {% elif ev.evidence_type == 'url' %}
-        {% set url_text = ev.message_text or ev.media_url or '' %}
+        {% set url_href = ev.media_url or ev.message_text or '' %}
         <div class="url-card">
           <div class="url-icon">🔗</div>
           <div style="flex:1;">
             <div class="file-name" style="margin-bottom:4px;">{{ ev.title }}</div>
-            {% if url_text %}
-            <div class="url-text" style="font-size:8.5pt;">{{ url_text[:200] }}{% if url_text|length > 200 %}…{% endif %}</div>
+            <div class="url-type">{{ ev.link_type or 'رابط إثرائي' }}</div>
+            {% if url_href %}
+            <br/>
+            <a class="url-button" href="{{ url_href }}">فتح الرابط</a>
             {% endif %}
           </div>
         </div>
@@ -1201,7 +1243,7 @@
             {%- else %}🗂️{%- endif %}
           </div>
           <div style="flex:1;">
-            <div class="file-name">{{ ev.file_name or ev.title }}</div>
+            <div class="file-name">{{ ev.file_label or ev.title }}</div>
             <div class="file-type">
               {% if ev.mime_type %}{{ ev.mime_type.split('/')[-1] | upper }}{% else %}{{ (ev.evidence_type or 'ملف') | upper }}{% endif %}
             </div>
@@ -1226,12 +1268,15 @@
     </div><!-- /ev-body -->
 
     <!-- Footer -->
+    {% set footer_has_meta = ev.created_at or ev.subject or ev.grade or ev.category %}
+    {% if footer_has_meta %}
     <div class="ev-footer">
-      <span>📅 {{ ev.created_at.strftime('%Y/%m/%d') if ev.created_at else '—' }}</span>
+      {% if ev.created_at %}<span>📅 {{ ev.created_at.strftime('%Y/%m/%d') }}</span>{% endif %}
       {% if ev.subject  %}<span>📖 {{ ev.subject }}</span>{% endif %}
       {% if ev.grade    %}<span>🎓 {{ ev.grade }}</span>{% endif %}
       {% if ev.category %}<span>🏷 {{ ev.category }}</span>{% endif %}
     </div>
+    {% endif %}
   </div><!-- /ev-card -->
   {% endfor %}
 
