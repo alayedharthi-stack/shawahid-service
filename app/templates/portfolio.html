@@ -79,9 +79,10 @@
          • Classes are `tcover-*` only — they never collide with .page/.cover.
        Font: same Cairo + Tahoma/Arial fallback as the rest of the report.
     ══════════════════════════════════════════════════════════════════ */
-    /* ══ COVER PAGE — Final Ministry Style ══
-       Full teal background, no white wedge, no data card.
-       One big glass hero card covers headline + teacher block.           */
+    /* ══ COVER PAGE — Premium Ministry Reference Style ══
+       Matches the reference design: teal gradient + diagonal wedge +
+       glass headline card + white data card at bottom-right.
+       Single A4, no overflow, no clip-path.                              */
     .tcover-page {
       margin: -18mm -15mm 0 -15mm;
       width: 210mm;
@@ -91,8 +92,9 @@
       position: relative;
       box-sizing: border-box;
       background:
-        radial-gradient(ellipse at 22% 18%, rgba(255,255,255,0.10) 0%, transparent 44%),
-        linear-gradient(150deg, #14827a 0%, #1a9080 55%, #1d9685 100%);
+        radial-gradient(circle at 18% 14%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.025) 24%, transparent 44%),
+        radial-gradient(circle at 78% 34%, rgba(214,168,74,0.07) 0%, transparent 34%),
+        linear-gradient(135deg, #0b5f61 0%, #127a78 48%, #0f6f70 100%);
       color: #ffffff;
       direction: rtl;
       font-family: 'Cairo', 'Tajawal', 'IBM Plex Sans Arabic', 'Tahoma', 'Arial', sans-serif;
@@ -106,79 +108,108 @@
     }
     .tcover-page * { box-sizing: border-box; }
 
-    /* No pseudo-elements — clean solid teal background */
-    .tcover-page::before { display: none; }
-    .tcover-page::after  { display: none; }
-
-    /* ── Ministry of Education actual logo (white PNG) ───────────────── */
-    .tcover-moe-logo-img {
+    /* Ultra-subtle grid texture */
+    .tcover-page::before {
+      content: "";
       position: absolute;
-      top: 22mm;
-      left: 18mm;
-      width: 52mm;
-      height: auto;
-      max-height: 56mm;
-      object-fit: contain;
-      opacity: 0.95;
-      z-index: 6;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px),
+        linear-gradient(135deg, transparent 0%, transparent 62%, rgba(255,255,255,0.028) 62.2%, transparent 63%);
+      background-size: 18mm 18mm, 18mm 18mm, 210mm 297mm;
+      background-repeat: repeat, repeat, no-repeat;
+      pointer-events: none;
+      z-index: 1;
     }
-    /* Hide legacy elements */
-    .tcover-moe-logo       { display: none; }
+
+    /* Diagonal white wedge from the bottom-left — matches reference */
+    .tcover-page::after {
+      content: "";
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 54%;
+      background: linear-gradient(
+        to top right,
+        #f5f6f0 0%,
+        #f5f6f0 31.5%,
+        transparent 31.6%
+      );
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* ── Ministry of Education logo — white SVG from exporter ───────── */
+    .tcover-moe-logo {
+      position: absolute;
+      top: 21mm;
+      left: 22mm;
+      width: 48mm;
+      max-width: 48mm;
+      height: auto;
+      max-height: 50mm;
+      opacity: 0.88;
+      object-fit: contain;
+      z-index: 5;
+      background: transparent;
+    }
+    /* Hide the new PNG logo block — use SVG from exporter instead */
+    .tcover-moe-logo-img   { display: none; }
     .tcover-moe-logo-block { display: none; }
 
     /* ── Top-right: ministry breadcrumb + gold pill ─────────────────── */
     .tcover-top {
       position: absolute;
-      top: 24mm;
-      right: 20mm;
-      z-index: 6;
+      top: 25mm;
+      right: 22mm;
+      z-index: 5;
       text-align: right;
       max-width: 90mm;
     }
     .tcover-ministry {
-      font-size: 9pt;
+      font-size: 9.5pt;
       font-weight: 400;
-      color: rgba(255,255,255,0.70);
+      color: rgba(255,255,255,0.78);
       line-height: 1.4;
-      margin-bottom: 4mm;
+      margin-bottom: 5mm;
       white-space: nowrap;
     }
     .tcover-pill {
       display: inline-block;
-      background: linear-gradient(135deg, #c9972c 0%, #ddb84a 60%, #c9972c 100%);
+      background: #d6a84a;
       color: #ffffff;
-      padding: 3mm 8.5mm;
-      border-radius: 28px;
-      font-size: 11pt;
+      padding: 3.5mm 9mm;
+      border-radius: 30px;
+      font-size: 11.5pt;
       font-weight: 700;
       line-height: 1;
-      box-shadow:
-        0 2px 8px rgba(0,0,0,0.22),
-        inset 0 1px 0 rgba(255,255,255,0.18);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.14);
     }
 
-    /* ── Hero glass card — unified card for headline + teacher ──────── */
+    /* ── Hero glass card — covers headline + teacher name ───────────── */
     .tcover-hero-card {
       position: absolute;
-      top: 68mm;
-      right: 18mm;
-      width: 144mm;
-      z-index: 6;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.14);
-      border-radius: 20px;
-      padding: 8mm 9mm 8mm;
+      top: 62mm;
+      right: 20mm;
+      width: 136mm;
+      z-index: 5;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 16px;
+      padding: 7mm 8mm 7mm;
       text-align: right;
     }
 
-    /* Headline inside the hero card */
+    /* Headline inside hero card */
     .tcover-headline {
-      margin-bottom: 5mm;
+      margin-bottom: 4mm;
     }
     .tcover-headline h1 {
-      font-size: 41pt;
+      font-size: 42pt;
       font-weight: 800;
-      line-height: 1.22;
+      line-height: 1.25;
       margin: 0;
       color: #ffffff;
       word-spacing: 0;
@@ -186,65 +217,110 @@
     .tcover-headline h1 .tcover-line2 {
       display: block;
       margin-top: 1mm;
-      font-size: 34pt;
-      font-weight: 700;
-      color: rgba(255,255,255,0.92);
-      line-height: 1.25;
+      font-size: 36pt;
+      font-weight: 800;
+      color: #ffffff;
+      line-height: 1.3;
     }
 
-    /* Teacher block inside the hero card */
+    /* Teacher block inside hero card */
     .tcover-teacher { }
     .tcover-teacher-rule {
-      width: 36mm;
-      height: 0.4mm;
-      background: rgba(218,180,82,0.55);
-      margin-bottom: 3.5mm;
+      width: 42mm;
+      height: 0.45mm;
+      background: rgba(218,176,82,0.45);
+      margin-bottom: 4mm;
     }
     .tcover-teacher-name {
       font-size: 22pt;
       font-weight: 800;
-      color: #f0cc6a;
-      line-height: 1.2;
-      margin-bottom: 2.5mm;
+      color: #e2b85b;
+      line-height: 1.25;
+      margin-bottom: 3.5mm;
     }
     .tcover-teacher-meta {
-      font-size: 11pt;
-      font-weight: 400;
-      color: rgba(255,255,255,0.88);
+      font-size: 11.5pt;
+      font-weight: 500;
+      color: rgba(255,255,255,0.92);
       line-height: 1.5;
     }
 
-    /* ── Data card — HIDDEN ─────────────────────────────────────────── */
-    .tcover-card        { display: none; }
-    .tcover-card-title  { display: none; }
-    .tcover-grid        { display: none; }
-    .tcover-field       { display: none; }
-    .tcover-field-label { display: none; }
-    .tcover-field-value { display: none; }
+    /* ── Data card — white card bottom-right, over the wedge ────────── */
+    .tcover-card {
+      position: absolute;
+      bottom: 28mm;
+      right: 22mm;
+      width: 118mm;
+      max-height: 80mm;
+      overflow: hidden;
+      background: #ffffff;
+      color: #1a3833;
+      border-radius: 4mm;
+      padding: 6mm 7mm 7mm;
+      box-shadow:
+        0 3mm 8mm rgba(0,0,0,0.10),
+        0 0.5mm 1mm rgba(0,0,0,0.05);
+      z-index: 6;
+    }
+    .tcover-card-title {
+      font-size: 14pt;
+      font-weight: 800;
+      margin: 0 0 4mm 0;
+      color: #0f5e57;
+      text-align: right;
+      line-height: 1.2;
+    }
+    .tcover-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3.2mm;
+    }
+    .tcover-field {
+      background: #f7f8f5;
+      border: 1px solid #e3eae6;
+      border-radius: 2.5mm;
+      padding: 3.4mm 4mm;
+      text-align: right;
+      overflow: hidden;
+    }
+    .tcover-field-label {
+      font-size: 10pt;
+      font-weight: 700;
+      color: #0f5e57;
+      margin-bottom: 1.5mm;
+      line-height: 1.25;
+    }
+    .tcover-field-value {
+      font-size: 9.5pt;
+      font-weight: 400;
+      color: #324e49;
+      line-height: 1.5;
+      word-break: break-word;
+    }
 
-    /* ── Bottom note ─────────────────────────────────────────────────── */
+    /* ── Bottom note — sits just below the data card in the white area ─ */
     .tcover-note {
       position: absolute;
-      bottom: 14mm;
+      bottom: 12mm;
       left: 0;
       right: 0;
       text-align: center;
       font-size: 8pt;
-      color: rgba(255,255,255,0.35);
+      color: rgba(15,94,87,0.55);
       line-height: 1.4;
-      z-index: 6;
+      z-index: 7;
     }
 
-    /* ── Watermark ───────────────────────────────────────────────────── */
+    /* ── Watermark — stays inside the teal area above the wedge ─────── */
     .tcover-watermark {
       position: absolute;
-      bottom: 32mm;
+      top: 118mm;
       left: 14mm;
-      font-size: 30pt;
+      font-size: 32pt;
       font-weight: 800;
-      letter-spacing: 5px;
-      color: rgba(255,255,255,0.04);
-      z-index: 3;
+      letter-spacing: 4px;
+      color: rgba(255,255,255,0.035);
+      z-index: 4;
       pointer-events: none;
       white-space: nowrap;
       text-transform: uppercase;
@@ -970,15 +1046,15 @@
 ═══════════════════════════════════════════════════════════════════ -->
 <div class="tcover-page">
 
-  <!-- Ministry of Education official white logo (PNG, white-on-transparent) -->
-  <img class="tcover-moe-logo-img" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAMKCAYAAAAbITZrAAATH0lEQVR4nO3YwQ3AIBDAMOj+Ox9ToErEniDv7JmZBQAAADzt+zsAAAAAuM8AAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAAAgwAAAAACAAAMAAAAAAgwAAAAACDAAAAAAIMAAAAAAgAADAAAAAAIMAAAAAAgwAAAAACDAAAAAAIAAAwAAAAACDAAAAAAIMAAAAABgve8AuUMKEFaIl9EAAAAASUVORK5CYII=" alt="وزارة التعليم - Ministry of Education">
+  <!-- Ministry of Education logo — white SVG (icon + Arabic + English), from exporter -->
+  <img class="tcover-moe-logo" src="{{ ministry_logo }}" alt="وزارة التعليم - Ministry of Education">
 
+  <!-- Top-right: gold pill badge -->
   <div class="tcover-top">
-    <div class="tcover-ministry">المملكة العربية السعودية &nbsp;–&nbsp; وزارة التعليم</div>
     <div class="tcover-pill">ملف الشواهد</div>
   </div>
 
-  <!-- Hero glass card: headline + teacher name + grades in one unified card -->
+  <!-- Hero glass card: headline + teacher name -->
   <div class="tcover-hero-card">
     <div class="tcover-headline">
       <h1>
@@ -992,16 +1068,40 @@
       {% if teacher.stage or teacher.grades %}
       <div class="tcover-teacher-meta">
         {% if teacher.stage %}{{ teacher.stage }}{% endif %}
-        {% if teacher.stage and teacher.grades %} - {% endif %}
+        {% if teacher.stage and teacher.grades %} — {% endif %}
         {% if teacher.grades %}الصفوف: {{ teacher.grades }}{% endif %}
       </div>
       {% endif %}
     </div>
   </div>
 
+  <!-- Subtle watermark text in teal area -->
   <div class="tcover-watermark">SHAWAHID</div>
 
-  <div class="tcover-note">إعداد وتنظيم الشواهد بصيغة PDF جاهزة للطباعة</div>
+  <!-- White data card — bottom-right, inside the white wedge area -->
+  <div class="tcover-card">
+    <div class="tcover-card-title">بيانات الملف</div>
+    <div class="tcover-grid">
+      <div class="tcover-field">
+        <div class="tcover-field-label">مدير المدرسة</div>
+        <div class="tcover-field-value">{{ teacher.principal_name or '—' }}</div>
+      </div>
+      <div class="tcover-field">
+        <div class="tcover-field-label">المدرسة</div>
+        <div class="tcover-field-value">{{ teacher.school_name or '—' }}</div>
+      </div>
+      <div class="tcover-field">
+        <div class="tcover-field-label">محور النسخة</div>
+        <div class="tcover-field-value">{{ export_type or 'كامل' }}</div>
+      </div>
+      <div class="tcover-field">
+        <div class="tcover-field-label">المادة</div>
+        <div class="tcover-field-value">{{ teacher.subject or '—' }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tcover-note">إعداد وتنظيم الشواهد بصيغة PDF جاهزة للطباعة &nbsp;|&nbsp; {{ academic_year }}</div>
 </div>
 
 
