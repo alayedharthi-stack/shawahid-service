@@ -261,9 +261,51 @@ def _link_type_label(category: str, title: str, message_text: str | None) -> str
 def _safe_link_href(media_url: str | None, message_text: str | None) -> str | None:
     for value in (media_url, message_text):
         text = _clean_text(value)
-        if text and text.lower().startswith(("http://", "https://")):
+        if text and text.lower().startswith(("http://", "https://")) and _is_safe_public_url(text):
             return text
     return None
+
+
+def _is_safe_public_url(url: str | None) -> bool:
+    text = _clean_text(url)
+    if not text:
+        return False
+    lowered = text.lower()
+    blocked_hosts = (
+        "lookaside.fbsbx.com",
+        "fbcdn.net",
+        "facebook.com",
+        "graph.facebook.com",
+        "lookaside.facebook.com",
+        "whatsapp.net",
+    )
+    return lowered.startswith(("http://", "https://")) and not any(host in lowered for host in blocked_hosts)
+
+
+def _public_storage_url(path: str | None) -> str | None:
+    """Build a stable public /files URL for files stored under STORAGE_ROOT."""
+    clean_path = _clean_text(path)
+    if not clean_path:
+        return None
+
+    file_path = Path(clean_path)
+    try:
+        rel_path = file_path.resolve().relative_to(settings.storage_path.resolve())
+    except Exception:
+        return None
+
+    return f"{settings.effective_base_url}/files/{rel_path.as_posix()}"
+
+
+def _public_media_url(evidence_type: str, storage_path: str | None, media_url: str | None) -> str | None:
+    """Prefer long-lived service-hosted links; never expose temporary CDN URLs."""
+    local_url = _public_storage_url(storage_path)
+    if local_url:
+        suffix = Path(storage_path or "").suffix.lower()
+        if evidence_type == "video" and suffix in _IMAGE_EXTS:
+            return None
+        return local_url
+    return media_url if _is_safe_public_url(media_url) else None
 
 
 def _file_type_label(file_name: str | None, evidence_type: str, mime_type: str | None) -> str:
@@ -599,6 +641,7 @@ def _normalize_evidence_for_export(ev) -> dict:
     raw_export_text = " ".join(
         value for value in (raw_title, raw_cat, stored_desc, message_text, file_name) if value
     )
+    public_media_url = _public_media_url(ev_type, ev.storage_path, media_url)
 
     return {
         "id":            ev.id,
@@ -619,6 +662,8 @@ def _normalize_evidence_for_export(ev) -> dict:
         "mime_type":     mime_type,
         "link_type":     _link_type_label(category, title, message_text),
         "link_href":     _safe_link_href(media_url, message_text),
+        "public_media_url": public_media_url,
+        "download_url":  public_media_url,
         "subject":       subject,
         "grade":         grade,
         "created_at":    ev.created_at,
@@ -842,7 +887,16 @@ def _build_stats(normalised_evidences: list[dict], categories: list[dict]) -> di
         {"name": c["name"], "count": c["count"], "pct": round(c["count"] / max_count * 100)}
         for c in nonempty
     ]
-    return {**counts, "top_categories": top_categories}
+    return {
+        **counts,
+        "image_count": counts["images"],
+        "video_count": counts["videos"],
+        "audio_count": counts["audios"],
+        "file_count": counts["documents"],
+        "url_count": counts["urls"],
+        "text_count": counts["texts"],
+        "top_categories": top_categories,
+    }
 
 
 def _evidence_quality_score(ev) -> float:
