@@ -187,9 +187,17 @@ name, subject, stage, grades, school_name, principal_name, region, education_adm
 • نفس التعليمات أعلاه مع الإشارة إلى أنه مقطع مرئي.
 
 ══ تحليل الملفات (PDF / Word / صور الاختبارات) ══
-• صنّف حسب المحتوى: اختبار / ورقة عمل / خطة درس / نشاط / خطاب / سجل متابعة.
-• استخرج العنوان والمادة والصف إن وجدت.
-• احفظ الملف كرابط مرفق داخل الشاهد (should_save=true).
+❗ قاعدة حرجة: أي رسالة تبدأ بـ [ملف PDF — تم استخراج نصه تلقائيًا 📄] هي دائمًا شاهد حقيقي.
+→ should_save = true دائمًا بلا استثناء
+→ is_system_instruction = false دائمًا (الملف ليس أمرًا للنظام، هو وثيقة تعليمية)
+→ لا تعتبره smalltalk مهما كان محتواه
+
+تحليل المحتوى:
+• صنّف حسب المحتوى: اختبار / ورقة عمل / خطة درس / توزيع منهج / سجل متابعة / تعميم.
+• استخرج العنوان الأكثر وصفًا للمحتوى (وليس اسم الملف المجرد).
+• استخرج المادة والصف إن وجدا في المحتوى.
+• احفظ الملف كشاهد داخل الملف (should_save=true).
+• إذا وُجد "التصنيف المقترح" في نص الاستخراج → استخدمه ما لم يكن مخالفًا للمحتوى الحقيقي.
 • صور الاختبارات المتعددة = شاهد واحد.
 
 ══ تجميع الشواهد ══
@@ -385,8 +393,9 @@ async def ask_gpt(
     image_url: str | None = None,
     mime_type: str | None = None,
     file_name: str | None = None,
-    transcript: str | None = None,  # Whisper transcript for audio/video messages
+    transcript: str | None = None,  # Whisper transcript for audio/video, or PDF text
     is_video: bool = False,          # True if media was a video (affects prompt label)
+    is_pdf: bool = False,            # True if transcript is extracted from a PDF file
 ) -> GPTDecision:
     """
     Send any inbound WhatsApp message to GPT for a decision.
@@ -408,7 +417,7 @@ async def ask_gpt(
         return _failure_decision()
 
     content = _build_content(text, storage_path, image_url, mime_type, file_name,
-                             transcript=transcript, is_video=is_video)
+                             transcript=transcript, is_video=is_video, is_pdf=is_pdf)
     system  = _build_system_prompt(teacher_context)
     models  = _get_model_chain()
 
@@ -477,13 +486,21 @@ def _build_content(
     *,
     transcript: str | None = None,
     is_video: bool = False,
+    is_pdf: bool = False,       # True when transcript comes from a PDF extraction
 ) -> list[dict]:
     parts: list[dict] = []
     text_parts: list[str] = []
 
-    # ── Transcript (audio / video) — takes the top slot ──────────────────────
+    # ── Transcript (audio / video / PDF) — takes the top slot ────────────────
     if transcript:
-        label = "[تفريغ مقطع مرئي من Whisper AI 🎬]" if is_video else "[تفريغ صوتي من Whisper AI 🎙]"
+        if is_pdf:
+            # PDF documents need their own label so GPT doesn't mistake them
+            # for voice recordings or system instructions.
+            label = "[ملف PDF — تم استخراج نصه تلقائيًا 📄]"
+        elif is_video:
+            label = "[تفريغ مقطع مرئي من Whisper AI 🎬]"
+        else:
+            label = "[تفريغ صوتي من Whisper AI 🎙]"
         text_parts.append(f"{label}\n{transcript}")
 
     # ── Plain text / caption ──────────────────────────────────────────────────

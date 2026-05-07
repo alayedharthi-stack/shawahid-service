@@ -953,7 +953,39 @@ async def whatsapp_webhook(
         file_name=safe_filename or file_name,
         transcript=transcript,
         is_video=is_video_msg,
+        is_pdf=_is_pdf_msg,   # Use correct label so GPT doesn't confuse PDF with voice
     )
+
+    # ── CRITICAL PDF SAFETY: override GPT flags that could lose a PDF ─────────
+    # A PDF file can NEVER be a "system instruction" — it's always a real document.
+    # GPT may misclassify the extracted PDF content (especially our structured analysis
+    # output) as a system command. We hard-override to prevent silent data loss.
+    if _is_pdf_msg and media_id:
+        if decision.get("is_system_instruction"):
+            logger.warning(
+                "[PDF SAFETY] teacher_id=%d GPT incorrectly flagged PDF as system_instruction "
+                "— overriding to is_system_instruction=False, should_save=True",
+                teacher.id,
+            )
+            decision = {
+                **decision,
+                "is_system_instruction": False,
+                "should_save": True,
+                "intent": "evidence",
+            }
+        elif not decision.get("should_save"):
+            # GPT set should_save=False for a PDF — likely misclassification. Force it.
+            logger.warning(
+                "[PDF SAFETY] teacher_id=%d GPT returned should_save=False for PDF (intent=%s) "
+                "— forcing should_save=True",
+                teacher.id, decision.get("intent"),
+            )
+            decision = {
+                **decision,
+                "should_save": True,
+                "intent": "evidence",
+                "_force_saved": True,
+            }
 
     logger.info(
         "[GPT DECISION] teacher_id=%d intent=%s should_save=%s confidence=%.2f title=%r "
