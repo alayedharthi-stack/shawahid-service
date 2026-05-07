@@ -335,6 +335,91 @@ async def send_review_offer(
     )
 
 
+async def send_pre_export_choice_buttons(
+    to_phone: str,
+    review_url: str,
+    *,
+    teacher_id: int | None = None,
+) -> bool:
+    """
+    Send a 2-button card before export:
+      1️⃣ مراجعة الملف  → CTA URL to review page
+      2️⃣ تصدير الآن   → reply button (id: export_now)
+
+    WhatsApp does not support mixing CTA-URL and reply buttons in one message.
+    We use reply buttons for both and include the review URL in the body text.
+    Falls back to plain text with URL if interactive call fails.
+    Never raises.
+    """
+    review_text = f"مراجعة الملف: {review_url}"
+    body_text = (
+        "📘 ماذا تريد الآن؟\n\n"
+        f"لمراجعة شواهدك قبل التصدير:\n{review_url}"
+    )
+
+    if not settings.WHATSAPP_ACCESS_TOKEN or not settings.WHATSAPP_PHONE_NUMBER_ID:
+        logger.info(
+            "[WhatsApp pre-export stub] teacher_id=%s To=%s review_url=%s",
+            teacher_id, to_phone, review_url[:60],
+        )
+        return True
+
+    api_url = (
+        f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}"
+        f"/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+    )
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to_phone,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": f"📘 ماذا تريد الآن؟\n\nللمراجعة قبل التصدير اضغط 'مراجعة الملف'.\nللتصدير الفوري اضغط 'تصدير الآن'."},
+            "action": {
+                "buttons": [
+                    {"type": "reply", "reply": {"id": "review_file",  "title": "🔍 مراجعة الملف"}},
+                    {"type": "reply", "reply": {"id": "export_now",   "title": "📤 تصدير الآن"}},
+                ]
+            },
+        },
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(api_url, json=payload, headers=headers)
+
+        if resp.status_code == 200:
+            logger.info("[PRE-EXPORT BUTTONS SENT] teacher_id=%s phone=%s", teacher_id, to_phone)
+            return True
+
+        logger.warning(
+            "[PRE-EXPORT BUTTONS FAILED] teacher_id=%s status=%d body=%s — falling back",
+            teacher_id, resp.status_code, resp.text[:300],
+        )
+    except Exception as exc:
+        logger.warning(
+            "[PRE-EXPORT BUTTONS EXCEPTION] teacher_id=%s error=%s — falling back",
+            teacher_id, exc,
+        )
+
+    # Fallback: plain text with review URL + export hint
+    fallback_msg = (
+        "📘 ماذا تريد الآن؟\n\n"
+        f"1️⃣ مراجعة الملف: {review_url}\n\n"
+        "2️⃣ اكتب: *تصدير الآن* لتصدير الملف مباشرة."
+    )
+    return await send_whatsapp_message(
+        to_phone,
+        fallback_msg,
+        teacher_id=teacher_id,
+        context="pre_export_choice_fallback",
+    )
+
+
 async def send_export_options_buttons(
     to_phone: str,
     *,
@@ -536,3 +621,61 @@ def build_export_ready_reply(pdf_url: str) -> str:
 
 def build_evidence_saved_reply() -> str:
     return "✅ تم حفظ الشاهد بنجاح!"
+
+
+# ── File save confirmation builders ──────────────────────────────────────────
+
+_EV_TYPE_LABELS: dict[str, str] = {
+    "pdf":      "ملف PDF",
+    "document": "مستند",
+    "image":    "صورة",
+    "video":    "فيديو",
+    "audio":    "تسجيل صوتي",
+    "voice":    "رسالة صوتية",
+    "url":      "رابط",
+    "text":     "نص",
+}
+
+
+def build_file_saved_message(
+    ev_type: str,
+    category: str,
+    title: str | None = None,
+    *,
+    is_duplicate: bool = False,
+    analysis_failed: bool = False,
+) -> str:
+    """
+    Structured confirmation sent after any media/file is saved (or found duplicate).
+
+    is_duplicate=True  → ⚠️ هذا الملف موجود مسبقًا
+    analysis_failed=True → ✅ تم الحفظ + note about incomplete analysis
+    Otherwise          → ✅ تم التحليل والحفظ
+    """
+    type_label = _EV_TYPE_LABELS.get(ev_type, "ملف")
+    cat_line   = f"التصنيف: {category}" if category else ""
+    title_line = f"العنوان: {title}" if title else ""
+
+    detail_lines = "\n".join(ln for ln in [
+        f"النوع: {type_label}",
+        cat_line,
+        title_line,
+    ] if ln)
+
+    if is_duplicate:
+        return (
+            f"⚠️ هذا الملف موجود مسبقًا في ملف الشواهد\n\n"
+            f"{detail_lines}"
+        )
+
+    if analysis_failed:
+        return (
+            f"✅ تم حفظ الملف\n\n"
+            f"{detail_lines}\n\n"
+            "تعذّر تحليل المحتوى بالكامل — سيظهر في ملف الشواهد."
+        )
+
+    return (
+        f"✅ تم تحليل الملف وحفظه\n\n"
+        f"{detail_lines}"
+    )

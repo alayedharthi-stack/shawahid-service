@@ -97,6 +97,23 @@ def is_exact_duplicate(db: Session, teacher_id: int, content_hash: str) -> bool:
     return exists is not None
 
 
+def get_evidence_by_hash(db: Session, teacher_id: int, content_hash: str) -> Evidence | None:
+    """
+    Return the existing Evidence row matching the given content_hash for a teacher.
+    Used to surface category / title in duplicate notifications.
+    Returns None if not found.
+    """
+    return (
+        db.query(Evidence)
+        .filter(
+            Evidence.teacher_id   == teacher_id,
+            Evidence.content_hash == content_hash,
+        )
+        .order_by(Evidence.created_at.desc())
+        .first()
+    )
+
+
 def find_near_duplicate_text(
     db: Session,
     teacher_id: int,

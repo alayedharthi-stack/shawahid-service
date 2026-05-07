@@ -24,6 +24,7 @@ from app.services.storage import download_and_save, detect_evidence_type, extrac
 from app.services.deduplication import (
     is_exact_duplicate, find_near_duplicate_text,
     hash_text, hash_url,
+    get_evidence_by_hash,
 )
 from app.services import transcribe as transcribe_svc
 from app.services.subscriptions import (
@@ -45,10 +46,12 @@ from app.services.whatsapp import (
     send_whatsapp_message,
     send_whatsapp_button,
     send_export_options_buttons,
+    send_pre_export_choice_buttons,
     send_review_offer,
     build_payment_link_message,
     build_payment_receipt_message,
     build_subscription_activated_message,
+    build_file_saved_message,
 )
 from app.services import exporter as exporter_svc
 from app.core.config import settings
@@ -61,6 +64,8 @@ logger = logging.getLogger(__name__)
 # it helps the conversational flow inside the current process without changing DB schema.
 _LAST_PROFILE_UPDATES: dict[int, dict[str, str]] = {}
 _PENDING_EXPORT_REQUESTS: set[int] = set()
+# teacher_id → True when user just received the 2-button pre-export card (waiting for choice)
+_AWAITING_EXPORT_CHOICE: set[int] = set()
 # Pending name confirmation: teacher_id → name extracted from audio (needs user to confirm)
 _PENDING_NAME_CONFIRMATION: dict[int, str] = {}
 
@@ -619,9 +624,64 @@ async def whatsapp_webhook(
         # If neither yes nor no, fall through to normal GPT processing
         # (teacher might be sending new evidence while confirmation is pending)
 
-    # ── Direct export shortcut (skip review) ─────────────────────────────────
+    # ── Pre-export button replies: مراجعة الملف / تصدير الآن ─────────────────
+    _normalized_text = _normalize_arabic(text or "")
+
+    if _normalized_text in ("review_file", "مراجعة الملف", "مراجعه الملف") and not media_id:
+        _AWAITING_EXPORT_CHOICE.discard(teacher.id)
+        logger.info("[REVIEW REQUESTED] teacher_id=%d", teacher.id)
+        from app.services.teachers import get_or_create_review_token
+        _rt = get_or_create_review_token(db, teacher)
+        _rv = f"{settings.effective_base_url}/review/{_rt}"
+        background_tasks.add_task(
+            send_whatsapp_button,
+            teacher.phone,
+            "راجع شواهدك قبل التصدير 📋",
+            "🔍 مراجعة الملف",
+            _rv,
+            teacher_id=teacher.id,
+        )
+        return {"ok": True, "teacher_id": teacher.id, "intent": "review_requested"}
+
+    # "export_now" = WhatsApp button id (always bypass to mode selection).
+    # Typed Arabic variants only bypass if already in the awaiting-choice state.
+    _is_export_now = (
+        _normalized_text == "export_now"
+        or (_normalized_text in ("تصدير الان", "صدر الان") and teacher.id in _AWAITING_EXPORT_CHOICE)
+    )
+    if _is_export_now and not media_id:
+        _AWAITING_EXPORT_CHOICE.discard(teacher.id)
+        logger.info("[EXPORT NOW SELECTED] teacher_id=%d", teacher.id)
+        if not sub_active:
+            try:
+                payment_url = await _create_moyasar_link(
+                    db, teacher.id, teacher.name or "", teacher.phone or ""
+                )
+            except Exception as exc:
+                logger.error("Moyasar invoice creation failed: %s", exc)
+                payment_url = get_payment_link(teacher.id)
+            background_tasks.add_task(
+                send_whatsapp_message,
+                teacher.phone,
+                build_payment_link_message(payment_url, teacher.name or ""),
+                teacher_id=teacher.id,
+                context="payment_link",
+            )
+            return {"ok": False, "teacher_id": teacher.id, "reason": "subscription_required"}
+        _PENDING_EXPORT_REQUESTS.add(teacher.id)
+        background_tasks.add_task(
+            send_export_options_buttons,
+            teacher.phone,
+            teacher_id=teacher.id,
+        )
+        return {"ok": True, "teacher_id": teacher.id, "intent": "export_mode_offered", "awaiting_export_mode": True}
+
+    # ── Direct export shortcut: show 2-button choice card ────────────────────
     # Catches any Arabic export variant: صدر / اصدر / ارسل الملف / خلاص صدر …
     if is_export_command(text) and not media_id:
+        if teacher.id in _AWAITING_EXPORT_CHOICE:
+            # Already waiting for their مراجعة/تصدير choice — don't send another card.
+            return {"ok": True, "teacher_id": teacher.id, "intent": "pre_export_choice_already_pending"}
         if not sub_active:
             try:
                 payment_url = await _create_moyasar_link(
@@ -639,13 +699,17 @@ async def whatsapp_webhook(
             )
             return {"ok": False, "teacher_id": teacher.id, "reason": "subscription_required"}
 
-        _PENDING_EXPORT_REQUESTS.add(teacher.id)
+        from app.services.teachers import get_or_create_review_token
+        _review_token = get_or_create_review_token(db, teacher)
+        _review_url   = f"{settings.effective_base_url}/review/{_review_token}"
+        _AWAITING_EXPORT_CHOICE.add(teacher.id)
         background_tasks.add_task(
-            send_export_options_buttons,
+            send_pre_export_choice_buttons,
             teacher.phone,
+            _review_url,
             teacher_id=teacher.id,
         )
-        return {"ok": True, "teacher_id": teacher.id, "intent": "direct_export_requested", "awaiting_export_mode": True}
+        return {"ok": True, "teacher_id": teacher.id, "intent": "pre_export_choice_offered"}
 
     # ── Export mode selection shortcut ────────────────────────────────────────
     # After the user is asked "كيف تحب ملفك؟", their next message may be "1/2/3/كامل/ذكي".
@@ -759,6 +823,20 @@ async def whatsapp_webhook(
         logger.info(
             "[DUPLICATE SKIPPED] media already exists teacher_id=%d hash=%s",
             teacher.id, media_hash[:12],
+        )
+        _dup_ev = get_evidence_by_hash(db, teacher.id, media_hash)
+        _dup_msg = build_file_saved_message(
+            ev_type=(_dup_ev.evidence_type if _dup_ev else evidence_type or "document"),
+            category=(_dup_ev.category if _dup_ev else ""),
+            title=(_dup_ev.title if _dup_ev else None),
+            is_duplicate=True,
+        )
+        background_tasks.add_task(
+            send_whatsapp_message,
+            teacher.phone,
+            _dup_msg,
+            teacher_id=teacher.id,
+            context="duplicate_media",
         )
         return {"ok": True, "teacher_id": teacher.id, "duplicate": True, "reason": "media_hash"}
 
@@ -1145,15 +1223,16 @@ async def whatsapp_webhook(
                 "payment_url": payment_url,
             }
 
-        # active_paid → offer review-first or direct export
+        # active_paid → show 2-button card: مراجعة الملف | تصدير الآن
         logger.info("[EXPORT MODE REQUESTED] teacher_id=%d evidence_count=%d", teacher.id, evidence_count)
 
         from app.services.teachers import get_or_create_review_token
         review_token = get_or_create_review_token(db, teacher)
         review_url   = f"{settings.effective_base_url}/review/{review_token}"
 
+        _AWAITING_EXPORT_CHOICE.add(teacher.id)
         background_tasks.add_task(
-            send_review_offer,
+            send_pre_export_choice_buttons,
             teacher.phone,
             review_url,
             teacher_id=teacher.id,
@@ -1280,9 +1359,18 @@ async def whatsapp_webhook(
             _skip_dedup = True
 
         if _skip_dedup:
-            # Duplicate detected — GPT's reply still goes out (e.g. "✅ محفوظ"),
-            # but we do NOT create a new evidence record.
+            # Duplicate detected — override reply with duplicate notification,
+            # but do NOT create a new evidence record.
             logger.info("[DUPLICATE SKIPPED] no evidence created teacher_id=%d type=%s", teacher.id, ev_type)
+            if media_id and ev_type not in ("text", "url"):
+                # For media duplicates found at pre-save check: look up existing record
+                _dup2_ev = get_evidence_by_hash(db, teacher.id, _content_hash) if _content_hash else None
+                reply = build_file_saved_message(
+                    ev_type=ev_type,
+                    category=(_dup2_ev.category if _dup2_ev else gpt_category),
+                    title=(_dup2_ev.title if _dup2_ev else _gpt_title or ""),
+                    is_duplicate=True,
+                )
         else:
             try:
                 # Provide teacher context for deep AI enrichment
@@ -1354,6 +1442,15 @@ async def whatsapp_webhook(
                     log_tag, teacher.id, evidence.id, ev_type,
                     gpt_category, decision["title"], decision["confidence"],
                 )
+                # ── Structured save confirmation for all media evidence ────────
+                # Replace GPT's generic reply with a structured ✅ message that
+                # tells the teacher exactly what was saved and in which category.
+                if media_id and ev_type not in ("text", "url"):
+                    reply = build_file_saved_message(
+                        ev_type=ev_type,
+                        category=gpt_category,
+                        title=_gpt_title or "",
+                    )
             except Exception as save_exc:
                 logger.error(
                     "[SAVE FAILED] teacher_id=%d type=%s category=%r error=%s",
@@ -1431,7 +1528,12 @@ async def whatsapp_webhook(
                 background_tasks.add_task(
                     send_whatsapp_message,
                     teacher.phone,
-                    "تم حفظ الملف لكن تعذّر تحليل محتواه بالكامل 📄\nسيظهر في ملف الشواهد.",
+                    build_file_saved_message(
+                        "pdf",
+                        _pdf_fallback_cat,
+                        _pdf_fallback_title,
+                        analysis_failed=True,
+                    ),
                     teacher_id=teacher.id,
                     context="pdf_saved_no_analysis",
                 )
