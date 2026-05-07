@@ -102,16 +102,42 @@ def _correct_image_orientation(raw_bytes: bytes, mime_type: str | None) -> bytes
         return raw_bytes
 
 
-def extract_pdf_text(file_path: str | Path, max_chars: int = 2000) -> str | None:
+class PDFExtract:
+    """Structured result of a smart PDF extraction."""
+    __slots__ = (
+        "full_text", "page_count", "pages_with_text", "first_lines",
+        "has_tables", "has_questions", "has_objectives", "has_grades_table",
+        "has_ministry_header", "detected_keywords",
+    )
+
+    def __init__(self):
+        self.full_text: str = ""
+        self.page_count: int = 0
+        self.pages_with_text: int = 0
+        self.first_lines: str = ""          # first 5 non-empty lines (title area)
+        self.has_tables: bool = False
+        self.has_questions: bool = False     # أسئلة / اختيار
+        self.has_objectives: bool = False    # أهداف / نواتج التعلم
+        self.has_grades_table: bool = False  # درجات / الدرجة / رصد
+        self.has_ministry_header: bool = False  # وزارة التعليم
+        self.detected_keywords: list[str] = []
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.full_text.strip()
+
+
+def extract_pdf_smart(file_path: str | Path, max_chars: int = 3500) -> PDFExtract | None:
     """
-    Extract plain text from a PDF file using pdfplumber.
+    Smart multi-page PDF extraction with document intelligence.
 
-    Returns up to max_chars characters, or None if:
-    - File is not a readable PDF
-    - PDF is scan-only (no embedded text layer)
-    - pdfplumber is not installed
+    Strategy:
+    - Read all pages and collect text, prioritising early content.
+    - Detect structural signals: tables, questions, objectives, grade tables.
+    - Return a PDFExtract object with rich metadata for GPT classification.
+    - Falls back gracefully: returns None if pdfplumber unavailable or PDF unreadable.
 
-    Logs: [PDF TEXT EXTRACTED] or [PDF NO TEXT] or [PDF EXTRACT ERROR]
+    Logs: [PDF TEXT EXTRACTED] [PDF NO TEXT] [PDF EXTRACT ERROR]
     """
     path = Path(file_path)
     if not path.exists():
@@ -120,37 +146,113 @@ def extract_pdf_text(file_path: str | Path, max_chars: int = 2000) -> str | None
 
     try:
         import pdfplumber
-
-        text_parts: list[str] = []
-        with pdfplumber.open(str(path)) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text() or ""
-                if page_text.strip():
-                    text_parts.append(page_text.strip())
-                if sum(len(p) for p in text_parts) >= max_chars:
-                    break
-
-        full_text = "\n".join(text_parts).strip()
-        if not full_text:
-            logger.info("[PDF NO TEXT] file=%s — likely a scanned image PDF", path.name)
-            return None
-
-        # Truncate to max_chars
-        if len(full_text) > max_chars:
-            full_text = full_text[:max_chars] + "…"
-
-        logger.info(
-            "[PDF TEXT EXTRACTED] file=%s chars=%d pages_read=%d",
-            path.name, len(full_text), len(text_parts),
-        )
-        return full_text
-
     except ImportError:
-        logger.warning("[PDF EXTRACT ERROR] pdfplumber not installed — cannot extract text from PDF")
+        logger.warning("[PDF EXTRACT ERROR] pdfplumber not installed")
         return None
+
+    result = PDFExtract()
+
+    # ── Document intelligence keywords ────────────────────────────────────────
+    _OBJECTIVES_KW  = ("هدف", "هدفًا", "نواتج التعلم", "بنهاية الدرس", "الأهداف",
+                       "يستطيع الطالب", "يتمكن المتعلم")
+    _QUESTIONS_KW   = ("السؤال", "اختر", "أجب", "صح أم خطأ", "اختيار من متعدد",
+                       "الدرجة", "نقطة", "علامة")
+    _GRADES_KW      = ("الدرجة", "مجموع", "كشف", "رصد", "التقدير", "ممتاز",
+                       "جيد جدًا", "جيد", "مقبول", "راسب")
+    _MINISTRY_KW    = ("وزارة التعليم", "المملكة العربية السعودية", "إدارة التعليم",
+                       "مدير المدرسة", "الرقم الوزاري")
+
+    try:
+        with pdfplumber.open(str(path)) as pdf:
+            result.page_count = len(pdf.pages)
+            page_texts: list[str] = []
+
+            for i, page in enumerate(pdf.pages):
+                # Detect tables on this page
+                try:
+                    if page.extract_tables():
+                        result.has_tables = True
+                except Exception:
+                    pass
+
+                page_text = (page.extract_text() or "").strip()
+                if page_text:
+                    result.pages_with_text += 1
+                    page_texts.append(page_text)
+
+                    # Check document signals
+                    lower_text = page_text.lower()
+                    if any(kw in page_text for kw in _OBJECTIVES_KW):
+                        result.has_objectives = True
+                    if any(kw in page_text for kw in _QUESTIONS_KW):
+                        result.has_questions = True
+                    if any(kw in page_text for kw in _GRADES_KW):
+                        result.has_grades_table = True
+                    if any(kw in page_text for kw in _MINISTRY_KW):
+                        result.has_ministry_header = True
+
     except Exception as exc:
-        logger.warning("[PDF EXTRACT ERROR] file=%s error=%s", path.name if path else "?", exc)
+        logger.warning("[PDF EXTRACT ERROR] file=%s error=%s", path.name, exc)
         return None
+
+    if not page_texts:
+        logger.info("[PDF NO TEXT] file=%s — scanned/image PDF (%d pages)", path.name, result.page_count)
+        return result  # return empty PDFExtract (caller checks .is_empty)
+
+    # ── Build smart text: first page (title) + representative sampling ────────
+    # Always include first page fully (covers title/header)
+    # For long documents, sample later pages to stay within max_chars
+    combined_parts: list[str] = []
+    budget = max_chars
+
+    # First page always first
+    if page_texts:
+        first = page_texts[0][:budget]
+        combined_parts.append(f"[صفحة 1]\n{first}")
+        budget -= len(first)
+
+    # Remaining pages: sample up to 3 more, each taking up to budget/3 chars
+    per_page_budget = max(400, budget // 3) if budget > 0 else 0
+    for i, pt in enumerate(page_texts[1:4], start=2):
+        if budget <= 0:
+            break
+        snippet = pt[:per_page_budget]
+        combined_parts.append(f"[صفحة {i}]\n{snippet}")
+        budget -= len(snippet)
+
+    result.full_text = "\n\n".join(combined_parts)
+
+    # ── Extract first meaningful lines (title detection) ──────────────────────
+    all_lines = page_texts[0].splitlines() if page_texts else []
+    meaningful = [ln.strip() for ln in all_lines if len(ln.strip()) > 3][:8]
+    result.first_lines = "\n".join(meaningful)
+
+    # ── Detected keywords summary ─────────────────────────────────────────────
+    keywords: list[str] = []
+    if result.has_objectives:   keywords.append("أهداف تعلم")
+    if result.has_questions:    keywords.append("أسئلة/اختبار")
+    if result.has_grades_table: keywords.append("جدول درجات")
+    if result.has_tables:       keywords.append("جداول")
+    if result.has_ministry_header: keywords.append("ترويسة وزارية")
+    result.detected_keywords = keywords
+
+    logger.info(
+        "[PDF TEXT EXTRACTED] file=%s pages=%d/%d chars=%d signals=%s",
+        path.name, result.pages_with_text, result.page_count,
+        len(result.full_text), keywords or "none",
+    )
+    return result
+
+
+def extract_pdf_text(file_path: str | Path, max_chars: int = 3500) -> str | None:
+    """
+    Simple wrapper around extract_pdf_smart() that returns just the text string.
+    Kept for backward compatibility. Returns None for empty/unreadable PDFs.
+    """
+    result = extract_pdf_smart(file_path, max_chars=max_chars)
+    if result is None or result.is_empty:
+        return None
+    return result.full_text
 
 
 def detect_evidence_type(mime_type: str | None, file_name: str | None, text: str | None) -> str:

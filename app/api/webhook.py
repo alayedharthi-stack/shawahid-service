@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.db.base import get_db
 from app.services.teachers import get_or_create_teacher, get_teacher_by_id, update_teacher
 from app.services.evidences import create_evidence, get_teacher_evidences, set_enrichment_teacher_context
-from app.services.storage import download_and_save, detect_evidence_type, extract_urls, extract_pdf_text
+from app.services.storage import download_and_save, detect_evidence_type, extract_urls, extract_pdf_text, extract_pdf_smart
 from app.services.deduplication import (
     is_exact_duplicate, find_near_duplicate_text,
     hash_text, hash_url,
@@ -815,23 +815,86 @@ async def whatsapp_webhook(
                 " (thumbnail available)" if thumbnail_path else " (no thumbnail either)",
             )
 
-    # ── PDF text extraction ───────────────────────────────────────────────────
-    # Extract text content from PDF so GPT can classify it intelligently.
-    # Result is stored as 'transcript' so GPT receives it via the same channel.
+    # ── PDF: smart multi-page extraction + deep GPT document analysis ─────────
+    # Strategy:
+    #   1. extract_pdf_smart() → reads all pages, detects document signals
+    #   2. analyze_pdf_document() → GPT classifies from actual content
+    #   3. Results pre-populate title/category/description so main GPT call
+    #      receives rich, structured context — not just a raw filename hint.
     _pdf_text: str | None = None
+    _pdf_preanalysis: dict | None = None  # result from analyze_pdf_document()
+
     if _is_pdf_msg and storage_path:
         logger.info("[PDF ANALYSIS START] teacher_id=%d file=%s", teacher.id, safe_filename)
-        _pdf_text = extract_pdf_text(storage_path, max_chars=2000)
-        if _pdf_text:
-            # Prepend filename hint to help GPT classify (e.g. "خطة_اسبوعية.pdf")
-            _pdf_label = f"اسم الملف: {file_name or safe_filename}\n\n"
-            transcript = _pdf_label + "محتوى الملف (مستخرج):\n" + _pdf_text
+
+        _pdf_extract = extract_pdf_smart(storage_path, max_chars=3500)
+
+        if _pdf_extract and not _pdf_extract.is_empty:
+            _pdf_text = _pdf_extract.full_text
             logger.info(
-                "[PDF ANALYSIS DONE] teacher_id=%d chars=%d",
+                "[PDF TEXT EXTRACTED] teacher_id=%d chars=%d pages=%d/%d signals=%s",
                 teacher.id, len(_pdf_text),
+                _pdf_extract.pages_with_text, _pdf_extract.page_count,
+                _pdf_extract.detected_keywords or "none",
             )
+
+            # ── Deep document analysis via GPT ───────────────────────────────
+            # Run synchronously (we're already inside a background-safe path).
+            # This gives us: document_type, category, title, description, keywords.
+            from app.services.gpt_brain import analyze_pdf_document as _analyze_pdf
+
+            _pdf_preanalysis = _analyze_pdf(
+                extracted_text=_pdf_text,
+                first_lines=_pdf_extract.first_lines,
+                filename=file_name or safe_filename,
+                page_count=_pdf_extract.page_count,
+                pages_with_text=_pdf_extract.pages_with_text,
+                has_tables=_pdf_extract.has_tables,
+                has_questions=_pdf_extract.has_questions,
+                has_objectives=_pdf_extract.has_objectives,
+                has_grades_table=_pdf_extract.has_grades_table,
+                has_ministry_header=_pdf_extract.has_ministry_header,
+                detected_keywords=_pdf_extract.detected_keywords,
+                teacher_name=teacher.name,
+                subject=teacher.subject,
+                stage=teacher.stage,
+                grades=teacher.grades,
+            )
+
+            if _pdf_preanalysis:
+                # Build a rich transcript for the main GPT call
+                _doc_type   = _pdf_preanalysis.get("document_type", "")
+                _doc_cat    = _pdf_preanalysis.get("category", "")
+                _doc_title  = _pdf_preanalysis.get("title", "")
+                _doc_desc   = _pdf_preanalysis.get("description", "")
+                _doc_kws    = ", ".join(_pdf_preanalysis.get("keywords") or [])
+                transcript = (
+                    f"اسم الملف: {file_name or safe_filename}\n"
+                    f"نوع الوثيقة (تحليل ذكي): {_doc_type}\n"
+                    f"التصنيف المقترح: {_doc_cat}\n"
+                    f"العنوان المقترح: {_doc_title}\n"
+                    f"الوصف: {_doc_desc}\n"
+                    f"كلمات مفتاحية: {_doc_kws}\n\n"
+                    f"محتوى الملف (مستخرج):\n{_pdf_text[:1500]}"
+                )
+                logger.info(
+                    "[PDF ANALYSIS DONE] teacher_id=%d type=%r cat=%r title=%r conf=%.2f",
+                    teacher.id,
+                    _doc_type,
+                    _doc_cat,
+                    _doc_title,
+                    float(_pdf_preanalysis.get("confidence", 0)),
+                )
+            else:
+                # GPT analysis failed — fall back to raw text for main GPT
+                transcript = (
+                    f"اسم الملف: {file_name or safe_filename}\n\n"
+                    f"محتوى الملف (مستخرج):\n{_pdf_text[:2000]}"
+                )
+                logger.info("[PDF ANALYSIS DONE] teacher_id=%d — no pre-analysis, using raw text", teacher.id)
+
         else:
-            # Scanned PDF or empty — use filename as only context hint
+            # Scanned PDF or empty — only filename hint available
             transcript = f"ملف PDF: {file_name or safe_filename or 'غير محدد'}"
             logger.info(
                 "[PDF NO TEXT] teacher_id=%d — scanned/empty PDF, using filename hint",
@@ -1055,7 +1118,9 @@ async def whatsapp_webhook(
         if intent == "url_link" and ev_type == "text":
             ev_type = "url"   # ensure URL text messages are stored as "url" type
 
-        # Normalise category: if GPT returned an unknown category, use the closest default
+        # Normalise category: if GPT returned an unknown category, use the closest default.
+        # For PDFs: if pre-analysis produced a high-confidence category, prefer it when
+        # the main GPT returned a generic/wrong category or had low confidence.
         gpt_category = (decision["category"] or "").strip()
         if not gpt_category or gpt_category not in ALLOWED_CATEGORIES:
             fallback_cat = _MEDIA_DEFAULT_CATEGORY.get(ev_type, "نشاط صفي")
@@ -1064,7 +1129,53 @@ async def whatsapp_webhook(
                     "[CATEGORY FIXED] teacher_id=%d GPT category %r not in allowed list → %r",
                     teacher.id, gpt_category, fallback_cat,
                 )
-            gpt_category = fallback_cat
+            # PDF with pre-analysis: prefer its category over a generic fallback
+            if ev_type == "pdf" and _pdf_preanalysis:
+                _pre_cat = (_pdf_preanalysis.get("category") or "").strip()
+                _pre_conf = float(_pdf_preanalysis.get("confidence") or 0)
+                if _pre_cat and _pre_cat in ALLOWED_CATEGORIES and _pre_conf >= 0.70:
+                    gpt_category = _pre_cat
+                    logger.info(
+                        "[PDF CAT OVERRIDE] teacher_id=%d using pre-analysis cat=%r conf=%.2f",
+                        teacher.id, _pre_cat, _pre_conf,
+                    )
+                else:
+                    gpt_category = fallback_cat
+            else:
+                gpt_category = fallback_cat
+
+        # PDF: if pre-analysis has higher-confidence category than main GPT's generic result,
+        # allow the pre-analysis to override (content-based beats generic fallback).
+        elif ev_type == "pdf" and _pdf_preanalysis:
+            _pre_cat  = (_pdf_preanalysis.get("category") or "").strip()
+            _pre_conf = float(_pdf_preanalysis.get("confidence") or 0)
+            _gpt_conf = float(decision.get("confidence") or 0)
+            # Override if pre-analysis is significantly more confident (≥0.80) and GPT was uncertain
+            if (
+                _pre_cat
+                and _pre_cat in ALLOWED_CATEGORIES
+                and _pre_conf >= 0.80
+                and _gpt_conf < 0.75
+                and _pre_cat != gpt_category
+            ):
+                logger.info(
+                    "[PDF CAT OVERRIDE] teacher_id=%d pre=%r(%.2f) > gpt=%r(%.2f)",
+                    teacher.id, _pre_cat, _pre_conf, gpt_category, _gpt_conf,
+                )
+                gpt_category = _pre_cat
+
+        # PDF: enrich title/description from pre-analysis if GPT title is too generic
+        _gpt_title = decision["title"] or ""
+        _gpt_desc  = decision.get("description") or ""
+        if ev_type == "pdf" and _pdf_preanalysis:
+            _pre_title = (_pdf_preanalysis.get("title") or "").strip()
+            _pre_desc  = (_pdf_preanalysis.get("description") or "").strip()
+            _pre_conf  = float(_pdf_preanalysis.get("confidence") or 0)
+            # Use pre-analysis title when it's more specific and GPT's is too short/generic
+            if _pre_title and (not _gpt_title or len(_gpt_title) < 5 or _pre_conf >= 0.80):
+                _gpt_title = _pre_title
+            if _pre_desc and (not _gpt_desc or len(_gpt_desc) < 10):
+                _gpt_desc = _pre_desc
 
         # ── Pre-save deduplication checks ─────────────────────────────────────
         _content_hash: str | None = media_hash   # already computed for media
@@ -1127,10 +1238,12 @@ async def whatsapp_webhook(
                     file_name=safe_filename or file_name,
                     mime_type=mime_type,
                     category=gpt_category,
-                    title=decision["title"] or f"شاهد {ev_type}",
-                    description=decision.get("description"),
+                    title=_gpt_title or f"شاهد {ev_type}",
+                    description=_gpt_desc or decision.get("description"),
                     grade=decision.get("grade"),
-                    subject=decision.get("subject"),
+                    subject=decision.get("subject") or (
+                        _pdf_preanalysis.get("subject") if _pdf_preanalysis else None
+                    ),
                     content_hash=_content_hash,
                     # force_saved = GPT didn't decide to save, system overrode.
                     # Exporter normalises these automatically before PDF generation.
@@ -1166,11 +1279,28 @@ async def whatsapp_webhook(
                     stage=teacher.stage, grades=teacher.grades,
                     school_name=teacher.school_name,
                 )
-                _pdf_fallback_title = (
-                    file_name.replace(".pdf", "").replace("_", " ").replace("-", " ")
-                    if file_name else "ملف PDF"
-                )
-                _pdf_fallback_cat = _infer_pdf_category_from_name(file_name or safe_filename or "")
+                # Prefer pre-analysis results if available; fall back to filename inference
+                if _pdf_preanalysis:
+                    _pdf_fallback_title = (
+                        _pdf_preanalysis.get("title")
+                        or (file_name.replace(".pdf", "").replace("_", " ").replace("-", " ") if file_name else "ملف PDF")
+                    )
+                    _pdf_fallback_cat = (
+                        _pdf_preanalysis.get("category")
+                        or _infer_pdf_category_from_name(file_name or safe_filename or "")
+                    )
+                    _pdf_fallback_desc = (
+                        _pdf_preanalysis.get("description")
+                        or "ملف PDF تم حفظه — تعذّر التحليل التلقائي."
+                    )
+                else:
+                    _pdf_fallback_title = (
+                        file_name.replace(".pdf", "").replace("_", " ").replace("-", " ")
+                        if file_name else "ملف PDF"
+                    )
+                    _pdf_fallback_cat = _infer_pdf_category_from_name(file_name or safe_filename or "")
+                    _pdf_fallback_desc = "ملف PDF تم حفظه — تعذّر التحليل التلقائي."
+
                 create_evidence(
                     db=db,
                     teacher_id=teacher.id,
@@ -1183,13 +1313,14 @@ async def whatsapp_webhook(
                     mime_type=mime_type,
                     category=_pdf_fallback_cat,
                     title=_pdf_fallback_title,
-                    description="ملف PDF تم حفظه — تعذّر التحليل التلقائي.",
+                    description=_pdf_fallback_desc,
                     content_hash=media_hash,
                     ai_status="fallback",
                 )
                 logger.info(
-                    "[PDF SAVED] teacher_id=%d (GPT failure fallback) cat=%r title=%r",
+                    "[PDF SAVED] teacher_id=%d (GPT failure fallback) cat=%r title=%r src=%s",
                     teacher.id, _pdf_fallback_cat, _pdf_fallback_title,
+                    "preanalysis" if _pdf_preanalysis else "filename",
                 )
                 background_tasks.add_task(
                     send_whatsapp_message,

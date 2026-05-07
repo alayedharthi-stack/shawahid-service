@@ -1008,3 +1008,182 @@ def analyze_portfolio_sync(
     except Exception as exc:
         logger.warning("[PORTFOLIO ANALYSIS FAILED] error=%s", exc)
         return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PDF DOCUMENT INTELLIGENCE — classify & enrich PDFs from actual content
+# ══════════════════════════════════════════════════════════════════════════════
+
+_PDF_ANALYSIS_SYSTEM = """\
+أنت محلّل وثائق تربوي متخصص في ملفات المعلمين بوزارة التعليم السعودية.
+مهمتك: تحليل محتوى ملف PDF المُرفق وتحديد نوعه ومحتواه بدقة.
+
+══ أنواع الوثائق التي تواجهها ══
+- خطة تعلم (فصلية / أسبوعية / يومية / درسية)
+- توزيع منهج (محتوى الفصل الدراسي)
+- اختبار أو مهمة أدائية
+- ورقة عمل أو نشاط صفي
+- سجل متابعة طلاب
+- كشف درجات أو رصد نتائج
+- تقرير أداء أو تحليل نتائج
+- تعميم إداري أو قرار
+- شهادة دورة أو تقدير
+- خطاب رسمي أو مراسلة
+- مبادرة أو مشروع تعليمي
+- مادة إثرائية أو ملحق تعليمي
+
+══ مؤشرات المحتوى الذكية ══
+وجود هذه العناصر يساعد في التصنيف:
+- "الأهداف / نواتج التعلم / بنهاية الدرس يستطيع" → خطة تعلم
+- "الدرجة الكلية / توزيع الدرجات / اختر / أجب" → اختبار أو ورقة عمل
+- "الأسبوع / الوحدة / الوحدة الأولى / جدول الحصص" → توزيع منهج أو خطة
+- "اسم الطالب / رقم الطالب / الحضور / الغياب" → سجل متابعة
+- "المعدل / التقدير / ممتاز / جيد جدًا / جيد / مقبول" → كشف درجات
+- "تعميم رقم / قرار رقم / المديرية العامة" → تعميم إداري
+- "المشارك / يُشهد / اجتاز بنجاح" → شهادة أو تقدير
+
+══ قواعد التحليل ══
+1. اعتمد على المحتوى أولاً، واسم الملف كدليل ثانوي فقط.
+2. إذا لم تجد دليلاً كافياً → صنّف كـ "ملف إداري" بدلاً من التخمين.
+3. العنوان الذكي يجب أن يكون وصفياً وليس اسم الملف الحرفي.
+4. لا تصحّح أسماء الأشخاص أو المدارس أو المناطق.
+5. إذا الوثيقة تخص مادة معينة، استخرجها.
+
+أرجع JSON فقط بهذا الشكل:
+{
+  "document_type": "خطة درس | توزيع منهج | اختبار | ورقة عمل | سجل متابعة | كشف درجات | تقرير | تعميم | شهادة | مادة إثرائية | ملف إداري | أخرى",
+  "category": "أحد التصنيفات الرسمية المناسب",
+  "title": "عنوان وصفي ذكي يعكس محتوى الملف",
+  "description": "وصف مختصر جملتان يشرح محتوى الوثيقة وقيمتها التربوية",
+  "subject": "المادة الدراسية إن وُجدت أو null",
+  "grade": "الصف أو المرحلة إن وُجدت أو null",
+  "ministry_standard": "المعيار الوزاري الأقرب أو null",
+  "keywords": ["كلمة1", "كلمة2", "كلمة3"],
+  "confidence": 0.90,
+  "evidence_quality": "قوي | متوسط | ضعيف",
+  "notes": "ملاحظة تقييمية مختصرة إن وجدت أو null"
+}\
+"""
+
+_PDF_ANALYSIS_USER_TEMPLATE = """\
+بيانات المعلم:
+  الاسم: {teacher_name}
+  المادة: {subject}
+  المرحلة: {stage}
+  الصفوف: {grades}
+
+اسم الملف: {filename}
+عدد الصفحات: {page_count}
+الصفحات التي تحتوي نصًا: {pages_with_text}
+
+مؤشرات بنية الوثيقة (مكتشفة تلقائيًا):
+{signals}
+
+السطور الأولى من الوثيقة (منطقة العنوان):
+---
+{first_lines}
+---
+
+محتوى الوثيقة المستخرج:
+---
+{content}
+---
+
+حلّل هذه الوثيقة وأعد JSON التصنيف.\
+"""
+
+
+def analyze_pdf_document(
+    *,
+    file_path: str | None = None,
+    extracted_text: str | None = None,
+    first_lines: str | None = None,
+    filename: str | None = None,
+    page_count: int = 1,
+    pages_with_text: int = 0,
+    has_tables: bool = False,
+    has_questions: bool = False,
+    has_objectives: bool = False,
+    has_grades_table: bool = False,
+    has_ministry_header: bool = False,
+    detected_keywords: list[str] | None = None,
+    teacher_name: str | None = None,
+    subject: str | None = None,
+    stage: str | None = None,
+    grades: str | None = None,
+) -> dict | None:
+    """
+    Deep PDF document analysis using GPT.
+
+    Accepts either:
+    - A PDFExtract object's fields (preferred)
+    - Raw extracted_text (fallback)
+
+    Returns a dict with: document_type, category, title, description,
+    subject, grade, ministry_standard, keywords, confidence, evidence_quality, notes.
+    Returns None on any failure — caller uses filename-based fallback.
+    """
+    if not settings.OPENAI_API_KEY:
+        return None
+
+    content = (extracted_text or "").strip()
+    if not content:
+        return None
+
+    def _s(v, default="غير محدد"):
+        v = (v or "").strip()
+        return v if v and v.lower() not in ("null", "none") else default
+
+    # Build signals string
+    signals_parts: list[str] = []
+    if has_objectives:      signals_parts.append("✓ يحتوي أهداف/نواتج تعلم")
+    if has_questions:       signals_parts.append("✓ يحتوي أسئلة أو تمارين")
+    if has_grades_table:    signals_parts.append("✓ يحتوي جدول درجات أو رصد")
+    if has_tables:          signals_parts.append("✓ يحتوي جداول")
+    if has_ministry_header: signals_parts.append("✓ يحتوي ترويسة وزارية")
+    if detected_keywords:   signals_parts.append(f"كلمات مكتشفة: {', '.join(detected_keywords)}")
+    signals_str = "\n".join(signals_parts) if signals_parts else "لا توجد مؤشرات واضحة"
+
+    user_prompt = _PDF_ANALYSIS_USER_TEMPLATE.format(
+        teacher_name=_s(teacher_name),
+        subject=_s(subject),
+        stage=_s(stage),
+        grades=_s(grades),
+        filename=_s(filename, "غير معروف"),
+        page_count=page_count,
+        pages_with_text=pages_with_text,
+        signals=signals_str,
+        first_lines=(first_lines or content[:300]).strip(),
+        content=content[:2500],
+    )
+
+    model = settings.OPENAI_DEEP_MODEL or settings.OPENAI_EXPORT_MODEL or "gpt-4o"
+
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            timeout=float(settings.OPENAI_TIMEOUT_SECONDS) * 2,
+        )
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": _PDF_ANALYSIS_SYSTEM},
+                {"role": "user",   "content": user_prompt},
+            ],
+            max_tokens=500,
+            temperature=0.1,    # Very low temp — classification must be consistent
+            response_format={"type": "json_object"},
+        )
+        raw = (response.choices[0].message.content or "").strip()
+        data = json.loads(raw)
+        logger.info(
+            "[PDF ANALYSIS GPT] model=%s file=%r type=%r cat=%r confidence=%.2f",
+            model, filename, data.get("document_type"), data.get("category"),
+            float(data.get("confidence", 0)),
+        )
+        return data
+    except Exception as exc:
+        logger.warning("[PDF ANALYSIS GPT FAILED] file=%r model=%s error=%s", filename, model, exc)
+        return None
