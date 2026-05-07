@@ -255,6 +255,81 @@ def extract_pdf_text(file_path: str | Path, max_chars: int = 3500) -> str | None
     return result.full_text
 
 
+def generate_pdf_preview(pdf_path: str | Path, max_pixels: int = 800) -> str | None:
+    """
+    Render the first page of a PDF as a JPEG image and return its path.
+
+    Uses PyMuPDF (fitz) for reliable rendering. Falls back gracefully if:
+    - pymupdf is not installed
+    - PDF is encrypted / corrupt
+    - Rendering fails for any reason
+
+    The preview is saved as ``<pdf_path>_preview.jpg`` alongside the original.
+    Returns the preview path on success, None on failure.
+    """
+    pdf_path = Path(pdf_path)
+    preview_path = Path(str(pdf_path) + "_preview.jpg")
+
+    # Return cached preview if it already exists and is non-empty
+    if preview_path.exists() and preview_path.stat().st_size > 0:
+        return str(preview_path)
+
+    if not pdf_path.exists():
+        logger.warning("[PDF PREVIEW] source not found: %s", pdf_path)
+        return None
+
+    try:
+        import fitz  # pymupdf
+
+        doc = fitz.open(str(pdf_path))
+        if not doc.page_count:
+            doc.close()
+            return None
+
+        page = doc[0]
+        # Scale so the longer dimension is ≤ max_pixels
+        rect  = page.rect
+        scale = min(max_pixels / max(rect.width, rect.height), 2.0)
+        mat   = fitz.Matrix(scale, scale)
+        pix   = page.get_pixmap(matrix=mat, alpha=False)
+        pix.save(str(preview_path))
+        doc.close()
+
+        logger.info(
+            "[PDF PREVIEW] generated %s (%.0fx%.0f)",
+            preview_path.name, pix.width, pix.height,
+        )
+        return str(preview_path)
+
+    except ImportError:
+        logger.debug("[PDF PREVIEW] pymupdf not installed — skipping preview generation")
+        return None
+    except Exception as exc:
+        logger.warning("[PDF PREVIEW] failed for %s: %s", pdf_path.name, exc)
+        return None
+
+
+def storage_path_to_file_url(storage_path: str | None, base_url: str) -> str | None:
+    """
+    Convert a local storage_path to a public /files/ URL.
+
+    storage_path is typically an absolute path like:
+        /app/storage/teachers/123/evidences/file_abc.pdf
+    The /files/ static mount serves the storage root, so we strip
+    everything before 'teachers/' and prepend the base URL + /files/.
+    """
+    if not storage_path:
+        return None
+    try:
+        parts = Path(storage_path).parts
+        idx   = next(i for i, p in enumerate(parts) if p == "teachers")
+        rel   = "/".join(parts[idx:])
+        return f"{base_url.rstrip('/')}/files/{rel}"
+    except StopIteration:
+        logger.debug("[FILE URL] 'teachers' not in storage_path: %s", storage_path)
+        return None
+
+
 def detect_evidence_type(mime_type: str | None, file_name: str | None, text: str | None) -> str:
     if not mime_type and not file_name:
         if text and _URL_RE.search(text):

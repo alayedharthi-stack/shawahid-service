@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.models.teacher import Teacher
 from app.models.portfolio_export import PortfolioExport
 from app.services.evidences import get_teacher_evidences, ALLOWED_CATEGORIES
+from app.services.storage import generate_pdf_preview, storage_path_to_file_url
 
 logger = logging.getLogger(__name__)
 
@@ -725,22 +726,54 @@ def _normalize_evidence_for_export(ev) -> dict:
     file_name = _clean_text(ev.file_name)
     mime_type = _clean_text(ev.mime_type)
 
+    # ── Media viewer URL — stable link for each evidence ──────────────────────
+    base_url = settings.effective_base_url
+    media_viewer_url = f"{base_url}/media/{ev.id}"
+
+    # ── File URL via /files/ static mount ─────────────────────────────────────
+    file_public_url = storage_path_to_file_url(ev.storage_path, base_url)
+
+    # ── Resolve thumbnail/preview for different media types ───────────────────
     media_src: str | None = None
+    pdf_preview_src: str | None = None
     media_available = False
+
     if ev_type == "image":
         media_src = _image_data_uri(ev.storage_path)
         media_available = bool(media_src)
+
     elif ev_type == "video":
-        # Video storage_path should be a thumbnail from webhook for new records.
-        # Older records may still point to .mp4; in that case render a video card fallback.
-        media_src = _image_data_uri(ev.storage_path)
-        media_available = bool(media_src or ev.storage_path)
+        # Try thumbnail at <storage_path>_thumb.jpg first (created by webhook).
+        # If storage_path itself is a .jpg (thumbnail stored in place), use it directly.
+        thumb_path = None
+        if ev.storage_path:
+            candidate = ev.storage_path + "_thumb.jpg"
+            if Path(candidate).exists():
+                thumb_path = candidate
+            elif Path(ev.storage_path).suffix.lower() in _IMAGE_EXTS:
+                thumb_path = ev.storage_path
+
+        media_src = _image_data_uri(thumb_path) if thumb_path else None
+        # Video is always "available" if we have a storage_path or media_url
+        media_available = bool(ev.storage_path or media_url)
+
     elif ev_type in ("audio", "voice"):
         media_available = bool(message_text or ev.storage_path)
-    elif ev_type in ("pdf", "document") or file_name:
-        media_available = True
+
+    elif ev_type in ("pdf", "document") or (
+        file_name and file_name.lower().endswith(".pdf")
+    ):
+        # Generate (or load cached) first-page preview image
+        if ev.storage_path and Path(ev.storage_path).exists():
+            preview_path = generate_pdf_preview(ev.storage_path)
+            pdf_preview_src = _image_data_uri(preview_path) if preview_path else None
+        media_available = True  # PDFs are always shown — no silent dropping
+
     elif ev_type == "url":
         media_available = bool(message_text or media_url)
+
+    else:
+        media_available = bool(ev.storage_path or media_url or message_text)
 
     raw_export_text = " ".join(
         value for value in (raw_title, raw_cat, stored_desc, message_text, file_name) if value
@@ -761,6 +794,9 @@ def _normalize_evidence_for_export(ev) -> dict:
         "media_url":     media_url,
         "storage_path":  ev.storage_path,
         "media_src":     media_src,
+        "pdf_preview_src": pdf_preview_src,
+        "media_viewer_url": media_viewer_url,
+        "file_public_url":  file_public_url,
         "media_available": media_available,
         "file_name":     file_name,
         "file_label":    _friendly_file_label(file_name, ev_type, category),

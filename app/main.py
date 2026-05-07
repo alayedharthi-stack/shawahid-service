@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.api import webhook, teachers, evidences, admin, downloads, review
+from app.api import webhook, teachers, evidences, admin, downloads, review, media
 from app.core.config import settings
 
 logging.basicConfig(
@@ -61,6 +61,7 @@ app.include_router(evidences.router)
 app.include_router(admin.router)
 app.include_router(downloads.router)
 app.include_router(review.router)
+app.include_router(media.router)
 
 
 # ── Health endpoints ───────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.db.base import get_db
 from app.services.teachers import get_or_create_teacher, get_teacher_by_id, update_teacher
 from app.services.evidences import create_evidence, get_teacher_evidences, set_enrichment_teacher_context, verify_evidence_in_export
-from app.services.storage import download_and_save, detect_evidence_type, extract_urls, extract_pdf_text, extract_pdf_smart
+from app.services.storage import download_and_save, detect_evidence_type, extract_urls, extract_pdf_text, extract_pdf_smart, generate_pdf_preview
 from app.services.deduplication import (
     is_exact_duplicate, find_near_duplicate_text,
     hash_text, hash_url,
@@ -1302,6 +1302,10 @@ async def whatsapp_webhook(
                         "[PDF DB SAVE SUCCESS] teacher_id=%d id=%d visible_in_export=True",
                         teacher.id, evidence.id,
                     )
+                    # ── Generate PDF first-page preview image eagerly in background ──
+                    if storage_path:
+                        _pdf_sp = storage_path
+                        background_tasks.add_task(generate_pdf_preview, _pdf_sp)
 
                 if ev_type == "pdf":
                     log_tag = "[PDF SAVED]"
@@ -1385,6 +1389,9 @@ async def whatsapp_webhook(
                     teacher.id, _saved_ev.id, _pdf_fallback_cat, _pdf_fallback_title,
                     "preanalysis" if _pdf_preanalysis else "filename",
                 )
+                # Generate PDF preview image in background eagerly
+                if storage_path:
+                    background_tasks.add_task(generate_pdf_preview, storage_path)
                 background_tasks.add_task(
                     send_whatsapp_message,
                     teacher.phone,
