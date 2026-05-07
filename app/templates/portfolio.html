@@ -1029,6 +1029,24 @@
        SMART LAYOUT v2 — Compact admin gallery + importance scoring
        ══════════════════════════════════════════════════════════════════ */
 
+    /* PDF preview thumbnail — strict height cap so the description AND the
+       thumbnail always live on the same page. Without this, A4 portrait
+       previews rendered at 340px wide become ~480px tall and force a
+       page-break that orphans the preview alone on the next page. */
+    .pdf-preview-img {
+      display: block;
+      max-width: 260px;
+      max-height: 200px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      border-radius: 6px;
+      border: 1px solid #e0e7e5;
+      margin: 8px 0;
+      background: #fafbfc;
+    }
+
+
     /* Compact 2-column grid for admin/reference categories.
        Replaces the per-card full-page layout with a dense gallery. */
     .compact-grid {
@@ -1464,11 +1482,14 @@
           <div style="flex:1;">
             <div class="file-name">{{ ev.file_label or ev.title or 'ملف مرفق' }}</div>
             <div class="file-type">{{ ev.file_type_label or 'ملف' }}</div>
-            {# Show PDF first-page preview if available #}
+            {# Show PDF first-page preview if available — height-capped so the
+               entire evidence card always fits in one A4 page (otherwise the
+               description splits onto one page and the preview alone takes
+               the next, leaving big empty gaps). #}
             {% if ev.pdf_preview_src %}
             <img src="{{ ev.pdf_preview_src }}"
                  alt="معاينة الملف"
-                 style="width:100%;max-width:340px;border-radius:6px;border:1px solid #e0e7e5;margin:8px 0;" />
+                 class="pdf-preview-img" />
             {% endif %}
             {# Always link to media viewer — stable endpoint, never a temp CDN URL #}
             <a class="media-action" href="{{ ev.media_viewer_url }}" target="_blank" rel="noopener noreferrer">📂 فتح الملف</a>
