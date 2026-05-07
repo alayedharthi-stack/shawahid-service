@@ -1,117 +1,74 @@
 """
-Deduplication service for Shawahid AI.
+services.deduplication — Phase-7 thin adapter on ``storage_engine.dedup``
++ legacy difflib text-similarity helpers.
 
-Three deduplication layers:
-  1. Media / file  — SHA-256 of raw bytes (exact match)
-  2. Text message  — difflib ratio on cleaned Arabic text (≥ 90% → duplicate)
-  3. URL           — normalized URL hash (exact match, ignores query params)
+Responsibility split
+====================
+* **Hashing primitives** — ``hash_bytes``, ``hash_text``, ``hash_url``
+  delegate to ``storage_engine.hashing``.
+* **Hash-based dedup** — ``is_exact_duplicate`` / ``get_evidence_by_hash``
+  delegate to ``storage_engine.dedup``.
+* **Near-duplicate text** (difflib) — kept here, not a storage_engine
+  concern.
+* **Export-time dedup** (``deduplicate_for_export``) — kept here, used
+  only by the export pipeline.
 
-Used at two checkpoints:
-  • Save time   (webhook.py)  — stop before create_evidence()
-  • Export time (exporter.py) — filter evidences list before rendering PDF
+This module is therefore *backwards-compatible*: every existing caller
+keeps working untouched.
 """
+from __future__ import annotations
+
 import difflib
-import hashlib
 import logging
-import re
-import unicodedata
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy.orm import Session
 
 from app.models.evidence import Evidence
+from app.storage_engine.dedup import (
+    find_duplicate_by_hash as _engine_find_duplicate_by_hash,
+)
+from app.storage_engine.hashing import (
+    _clean_text as _clean,
+    hash_bytes,
+    hash_text,
+    hash_url,
+)
 
 logger = logging.getLogger(__name__)
 
-# ── Thresholds ────────────────────────────────────────────────────────────────
-TEXT_DUPLICATE_RATIO  = 0.90   # ≥ 90% → skip (exact duplicate)
-TEXT_MIN_LENGTH       = 20     # shorter texts are not compared
-TEXT_LOOKBACK_DAYS    = 90     # only compare against evidences from last N days
-TEXT_LOOKBACK_LIMIT   = 60     # max DB rows to load for comparison
+
+# ── Thresholds (preserved from legacy module) ────────────────────────────────
+TEXT_DUPLICATE_RATIO  = 0.90
+TEXT_MIN_LENGTH       = 20
+TEXT_LOOKBACK_DAYS    = 90
+TEXT_LOOKBACK_LIMIT   = 60
 
 
-# ── Hash helpers ──────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+# Hash-based dedup — adapter
+# ──────────────────────────────────────────────────────────────────────────────
 
-def hash_bytes(data: bytes) -> str:
-    """SHA-256 of raw file bytes — for images, videos, audio, documents."""
-    return hashlib.sha256(data).hexdigest()
-
-
-def hash_text(text: str) -> str:
-    """SHA-256 of cleaned, normalised Arabic text."""
-    return hashlib.sha256(_clean(text).encode("utf-8")).hexdigest()
-
-
-def hash_url(url: str) -> str:
-    """
-    SHA-256 of normalised URL.
-    Strips query-params and fragment; lowercases scheme + host + path.
-    e.g. https://youtu.be/abc?t=10 and https://youtu.be/abc become the same hash.
-    """
-    try:
-        p = urlparse(url.strip())
-        normalised = urlunparse((
-            p.scheme.lower(),
-            p.netloc.lower(),
-            p.path.rstrip("/"),
-            "", "", "",          # strip params, query, fragment
-        ))
-        return hashlib.sha256(normalised.encode()).hexdigest()
-    except Exception:
-        return hashlib.sha256(url.strip().encode()).hexdigest()
-
-
-# ── Arabic text cleaning ──────────────────────────────────────────────────────
-
-def _clean(text: str) -> str:
-    """Normalise Arabic text for similarity comparison."""
-    # Unicode normalisation
-    text = unicodedata.normalize("NFKD", text)
-    # Remove Arabic diacritics (harakat / tashkeel)
-    text = re.sub(r"[\u064B-\u065F\u0670]", "", text)
-    # Unify alef variants (أإآٱ → ا)
-    text = re.sub(r"[أإآٱ]", "ا", text)
-    # Unify teh marbuta (ة → ه)
-    text = re.sub(r"ة", "ه", text)
-    # Collapse whitespace
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-
-# ── DB-level duplicate checks ─────────────────────────────────────────────────
 
 def is_exact_duplicate(db: Session, teacher_id: int, content_hash: str) -> bool:
+    """Return ``True`` when an evidence with the same content_hash exists
+    for this teacher (delegates to ``storage_engine.dedup``).
     """
-    Returns True if an evidence with the same content_hash already exists
-    for this teacher. Works for media, text, and URL hashes.
-    """
-    exists = (
-        db.query(Evidence.id)
-        .filter(
-            Evidence.teacher_id   == teacher_id,
-            Evidence.content_hash == content_hash,
-        )
-        .first()
-    )
-    return exists is not None
+    return _engine_find_duplicate_by_hash(db, teacher_id, content_hash) is not None
 
 
-def get_evidence_by_hash(db: Session, teacher_id: int, content_hash: str) -> Evidence | None:
-    """
-    Return the existing Evidence row matching the given content_hash for a teacher.
-    Used to surface category / title in duplicate notifications.
-    Returns None if not found.
-    """
-    return (
-        db.query(Evidence)
-        .filter(
-            Evidence.teacher_id   == teacher_id,
-            Evidence.content_hash == content_hash,
-        )
-        .order_by(Evidence.created_at.desc())
-        .first()
-    )
+def get_evidence_by_hash(
+    db: Session,
+    teacher_id: int,
+    content_hash: str,
+) -> Evidence | None:
+    """Return the most recent matching Evidence row for this teacher."""
+    return _engine_find_duplicate_by_hash(db, teacher_id, content_hash)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Near-duplicate text (kept here — not a storage_engine concern)
+# ──────────────────────────────────────────────────────────────────────────────
 
 
 def find_near_duplicate_text(
@@ -119,14 +76,11 @@ def find_near_duplicate_text(
     teacher_id: int,
     text: str,
 ) -> Evidence | None:
-    """
-    Compare new text against the teacher's recent text evidences.
-    Returns the existing Evidence if similarity ≥ TEXT_DUPLICATE_RATIO, else None.
-
-    Only called for pure-text messages (no media).
+    """Return an existing text Evidence whose cleaned content is ≥
+    ``TEXT_DUPLICATE_RATIO`` similar to ``text``.
     """
     if len(text.strip()) < TEXT_MIN_LENGTH:
-        return None   # Too short to compare meaningfully
+        return None
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=TEXT_LOOKBACK_DAYS)
     recent: list[Evidence] = (
@@ -157,33 +111,27 @@ def find_near_duplicate_text(
     return None
 
 
-# ── Export-time deduplication ──────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+# Export-time deduplication (kept here — only consumed by export pipeline)
+# ──────────────────────────────────────────────────────────────────────────────
+
 
 def _best_of(a: dict, b: dict) -> dict:
-    """
-    Given two normalised evidence dicts, return the one with richer metadata.
-    Preference: longer description > longer title > later created_at.
-    """
     score_a = len(a.get("description") or "") + len(a.get("title") or "") * 0.5
     score_b = len(b.get("description") or "") + len(b.get("title") or "") * 0.5
     return a if score_a >= score_b else b
 
 
 def _title_key(title: str) -> str:
-    """Normalised title for near-duplicate title detection."""
     return _clean(title).lower()
 
 
 def deduplicate_for_export(evidences: list[dict]) -> list[dict]:
-    """
-    Remove duplicate evidences from the normalised list before PDF rendering.
+    """Drop duplicates from a normalised evidence list before PDF render.
 
-    Deduplication rules (applied in order):
-      1. Same content_hash → keep the one with richer metadata.
-      2. Same normalised title within same category → keep the better one.
-
-    Preserves original order of the first-seen evidence.
-    Only hashes/titles that are non-trivial are compared.
+    Two passes: content_hash, then (category, title) within the same
+    category. Trivial titles are skipped so multiple visual evidences
+    keep their own card.
     """
     _TRIVIAL_TITLES = {
         _title_key(t) for t in (
@@ -195,7 +143,6 @@ def deduplicate_for_export(evidences: list[dict]) -> list[dict]:
         )
     }
 
-    # Pass 1: deduplicate by content_hash
     seen_hashes: dict[str, dict] = {}
     no_hash: list[dict] = []
     for ev in evidences:
@@ -210,8 +157,7 @@ def deduplicate_for_export(evidences: list[dict]) -> list[dict]:
 
     deduped_by_hash = list(seen_hashes.values()) + no_hash
 
-    # Pass 2: deduplicate by title within same category (skip trivial titles)
-    seen_titles: dict[tuple[str, str], dict] = {}  # (category, title_key) → ev
+    seen_titles: dict[tuple[str, str], dict] = {}
     result: list[dict] = []
     for ev in deduped_by_hash:
         tk = _title_key(ev.get("title") or "")
@@ -219,7 +165,7 @@ def deduplicate_for_export(evidences: list[dict]) -> list[dict]:
         key = (cat, tk)
 
         if tk in _TRIVIAL_TITLES:
-            result.append(ev)   # trivial titles: no title-dedup (all images save individually)
+            result.append(ev)
             continue
 
         if key in seen_titles:
@@ -237,3 +183,13 @@ def deduplicate_for_export(evidences: list[dict]) -> list[dict]:
         logger.info("[EXPORT DEDUP] removed %d duplicate(s) before PDF render", n_removed)
 
     return result
+
+
+# Re-exports for backwards compatibility.
+__all__ = [
+    "TEXT_DUPLICATE_RATIO", "TEXT_MIN_LENGTH",
+    "TEXT_LOOKBACK_DAYS", "TEXT_LOOKBACK_LIMIT",
+    "hash_bytes", "hash_text", "hash_url",
+    "is_exact_duplicate", "get_evidence_by_hash",
+    "find_near_duplicate_text", "deduplicate_for_export",
+]
