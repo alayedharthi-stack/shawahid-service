@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import get_db
 from app.services.teachers import get_or_create_teacher, get_teacher_by_id, update_teacher
-from app.services.evidences import create_evidence, get_teacher_evidences
+from app.services.evidences import create_evidence, get_teacher_evidences, set_enrichment_teacher_context
 from app.services.storage import download_and_save, detect_evidence_type, extract_urls
 from app.services.deduplication import (
     is_exact_duplicate, find_near_duplicate_text,
@@ -1029,6 +1029,14 @@ async def whatsapp_webhook(
             logger.info("[DUPLICATE SKIPPED] no evidence created teacher_id=%d type=%s", teacher.id, ev_type)
         else:
             try:
+                # Provide teacher context for deep AI enrichment
+                set_enrichment_teacher_context(
+                    name=teacher.name,
+                    subject=teacher.subject,
+                    stage=teacher.stage,
+                    grades=teacher.grades,
+                    school_name=teacher.school_name,
+                )
                 is_force_saved = bool(decision.get("_force_saved"))
                 evidence = create_evidence(
                     db=db,

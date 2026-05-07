@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     OPENAI_EXPORT_MODEL: str = "gpt-4o"
     OPENAI_TIMEOUT_SECONDS: int = 30
     OPENAI_MODEL: str = "gpt-4o"   # GPT brain primary model (override via env)
+    # Deep analysis model — used for evidence enrichment and portfolio analysis.
+    # Set to "o3-mini", "o1-mini", or "gpt-4o" depending on budget preference.
+    # Higher quality = more cost. gpt-4o is the safe default.
+    OPENAI_DEEP_MODEL: str = "gpt-4o"
 
     # ── Moyasar Payment Gateway ───────────────────────────────────────────────
     MOYASAR_SECRET_KEY: str = ""

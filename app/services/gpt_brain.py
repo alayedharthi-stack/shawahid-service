@@ -625,3 +625,386 @@ def _failure_decision() -> GPTDecision:
         "needs_reply":          True,
         "reply_style":          "medium",
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DEEP EVIDENCE ANALYSIS — Ministry of Education Standards Framework
+# ══════════════════════════════════════════════════════════════════════════════
+
+_MINISTRY_STANDARDS_KNOWLEDGE = """\
+══ إطار الكفايات المهنية للمعلم — وزارة التعليم السعودية ══
+
+المجال الأول: التخطيط
+  المعيار 1.1 — إعداد خطط التعلم (الفصلية / الأسبوعية / الدرسية)
+    مؤشرات الأداء: توافر وثائق التخطيط، وضوح الأهداف القابلة للقياس، ربط الأهداف بالمعايير الوطنية.
+    شواهد نموذجية: خطط دراسية، توزيعات منهجية، تحضير الدروس، خرائط المفاهيم.
+
+  المعيار 1.2 — التصميم التعليمي ومراعاة الفروق الفردية
+    مؤشرات الأداء: تنويع مصادر التعلم، تكييف الأنشطة لمستويات مختلفة، استراتيجيات التعلم المتنوعة.
+    شواهد نموذجية: أوراق عمل متدرجة، خطط علاجية، أنشطة إثرائية.
+
+المجال الثاني: التنفيذ
+  المعيار 2.1 — تهيئة بيئة التعلم
+    مؤشرات الأداء: الجو التعليمي الإيجابي، الإدارة الصفية الفاعلة، الاستخدام الأمثل للمساحة والوقت.
+    شواهد نموذجية: صور لترتيب الفصل، مقاطع لإدارة المجموعات، أنشطة تفاعلية.
+
+  المعيار 2.2 — تنوع استراتيجيات التدريس
+    مؤشرات الأداء: توظيف التعلم التعاوني، النشط، بالاكتشاف، حل المشكلات، التفكير الناقد.
+    شواهد نموذجية: صور لمجموعات عمل، مشاريع، عروض طلابية، نقاشات صفية.
+
+  المعيار 2.3 — توظيف التقنية ووسائل التعلم
+    مؤشرات الأداء: استخدام العروض الرقمية، التقنيات التعليمية، مصادر الإنترنت، الوسائل التعليمية.
+    شواهد نموذجية: روابط إثرائية، مقاطع فيديو تعليمية، تطبيقات رقمية، ألواح ذكية.
+
+  المعيار 2.4 — التفاعل وتحفيز المشاركة
+    مؤشرات الأداء: إشراك جميع الطلاب، تحفيز التفاعل، التعزيز الإيجابي، تكريم التميز.
+    شواهد نموذجية: صور تكريم، شهادات طلابية، لوحات الشرف، أنشطة تنافسية.
+
+المجال الثالث: التقويم
+  المعيار 3.1 — تنوع أدوات التقويم
+    مؤشرات الأداء: التقويم التكويني (أثناء التعلم)، الختامي (نهاية الوحدة)، مهام الأداء والمشاريع.
+    شواهد نموذجية: اختبارات، أوراق عمل، مهام أدائية، ملاحظات مباشرة.
+
+  المعيار 3.2 — تحليل نتائج المتعلمين وتشخيص مستوياتهم
+    مؤشرات الأداء: قراءة بيانات الأداء، تحديد نقاط الضعف والقوة، بناء خطط علاجية.
+    شواهد نموذجية: جداول رصد الدرجات، تحليل نتائج، خطط علاجية.
+
+  المعيار 3.3 — التغذية الراجعة
+    مؤشرات الأداء: تقديم تغذية راجعة فورية وبنّاءة، تمكين التقويم الذاتي لدى الطلاب.
+    شواهد نموذجية: تصحيحات مع تعليقات، أوراق تقويم ذاتي.
+
+المجال الرابع: البيئة والشراكة
+  المعيار 4.1 — الإدارة الصفية والانضباط الإيجابي
+    مؤشرات الأداء: قواعد واضحة، إدارة وقت الحصة، معالجة السلوك باحترافية.
+    شواهد نموذجية: لوائح الصف، سجلات الحضور، وثائق إدارية.
+
+  المعيار 4.2 — التواصل مع أولياء الأمور والمجتمع
+    مؤشرات الأداء: التواصل الدوري، إشراك الأسرة، تبادل المعلومات.
+    شواهد نموذجية: رسائل أولياء الأمور، اجتماعات، زيارات ميدانية.
+
+  المعيار 4.3 — أداء الواجبات الوظيفية
+    مؤشرات الأداء: الالتزام بالأنظمة واللوائح، تسليم الوثائق في وقتها، المشاركة المدرسية.
+    شواهد نموذجية: ملفات إدارية، جداول، تقارير، شهادات مشاركة.
+
+المجال الخامس: التطوير المهني
+  المعيار 5.1 — التطوير الذاتي المستمر
+    مؤشرات الأداء: الانخراط في الدورات، مجتمعات التعلم المهنية، البحث الإجرائي.
+    شواهد نموذجية: شهادات دورات، تقارير بحثية، مبادرات تطويرية.
+
+  المعيار 5.2 — التأمل المهني
+    مؤشرات الأداء: تحليل الممارسات الذاتية، البحث عن التغذية الراجعة، التطوير المستمر للكفايات.
+    شواهد نموذجية: يوميات مهنية، تقارير تأملية، ملاحظات تطويرية.\
+"""
+
+_DEEP_EVIDENCE_SYSTEM = """\
+أنت خبير تربوي متخصص في تقييم أداء المعلمين وفق إطار الكفايات المهنية لوزارة التعليم السعودية.
+مهمتك: تحليل كل شاهد من شواهد المعلم وتحويله إلى توثيق تربوي احترافي مرتبط بمعايير الوزارة الرسمية.
+
+%MINISTRY_STANDARDS%
+
+══ مبادئ التحليل الجوهرية ══
+1. لا تُصدر حكمًا عامًا مثل "صورة توثيقية تبرز نشاطًا تعليميًا" — هذا ضعيف.
+2. اقرأ الوصف والعنوان والسياق والنوع معًا قبل الحكم.
+3. صورة طلاب حول طاولة قد تعني: تعلم تعاوني، أو تنفيذ درس، أو تقويم جماعي — اختر بناءً على السياق.
+4. اربط كل شاهد بمعيار وزاري محدد، وليس تصنيفًا عامًا فقط.
+5. الأثر على الطلاب يجب أن يكون واقعيًا، لا مبالغًا فيه.
+6. استخدم لغة الدليل الرسمي، وليس عبارات إنشائية مكررة.
+7. لا تصحّح أسماء الأشخاص (معلمين أو طلاب) — اتركها كما هي.
+
+══ مرحلة التحليل ثم المراجعة الذاتية ══
+اتبع هذا المنهج الإلزامي:
+الخطوة أ) حلّل الشاهد وضع مسودة.
+الخطوة ب) راجع نفسك:
+  - هل الوصف خاص بهذا الشاهد أم قالب عام؟
+  - هل المعيار الوزاري المختار دقيق أم تخميني؟
+  - هل الأثر على الطلاب مقنع وواقعي؟
+  - هل التأمل مهني حقيقي أم إنشاء فارغ؟
+الخطوة ج) احذف أي جملة عامة وأعد كتابتها خاصة بهذا الشاهد فقط.\
+"""
+
+_DEEP_EVIDENCE_USER_TEMPLATE = """\
+بيانات المعلم:
+  الاسم: {teacher_name}
+  المادة: {subject}
+  المرحلة الدراسية: {stage}
+  الصفوف: {grades}
+  المدرسة: {school_name}
+
+بيانات الشاهد:
+  العنوان: {title}
+  الوصف الأصلي: {description}
+  التصنيف الحالي: {category}
+  نوع الوسيط: {ev_type}
+  رقم الشاهد في الملف: {ev_index} من {total_evs}
+
+المحاور الموجودة في الملف كاملًا: {all_categories}
+
+══ المطلوب ══
+اكتب التحليل التربوي الاحترافي بالتنسيق التالي حرفيًا:
+
+وصف الشاهد:
+[وصف دقيق ومحدد لما يوثقه هذا الشاهد — جملة أو جملتان]
+
+الهدف التربوي:
+[الهدف الفعلي الذي يخدمه هذا الشاهد في إطار الكفايات المهنية]
+
+الأثر على الطلاب:
+[نتيجة أو ملاحظة واقعية تبيّن أثر هذا النشاط على التعلم]
+
+تأمل المعلم:
+[تحليل مهني صادق يُظهر وعي المعلم بممارسته وكيفية تطويرها]
+
+الارتباط بمعايير الوزارة:
+[المعيار الرسمي المباشر من إطار الكفايات — المجال ورقم المعيار والمؤشر]
+
+ملاحظة التقييم:
+[هل الشاهد قوي / متوسط / ضعيف؟ وسبب موجز في جملة واحدة]\
+"""
+
+
+async def analyze_evidence_deep(
+    *,
+    title: str | None = None,
+    description: str | None = None,
+    category: str | None = None,
+    evidence_type: str | None = None,
+    teacher_name: str | None = None,
+    subject: str | None = None,
+    stage: str | None = None,
+    grades: str | None = None,
+    school_name: str | None = None,
+    all_categories: list[str] | None = None,
+    evidence_index: int = 1,
+    total_evidences: int = 1,
+) -> str | None:
+    """
+    Deep single-evidence analysis using Ministry of Education standards.
+
+    Uses the configured OPENAI_DEEP_MODEL (default: gpt-4o).
+    Includes built-in self-review. Returns a formatted Arabic professional text.
+    Falls back to None on any failure — caller uses the original description.
+
+    This function is synchronous-blocking (uses OpenAI sync client) because
+    it is called from a background task or a sync enrichment call.
+    """
+    if not settings.OPENAI_API_KEY:
+        return None
+
+    def _s(v: str | None, default: str = "غير محدد") -> str:
+        v = (v or "").strip()
+        return v if v and v.lower() not in ("null", "none", "undefined") else default
+
+    system_prompt = _DEEP_EVIDENCE_SYSTEM.replace(
+        "%MINISTRY_STANDARDS%", _MINISTRY_STANDARDS_KNOWLEDGE
+    )
+
+    categories_str = "، ".join(all_categories) if all_categories else "غير متوفر"
+
+    user_prompt = _DEEP_EVIDENCE_USER_TEMPLATE.format(
+        teacher_name=_s(teacher_name),
+        subject=_s(subject),
+        stage=_s(stage),
+        grades=_s(grades),
+        school_name=_s(school_name),
+        title=_s(title),
+        description=_s(description),
+        category=_s(category),
+        ev_type=_s(evidence_type, "نص"),
+        ev_index=evidence_index,
+        total_evs=total_evidences,
+        all_categories=categories_str,
+    )
+
+    model = settings.OPENAI_DEEP_MODEL or settings.OPENAI_EXPORT_MODEL or "gpt-4o"
+
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            timeout=float(settings.OPENAI_TIMEOUT_SECONDS) * 2,  # allow extra time
+        )
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_prompt},
+            ],
+            max_tokens=600,
+            temperature=0.2,   # low temp = more consistent professional language
+        )
+        result = (response.choices[0].message.content or "").strip()
+        logger.info(
+            "[DEEP ANALYSIS] model=%s evidence_title=%r chars=%d",
+            model, title, len(result),
+        )
+        return result or None
+    except Exception as exc:
+        logger.warning("[DEEP ANALYSIS FAILED] title=%r model=%s error=%s", title, model, exc)
+        return None
+
+
+# ── Portfolio-level intelligence ───────────────────────────────────────────────
+
+_PORTFOLIO_ANALYSIS_SYSTEM = """\
+أنت خبير تربوي متخصص في تقييم ملفات الإنجاز للمعلمين وفق معايير وزارة التعليم السعودية.
+مهمتك: تحليل الملف كاملًا وكتابة تقرير تقييم مهني مختصر وعميق.
+
+%MINISTRY_STANDARDS%
+
+قواعد:
+- لا تُكرر جملًا عامة. كل جملة يجب أن تكون مبنية على بيانات الملف الفعلية.
+- استخدم أرقامًا وبيانات من الملف كلما أمكن.
+- الأثر يجب أن يكون واقعيًا وليس مبالغًا فيه.
+- اكتب بلغة الدليل الرسمي.\
+"""
+
+_PORTFOLIO_ANALYSIS_USER_TEMPLATE = """\
+بيانات المعلم:
+  الاسم: {teacher_name}
+  المادة: {subject}
+  المرحلة: {stage}
+  الصفوف: {grades}
+  المدرسة: {school_name}
+
+إحصائيات الملف:
+  إجمالي الشواهد: {total_count}
+  توزيع المحاور: {categories_summary}
+  توزيع الوسائط: {media_summary}
+  المحور الأكثر: {top_category}
+  المحاور الغائبة: {missing_categories}
+
+نماذج من الشواهد (أبرز 5):
+{sample_evidences}
+
+══ المطلوب: تقرير تقييم الملف ══
+
+اكتب التقرير بهذا التنسيق حرفيًا:
+
+نقاط القوة:
+- [نقطة قوة 1 مبنية على بيانات الملف الفعلية]
+- [نقطة قوة 2]
+- [نقطة قوة 3 إن وجدت]
+
+مجالات التطوير:
+- [مجال تطوير 1 محدد وقابل للتنفيذ]
+- [مجال تطوير 2]
+
+توصيات التطوير:
+- [توصية 1 مرتبطة بمعيار وزاري محدد]
+- [توصية 2]
+- [توصية 3]
+
+التقييم العام:
+[فقرة موجزة (3-4 جمل) تصف مستوى الملف ونقاط البروز وأولويات التطوير]\
+"""
+
+
+def analyze_portfolio_sync(
+    *,
+    teacher_name: str | None = None,
+    subject: str | None = None,
+    stage: str | None = None,
+    grades: str | None = None,
+    school_name: str | None = None,
+    total_count: int = 0,
+    categories_summary: str = "",
+    media_summary: str = "",
+    top_category: str = "",
+    missing_categories: str = "",
+    sample_evidences: str = "",
+) -> dict | None:
+    """
+    Portfolio-level AI analysis. Called once per export.
+    Returns dict with keys: strengths, improvements, recommendations, overall_note.
+    Falls back to None on failure.
+    """
+    if not settings.OPENAI_API_KEY or total_count == 0:
+        return None
+
+    def _s(v, default="غير محدد"):
+        v = (v or "").strip()
+        return v if v and v.lower() not in ("null", "none") else default
+
+    system_prompt = _PORTFOLIO_ANALYSIS_SYSTEM.replace(
+        "%MINISTRY_STANDARDS%", _MINISTRY_STANDARDS_KNOWLEDGE
+    )
+
+    user_prompt = _PORTFOLIO_ANALYSIS_USER_TEMPLATE.format(
+        teacher_name=_s(teacher_name),
+        subject=_s(subject),
+        stage=_s(stage),
+        grades=_s(grades),
+        school_name=_s(school_name),
+        total_count=total_count,
+        categories_summary=categories_summary or "غير متوفر",
+        media_summary=media_summary or "غير متوفر",
+        top_category=top_category or "غير محدد",
+        missing_categories=missing_categories or "لا يوجد",
+        sample_evidences=sample_evidences or "لا توجد نماذج",
+    )
+
+    model = settings.OPENAI_DEEP_MODEL or settings.OPENAI_EXPORT_MODEL or "gpt-4o"
+
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            timeout=float(settings.OPENAI_TIMEOUT_SECONDS) * 3,
+        )
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_prompt},
+            ],
+            max_tokens=800,
+            temperature=0.2,
+        )
+        raw = (response.choices[0].message.content or "").strip()
+        logger.info("[PORTFOLIO ANALYSIS] model=%s chars=%d", model, len(raw))
+
+        # Parse the structured output into dict
+        result: dict = {}
+        current_key: str | None = None
+        current_items: list[str] = []
+
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("نقاط القوة:"):
+                current_key = "strengths"
+                current_items = []
+            elif line.startswith("مجالات التطوير:"):
+                if current_key == "strengths":
+                    result["strengths"] = current_items[:]
+                current_key = "improvements"
+                current_items = []
+            elif line.startswith("توصيات التطوير:"):
+                if current_key == "improvements":
+                    result["improvements"] = current_items[:]
+                current_key = "recommendations"
+                current_items = []
+            elif line.startswith("التقييم العام:"):
+                if current_key == "recommendations":
+                    result["recommendations"] = current_items[:]
+                current_key = "overall"
+                current_items = []
+            elif line.startswith("-") and current_key in ("strengths", "improvements", "recommendations"):
+                item = line.lstrip("-").strip()
+                if item:
+                    current_items.append(item)
+            elif current_key == "overall":
+                current_items.append(line)
+
+        if current_key == "overall" and current_items:
+            result["overall_note"] = " ".join(current_items)
+        elif current_key == "recommendations":
+            result["recommendations"] = current_items[:]
+
+        return result if result else None
+    except Exception as exc:
+        logger.warning("[PORTFOLIO ANALYSIS FAILED] error=%s", exc)
+        return None

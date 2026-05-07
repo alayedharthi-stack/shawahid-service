@@ -949,7 +949,13 @@ def _split_leading_categories(categories: list[dict]) -> tuple[list[dict], list[
     return leading, remaining
 
 
-def _build_performance_analysis(categories: list[dict], total_count: int, stats: dict | None = None) -> dict:
+def _build_performance_analysis(
+    categories: list[dict],
+    total_count: int,
+    stats: dict | None = None,
+    teacher=None,
+    evidences: list[dict] | None = None,
+) -> dict:
     nonempty = [cat for cat in categories if cat["count"] > 0]
     if not nonempty or total_count <= 0:
         return {}
@@ -957,46 +963,92 @@ def _build_performance_analysis(categories: list[dict], total_count: int, stats:
     top = max(nonempty, key=lambda cat: cat["count"])
     low = min(nonempty, key=lambda cat: cat["count"])
     media_counts = [
-        {"name": "الصور", "count": (stats or {}).get("images", 0)},
-        {"name": "الفيديو", "count": (stats or {}).get("videos", 0)},
-        {"name": "الصوتيات", "count": (stats or {}).get("audios", 0)},
-        {"name": "الملفات", "count": (stats or {}).get("documents", 0)},
-        {"name": "الروابط", "count": (stats or {}).get("urls", 0)},
-        {"name": "النصوص", "count": (stats or {}).get("texts", 0)},
+        {"name": "الصور",      "count": (stats or {}).get("images", 0)},
+        {"name": "الفيديو",    "count": (stats or {}).get("videos", 0)},
+        {"name": "الصوتيات",   "count": (stats or {}).get("audios", 0)},
+        {"name": "الملفات",    "count": (stats or {}).get("documents", 0)},
+        {"name": "الروابط",    "count": (stats or {}).get("urls", 0)},
+        {"name": "النصوص",     "count": (stats or {}).get("texts", 0)},
     ]
     top_media = max(media_counts, key=lambda item: item["count"])
-    note = (
-        f"يعكس توزيع الشواهد تركيز المعلم على محور {top['name']}، "
-        "مع حضور متوازن لبقية مجالات الأداء المهني. "
-        "ويوصى بالاستمرار في تنويع الشواهد بين التخطيط والتنفيذ والتقويم والأنشطة الإثرائية."
-    )
     category_names = {cat["name"] for cat in nonempty}
-    strengths = [
-        f"توفر شواهد نوعية في محور {top['name']} مما يعكس عناية واضحة بهذا الجانب من الأداء المهني.",
-        "تنوع الوسائط المستخدمة يساعد على تقديم صورة أكثر واقعية عن ممارسات المعلم داخل البيئة التعليمية.",
-    ]
-    improvements = []
-    for expected in ("التخطيط", "التقويم", "مصادر تعليمية"):
-        if expected not in category_names:
-            improvements.append(f"تعزيز محور {expected} بشواهد مباشرة يدعم اكتمال الملف المهني.")
-    if not improvements:
-        improvements.append("مواصلة توزيع الشواهد بين التخطيط والتنفيذ والتقويم للحفاظ على توازن الملف.")
 
-    recommendations = [
-        "اختيار الشواهد التي تُظهر أثر الممارسة على تعلم الطلاب وليس النشاط فقط.",
-        "إضافة تأمل مهني قصير بعد كل نشاط بارز يوضح ما نجح وما يمكن تطويره.",
-        "ربط الشواهد المستقبلية بمعايير الأداء مثل التخطيط والتنفيذ والتقويم والتحفيز.",
-    ]
+    # ── Compute gaps (categories present in standard but missing from file) ───
+    _EXPECTED_CATEGORIES = {"التخطيط", "التقويم", "مصادر تعليمية", "تواصل مع أولياء الأمور"}
+    missing_cats = [c for c in _EXPECTED_CATEGORIES if c not in category_names]
+
+    # ── Build portfolio summary for AI analysis ───────────────────────────────
+    categories_summary = "، ".join(
+        f"{cat['name']} ({cat['count']})" for cat in nonempty[:8]
+    )
+    media_summary = "، ".join(
+        f"{m['name']} ({m['count']})" for m in media_counts if m["count"] > 0
+    )
+    # Sample top 5 evidences for context
+    sample_lines: list[str] = []
+    for ev in (evidences or [])[:5]:
+        t = (ev.get("title") or "").strip()
+        c = (ev.get("category") or "").strip()
+        d = (ev.get("description") or "")[:80].strip()
+        if t:
+            sample_lines.append(f"- [{c}] {t}: {d}")
+    sample_evidences = "\n".join(sample_lines) if sample_lines else ""
+
+    # ── Try AI-powered portfolio analysis ─────────────────────────────────────
+    ai_analysis: dict | None = None
+    try:
+        from app.services.gpt_brain import analyze_portfolio_sync
+        ai_analysis = analyze_portfolio_sync(
+            teacher_name=getattr(teacher, "name", None),
+            subject=getattr(teacher, "subject", None),
+            stage=getattr(teacher, "stage", None),
+            grades=getattr(teacher, "grades", None),
+            school_name=getattr(teacher, "school_name", None),
+            total_count=total_count,
+            categories_summary=categories_summary,
+            media_summary=media_summary,
+            top_category=top["name"],
+            missing_categories="، ".join(missing_cats) if missing_cats else "لا يوجد",
+            sample_evidences=sample_evidences,
+        )
+    except Exception as exc:
+        logger.warning("[PORTFOLIO AI ANALYSIS FAILED] %s", exc)
+
+    # ── Fallback static analysis if AI fails ─────────────────────────────────
+    if ai_analysis:
+        strengths      = ai_analysis.get("strengths", [])
+        improvements   = ai_analysis.get("improvements", [])
+        recommendations = ai_analysis.get("recommendations", [])
+        note           = ai_analysis.get("overall_note", "")
+    else:
+        # Static fallback (previous logic preserved)
+        note = (
+            f"يعكس توزيع الشواهد تركيز المعلم على محور {top['name']}، "
+            "مع حضور متوازن لبقية مجالات الأداء المهني. "
+            "ويوصى بالاستمرار في تنويع الشواهد بين التخطيط والتنفيذ والتقويم والأنشطة الإثرائية."
+        )
+        strengths = [
+            f"توفر شواهد نوعية في محور {top['name']} مما يعكس عناية واضحة بهذا الجانب من الأداء المهني.",
+            "تنوع الوسائط المستخدمة يساعد على تقديم صورة أكثر واقعية عن ممارسات المعلم.",
+        ]
+        improvements = [
+            f"تعزيز محور {c} بشواهد مباشرة يدعم اكتمال الملف المهني." for c in missing_cats[:2]
+        ] or ["مواصلة توزيع الشواهد بين التخطيط والتنفيذ والتقويم للحفاظ على توازن الملف."]
+        recommendations = [
+            "اختيار الشواهد التي تُظهر أثر الممارسة على تعلم الطلاب وليس النشاط فقط.",
+            "إضافة تأمل مهني قصير بعد كل نشاط بارز يوضح ما نجح وما يمكن تطويره.",
+            "ربط الشواهد المستقبلية بمعايير الأداء مثل التخطيط والتنفيذ والتقويم.",
+        ]
 
     return {
-        "top_category": {"name": top["name"], "count": top["count"]},
-        "low_category": {"name": low["name"], "count": low["count"]},
-        "top_media": top_media,
-        "total_count": total_count,
-        "note": note,
-        "strengths": strengths[:3],
-        "improvements": improvements[:3],
-        "recommendations": recommendations,
+        "top_category":    {"name": top["name"], "count": top["count"]},
+        "low_category":    {"name": low["name"], "count": low["count"]},
+        "top_media":       top_media,
+        "total_count":     total_count,
+        "note":            note,
+        "strengths":       strengths[:3],
+        "improvements":    improvements[:3],
+        "recommendations": recommendations[:3],
     }
 
 
@@ -1108,7 +1160,9 @@ def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool 
     categories = _build_categories(deduped)
     stats      = _build_stats(deduped, categories)
     leading_categories, remaining_categories = _split_leading_categories(categories)
-    performance_analysis = _build_performance_analysis(categories, len(deduped), stats)
+    performance_analysis = _build_performance_analysis(
+        categories, len(deduped), stats, teacher=teacher, evidences=deduped
+    )
 
     logger.info(
         "[PDF RENDER] teacher_id=%s evidences=%d categories=%d include_intro_page=%s",

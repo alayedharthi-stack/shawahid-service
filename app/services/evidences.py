@@ -7,6 +7,26 @@ from app.models.evidence import Evidence
 
 logger = logging.getLogger(__name__)
 
+# ── Teacher context cache (set by webhook before calling create_evidence) ──────
+# Lightweight in-memory store so enrichment has access to full teacher profile.
+_ENRICHMENT_TEACHER_CONTEXT: dict[str, str | None] = {
+    "name": None, "subject": None, "stage": None, "grades": None, "school_name": None,
+}
+
+def set_enrichment_teacher_context(
+    *,
+    name: str | None = None,
+    subject: str | None = None,
+    stage: str | None = None,
+    grades: str | None = None,
+    school_name: str | None = None,
+) -> None:
+    """Called by webhook before saving evidence so enrichment knows who the teacher is."""
+    _ENRICHMENT_TEACHER_CONTEXT.update({
+        "name": name, "subject": subject, "stage": stage,
+        "grades": grades, "school_name": school_name,
+    })
+
 
 ALLOWED_CATEGORIES = [
     "نشاط صفي",
@@ -36,36 +56,6 @@ ALLOWED_CATEGORIES = [
     "أخرى",
 ]
 
-_ENRICHMENT_PROMPT = """أنت خبير تربوي تابع لوزارة التعليم السعودية.
-
-مهمتك: تحويل مدخلات المعلم (صورة / نص / صوت) إلى "شاهد تربوي احترافي" مطابق لمتطلبات تقييم الأداء الوظيفي.
-
-يجب أن يحتوي كل شاهد على:
-
-1) وصف الشاهد (مختصر ودقيق)
-2) الهدف التربوي (مرتبط بمهارة تعليمية)
-3) الأثر على الطلاب (نتائج فعلية أو ملاحظة واقعية)
-4) تأمل المعلم (تحليل مهني صادق)
-5) الارتباط بالمعايير (مثل: التخطيط، التنفيذ، التقويم)
-
-قواعد مهمة:
-- لا تستخدم عبارات عامة مثل "يوثق هذا الشاهد"
-- اجعل اللغة مهنية واقعية
-- اربط الشاهد بتحسين تعلم الطلاب
-- لا تبالغ في النتائج
-- اجعل النص مناسب للتقييم الرسمي
-- اكتب بالعربية الفصحى"""
-
-_TYPE_CATEGORY_HINT = {
-    "image": "التنفيذ داخل الصف",
-    "video": "التنفيذ داخل الصف",
-    "pdf": "التخطيط أو التقويم",
-    "document": "التخطيط أو التقويم",
-    "file": "التخطيط أو التقويم",
-    "url": "مصادر إثرائية",
-}
-
-
 def _clean(value) -> str:
     if value is None:
         return ""
@@ -78,55 +68,94 @@ def _fallback_enrichment(evidence) -> str | None:
     return desc or None
 
 
-def generate_ai_enriched_description(evidence) -> str | None:
-    """Generate a professional Ministry-style description for one evidence.
+def generate_ai_enriched_description(
+    evidence,
+    *,
+    all_categories: list[str] | None = None,
+    evidence_index: int = 1,
+    total_evidences: int = 1,
+) -> str | None:
+    """
+    Generate a deep Ministry-aligned professional description for one evidence.
 
-    Safe by design: if OpenAI is unavailable or fails, return the existing
-    description without interrupting saving.
+    Uses analyze_evidence_deep() which:
+    - Embeds full Saudi MOE Competency Framework knowledge
+    - Links the evidence to specific official evaluation standards
+    - Applies a built-in self-review phase to eliminate generic language
+    - Uses OPENAI_DEEP_MODEL (configurable, default gpt-4o)
+
+    Falls back to the original description on any failure.
     """
     fallback = _fallback_enrichment(evidence)
     if not settings.OPENAI_API_KEY:
         return fallback
 
-    ev_type = _clean(getattr(evidence, "evidence_type", None)) or "text"
-    category = _clean(getattr(evidence, "category", None))
-    title = _clean(getattr(evidence, "title", None))
+    from app.services.gpt_brain import analyze_evidence_deep
+    import asyncio
+
+    ev_type    = _clean(getattr(evidence, "evidence_type", None)) or "text"
+    category   = _clean(getattr(evidence, "category", None))
+    title      = _clean(getattr(evidence, "title", None))
     description = _clean(getattr(evidence, "description", None))
-    media_type_hint = _TYPE_CATEGORY_HINT.get(ev_type, category or "الأداء المهني")
-    user_content = (
-        f"العنوان: {title or 'غير محدد'}\n"
-        f"الوصف الحالي: {description or 'غير محدد'}\n"
-        f"التصنيف: {category or media_type_hint}\n"
-        f"نوع الوسيط: {ev_type}\n"
-        f"محور مقترح حسب النوع: {media_type_hint}\n\n"
-        "اكتب الناتج في خمسة أسطر فقط بهذه العناوين حرفيًا:\n"
-        "وصف الشاهد:\n"
-        "الهدف التربوي:\n"
-        "الأثر على الطلاب:\n"
-        "تأمل المعلم:\n"
-        "الارتباط بالمعايير:"
-    )
+
+    # Pull teacher context from the in-memory cache set by webhook
+    ctx = _ENRICHMENT_TEACHER_CONTEXT
 
     try:
-        from openai import OpenAI
+        # analyze_evidence_deep is an async function — run it in the event loop
+        # if one is already running (FastAPI background task), otherwise create one.
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
 
-        client = OpenAI(
-            api_key=settings.OPENAI_API_KEY,
-            timeout=float(settings.OPENAI_TIMEOUT_SECONDS),
-        )
-        response = client.chat.completions.create(
-            model=settings.OPENAI_EXPORT_MODEL or settings.OPENAI_MODEL or "gpt-4o",
-            messages=[
-                {"role": "system", "content": _ENRICHMENT_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            max_tokens=450,
-            temperature=0.25,
-        )
-        enriched = (response.choices[0].message.content or "").strip()
+        if loop and loop.is_running():
+            # We're inside an async context (FastAPI background task) —
+            # use run_in_executor to avoid blocking the event loop.
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(
+                    asyncio.run,
+                    analyze_evidence_deep(
+                        title=title,
+                        description=description,
+                        category=category,
+                        evidence_type=ev_type,
+                        teacher_name=ctx.get("name"),
+                        subject=ctx.get("subject"),
+                        stage=ctx.get("stage"),
+                        grades=ctx.get("grades"),
+                        school_name=ctx.get("school_name"),
+                        all_categories=all_categories,
+                        evidence_index=evidence_index,
+                        total_evidences=total_evidences,
+                    ),
+                )
+                enriched = future.result(timeout=90)
+        else:
+            enriched = asyncio.run(
+                analyze_evidence_deep(
+                    title=title,
+                    description=description,
+                    category=category,
+                    evidence_type=ev_type,
+                    teacher_name=ctx.get("name"),
+                    subject=ctx.get("subject"),
+                    stage=ctx.get("stage"),
+                    grades=ctx.get("grades"),
+                    school_name=ctx.get("school_name"),
+                    all_categories=all_categories,
+                    evidence_index=evidence_index,
+                    total_evidences=total_evidences,
+                )
+            )
+
         return enriched or fallback
     except Exception as exc:
-        logger.warning("[EVIDENCE ENRICHMENT FAILED] evidence_id=%s error=%s", getattr(evidence, "id", None), exc)
+        logger.warning(
+            "[EVIDENCE ENRICHMENT FAILED] evidence_id=%s error=%s",
+            getattr(evidence, "id", None), exc,
+        )
         return fallback
 
 
