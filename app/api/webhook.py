@@ -10,6 +10,7 @@ Message flow:  WhatsApp inbound → ask_gpt() → GPTDecision → execute
 GPT is the sole decision-maker. Code only executes what GPT decides.
 """
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -17,7 +18,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.db.base import get_db
-from app.services.teachers import get_or_create_teacher, get_teacher_by_id
+from app.services.teachers import get_or_create_teacher, get_teacher_by_id, update_teacher
 from app.services.evidences import create_evidence, get_teacher_evidences
 from app.services.storage import download_and_save, detect_evidence_type, extract_urls
 from app.services.deduplication import (
@@ -60,6 +61,101 @@ logger = logging.getLogger(__name__)
 # it helps the conversational flow inside the current process without changing DB schema.
 _LAST_PROFILE_UPDATES: dict[int, dict[str, str]] = {}
 _PENDING_EXPORT_REQUESTS: set[int] = set()
+# Pending name confirmation: teacher_id → name extracted from audio (needs user to confirm)
+_PENDING_NAME_CONFIRMATION: dict[int, str] = {}
+
+
+# ─── Arabic text normalization ────────────────────────────────────────────────
+
+def _normalize_arabic(text: str) -> str:
+    """
+    Normalize Arabic text for intent matching:
+    - Remove diacritics / tashkeel (harakat, shadda, sukun, etc.)
+    - Normalize hamza variants (أ إ آ ٱ) → ا
+    - Collapse whitespace and lowercase
+    """
+    # Remove tashkeel: harakat + tanwin + shadda + sukun + superscript alef
+    text = re.sub(r'[\u064B-\u065F\u0670]', '', text)
+    # Normalize all alef+hamza forms → bare alef
+    text = re.sub(r'[أإآٱ]', 'ا', text)
+    # Collapse whitespace
+    text = re.sub(r'\s+', ' ', text).strip().lower()
+    return text
+
+
+# ─── Export command detection ─────────────────────────────────────────────────
+
+# All normalized forms that indicate the teacher wants to export.
+_EXPORT_TRIGGERS: frozenset[str] = frozenset({
+    # صدر core variants
+    "صدر", "صدر الان", "صدر مباشرة", "صدر على اي حال",
+    "صدر ملفي", "صدر الملف",
+    # اصدر / تصدير
+    "اصدر", "اصدر الان", "اصدر الملف", "اصدار الملف",
+    "تصدير", "تصدير مباشر", "تصدير على اي حال", "تصدير الملف",
+    # ابي / ابغى variants
+    "ابي اصدر", "ابغى اصدر", "ابي الملف", "ابغى الملف",
+    "ابي ملف الشواهد", "ابغى ملف الشواهد",
+    "اريد الملف", "اريد اصدر", "اريد تصدير",
+    # فعل + ملف
+    "طلع الملف", "جهز الملف", "ارسل الملف",
+    "ارسل ملف الشواهد", "ارسلي الملف",
+    "حمل الملف", "اخرج الملف", "ابعث الملف",
+    "اعطني الرابط", "اعطني الملف",
+    # خلاص / تمام + صدر
+    "خلاص صدر", "تمام صدر", "جاهز صدر",
+    "انتهينا صدر", "لا تراجع صدر",
+    "بدون مراجعة صدر", "بدون مراجعه صدر",
+    "بدون مراجعة", "بدون مراجعه",
+    # اكتفيت / جاهز
+    "انا جاهز", "جاهز للتصدير", "انا مستعد",
+})
+
+# Substrings that – if found anywhere – reliably signal export intent
+_EXPORT_SUBSTRINGS: tuple[str, ...] = (
+    "صدر", "اصدر", "تصدير", "اصدار",
+)
+
+
+def is_export_command(text: str | None) -> bool:
+    """
+    Return True if text is any Arabic variant of an export/send-file request.
+    Handles diacritics, hamza, shadda, and common colloquial spellings.
+    """
+    if not text:
+        return False
+    normalized = _normalize_arabic(text)
+    if normalized in _EXPORT_TRIGGERS:
+        return True
+    for sub in _EXPORT_SUBSTRINGS:
+        if sub in normalized:
+            return True
+    return False
+
+
+def _is_positive_confirmation(text: str | None) -> bool:
+    """Return True if text is an affirmative reply (yes/correct)."""
+    if not text:
+        return False
+    n = _normalize_arabic(text)
+    return n in {
+        "نعم", "اي", "اي والله", "ايوه", "ايوا", "اه", "اهه",
+        "صح", "صحيح", "هذا صح", "هذا صحيح", "نعم صح",
+        "موافق", "تمام", "احفظه", "احفظ", "استمر",
+        "نعم استمر", "يلا احفظه", "يلا", "زين", "سليم",
+    }
+
+
+def _is_negative_confirmation(text: str | None) -> bool:
+    """Return True if text is a negative reply (no/incorrect)."""
+    if not text:
+        return False
+    n = _normalize_arabic(text)
+    return n in {
+        "لا", "لا صح", "هذا غلط", "غلط", "خطا", "خطأ",
+        "ليس صحيحا", "ليس صحيحًا", "لا تحفظ", "لا تحفظه",
+        "مو صح", "مو صحيح", "لا استمر", "اعد", "اعد الكتابة",
+    }
 
 _PROFILE_FIELD_LABELS: dict[str, str] = {
     "name": "الاسم",
@@ -294,27 +390,17 @@ async def _send_welcome_message(phone: str, teacher_id: int) -> None:
 
 
 def _parse_export_mode(text: str | None) -> str | None:
-    """Parse teacher's export mode selection."""
+    """Parse teacher's export mode selection with Arabic normalization."""
     if not text:
         return None
-    t = text.strip().lower()
-    if t in ("1", "١", "كامل", "كاملة", "كل الشواهد", "full"):
+    n = _normalize_arabic(text)
+    if n in ("1", "١", "كامل", "كاملة", "كل الشواهد", "full", "export_full", "full_export"):
         return "full"
-    if t in ("export_full", "full_export"):
-        return "full"
-    if t in ("2", "٢", "ذكي", "ذكية", "smart", "export_smart"):
+    if n in ("2", "٢", "ذكي", "ذكية", "ذكى", "smart", "export_smart"):
         return "smart"
-    if t in ("3", "٣", "مختصر", "مختصر جدًا", "مختصر جدا", "elite", "export_short"):
+    if n in ("3", "٣", "مختصر", "مختصرة", "مختصر جدا", "مختصر جدًا", "elite", "export_short"):
         return "elite"
     return None
-
-
-def _is_direct_export_request(text: str | None) -> bool:
-    """Return True if teacher wants to skip review and export directly."""
-    if not text:
-        return False
-    t = text.strip()
-    return t in ("صدر الآن", "صدر مباشرة", "صدر على أي حال", "تصدير على أي حال", "تصدير مباشر")
 
 
 def _export_mode_question() -> str:
@@ -434,8 +520,6 @@ async def whatsapp_webhook(
     )
 
     # ── Load profile + subscription (backend-only decision) ──────────────────
-    from app.services.teachers import update_teacher
-
     # Subscription: single DB-only source of truth. GPT never sees or decides this.
     sub_info = get_subscription_status(db, teacher.id)
     sub_active = sub_info["status"] == "active_paid"
@@ -480,8 +564,41 @@ async def whatsapp_webhook(
         )
         return {"ok": True, "teacher_id": teacher.id, "intent": "profile_update_followup"}
 
+    # ── Pending name confirmation (audio-sourced names need explicit approval) ─
+    # Whisper sometimes mishears Arabic names. We ask the teacher to confirm
+    # before committing the name to the profile.
+    if teacher.id in _PENDING_NAME_CONFIRMATION and not media_id:
+        pending_name = _PENDING_NAME_CONFIRMATION[teacher.id]
+        if _is_positive_confirmation(text):
+            _PENDING_NAME_CONFIRMATION.pop(teacher.id, None)
+            update_teacher(db, teacher, {"name": pending_name})
+            _LAST_PROFILE_UPDATES[teacher.id] = {"name": pending_name}
+            logger.info("[NAME CONFIRMED] teacher_id=%d name=%r", teacher.id, pending_name)
+            reply = f"تم حفظ اسمك: {pending_name} ✅\nسيظهر في ملف الشواهد بهذا الشكل."
+            background_tasks.add_task(
+                send_whatsapp_message, teacher.phone, reply,
+                teacher_id=teacher.id, context="name_confirmed"
+            )
+            return {"ok": True, "teacher_id": teacher.id, "intent": "name_confirmed"}
+        elif _is_negative_confirmation(text):
+            _PENDING_NAME_CONFIRMATION.pop(teacher.id, None)
+            logger.info("[NAME REJECTED] teacher_id=%d — teacher said no, asking for text input", teacher.id)
+            reply = (
+                "لا بأس! 😊\n"
+                "اكتب اسمك الكامل نصًا حتى أحفظه بدقة\n"
+                "(التفريغ الصوتي أحيانًا يخطئ في الأسماء)"
+            )
+            background_tasks.add_task(
+                send_whatsapp_message, teacher.phone, reply,
+                teacher_id=teacher.id, context="name_rejected"
+            )
+            return {"ok": True, "teacher_id": teacher.id, "intent": "name_rejected"}
+        # If neither yes nor no, fall through to normal GPT processing
+        # (teacher might be sending new evidence while confirmation is pending)
+
     # ── Direct export shortcut (skip review) ─────────────────────────────────
-    if _is_direct_export_request(text) and not media_id:
+    # Catches any Arabic export variant: صدر / اصدر / ارسل الملف / خلاص صدر …
+    if is_export_command(text) and not media_id:
         if not sub_active:
             try:
                 payment_url = await _create_moyasar_link(
@@ -508,16 +625,18 @@ async def whatsapp_webhook(
         return {"ok": True, "teacher_id": teacher.id, "intent": "direct_export_requested", "awaiting_export_mode": True}
 
     # ── Export mode selection shortcut ────────────────────────────────────────
-    # After the user is asked "كيف تحب ملفك؟", their next message may be "1/2/3".
-    # Handle that before GPT so "كامل" is not treated as smalltalk/evidence.
+    # After the user is asked "كيف تحب ملفك؟", their next message may be "1/2/3/كامل/ذكي".
+    # Also handle when user specifies mode directly (e.g. types "ذكي" or "كامل" on their own).
     selected_export_mode = _parse_export_mode(text)
     if selected_export_mode and not media_id:
         if teacher.id not in _PENDING_EXPORT_REQUESTS:
-            reply = "هل تقصد اختيار وضع التصدير؟ اكتب: صدر ملفي أولًا، ثم اختر 1 أو 2 أو 3."
-            background_tasks.add_task(
-                send_whatsapp_message, teacher.phone, reply, teacher_id=teacher.id, context="export_mode_without_pending"
+            # User chose a mode directly without going through the options flow.
+            # Treat this as if they issued an export command and selected the mode in one step.
+            logger.info(
+                "[EXPORT MODE DIRECT] teacher_id=%d mode=%s (not in pending — auto-adding)",
+                teacher.id, selected_export_mode,
             )
-            return {"ok": True, "teacher_id": teacher.id, "intent": "export_mode_without_pending"}
+            _PENDING_EXPORT_REQUESTS.add(teacher.id)
 
         logger.info(
             "[EXPORT MODE SELECTED] teacher_id=%d mode=%s sub_status=%s",
@@ -714,13 +833,36 @@ async def whatsapp_webhook(
     # Persist those fields before routing/export so the PDF sees fresh data.
     profile_update = _clean_profile_update(decision.get("profile_update"))
     if profile_update:
-        update_teacher(db, teacher, profile_update)
-        _LAST_PROFILE_UPDATES[teacher.id] = profile_update
-        logger.info(
-            "[PROFILE UPDATED] teacher_id=%d fields=%s source_intent=%s",
-            teacher.id, list(profile_update.keys()), intent,
-        )
-        if intent == "update_profile":
+        # ── Name confirmation gate ────────────────────────────────────────────
+        # If the update includes a "name" field AND the message came via audio
+        # (Whisper transcript), ask the teacher to confirm before saving.
+        # Whisper often mishears Arabic names (عايد → عائد, الحارثي → الحارفي).
+        pending_name: str | None = None
+        if "name" in profile_update and transcript:
+            pending_name = profile_update.pop("name")  # remove from immediate save
+            _PENDING_NAME_CONFIRMATION[teacher.id] = pending_name
+            logger.info(
+                "[NAME PENDING CONFIRMATION] teacher_id=%d raw_name=%r (from audio)",
+                teacher.id, pending_name,
+            )
+
+        # Apply all other profile fields immediately
+        if profile_update:
+            update_teacher(db, teacher, profile_update)
+            _LAST_PROFILE_UPDATES[teacher.id] = profile_update
+            logger.info(
+                "[PROFILE UPDATED] teacher_id=%d fields=%s source_intent=%s",
+                teacher.id, list(profile_update.keys()), intent,
+            )
+
+        if pending_name:
+            # Override reply: ask teacher to confirm the transcribed name
+            reply = (
+                f"سمعت الاسم: *{pending_name}*\n"
+                "هل هذا اسمك الصحيح؟\n"
+                "اكتب *نعم* للحفظ أو *لا* لإعادة الكتابة يدويًا."
+            )
+        elif intent == "update_profile":
             reply = _format_profile_update_reply(profile_update)
 
     # ── FORCE SAVE for any media message ─────────────────────────────────────
