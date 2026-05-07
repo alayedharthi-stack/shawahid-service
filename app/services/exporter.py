@@ -304,19 +304,41 @@ def is_instruction_evidence(ev_dict: dict) -> bool:
 
 
 _PLANNING_KEYWORDS = (
+    # ── Core planning document titles ──────────────────────────────────────────
     "خطة المعلم",
     "الخطة الدراسية",
     "خطة دراسية",
-    "توزيع منهج",
-    "التخطيط",
+    "خطة تدريسية",
+    "خطة درس",
+    "خطة فصلية",
     "خطة أسبوعية",
     "الخطة الأسبوعية",
-    "خطة فصلية",
-    "خطة درس",
-    "تحضير الدروس",
+    "خطة الفصل",
     "خطة تعلم",
+    "تحضير الدروس",
+    "التحضير اليومي",
     "فهرس المقرر",
-    "جدول الحصص",
+    # ── Curriculum distribution (توزيع المنهج) ──────────────────────────────
+    "توزيع منهج",
+    "توزيع المنهج",
+    "توزيع الوحدات",
+    "توزيع الدروس",
+    "التوزيع الزمني",
+    "التوزيع السنوي",
+    "توزيع زمني",
+    # ── Learning objectives & outcomes (strong planning content signals) ──────
+    "نواتج التعلم",
+    "نواتج تعلم",
+    "الأهداف التعليمية",
+    "هدف الدرس",
+    "الأسبوع الأول",
+    "الأسبوع الثاني",
+    "الأسبوع الثالث",
+    "الأسبوع الرابع",
+    "الوحدة الأولى",
+    "الوحدة الثانية",
+    "الوحدة الدراسية",
+    # REMOVED: "جدول الحصص" — this describes a school timetable (admin), NOT a planning doc.
 )
 _FOLLOW_UP_KEYWORDS = (
     "سجل متابعة",
@@ -341,14 +363,52 @@ _ASSESSMENT_KEYWORDS = (
     "نتائج الاختبار",
 )
 
+# ── School timetable detector (day-names × period-names grid = admin, not planning) ─
+_TIMETABLE_DAYS = frozenset({
+    "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس",
+})
+_TIMETABLE_PERIODS = frozenset({
+    "الحصة الأولى", "الحصة الثانية", "الحصة الثالثة",
+    "الحصة الرابعة", "الحصة الخامسة", "الحصة السادسة",
+    "الحصة السابعة",
+    "حصة اولى", "حصة ثانية", "حصة ثالثة",
+    "الحصه الاولى", "الحصه الثانيه",
+})
+
+
+def _is_school_timetable(text: str) -> bool:
+    """
+    Return True when text looks like a school class-schedule grid (جدول الحصص/المدرسي).
+    Condition: ≥2 different weekday names AND ≥1 period marker found together.
+    This pattern matches the daily timetable (Ahad-Khamis × periods) which is an
+    administrative document, NOT a planning document.
+    """
+    day_hits = sum(1 for d in _TIMETABLE_DAYS if d in text)
+    period_hits = sum(1 for p in _TIMETABLE_PERIODS if p in text)
+    return day_hits >= 2 and period_hits >= 1
+
 
 def _official_category_from_content(category: str, *parts: str | None) -> str:
     """
     Re-categorise a PDF/document evidence based on content keywords.
     Applied both at save time (webhook) and export time (exporter) so PDFs
     always land in their correct axis rather than defaulting to ملفات إدارية.
+
+    Priority order:
+      1. School timetable guard — if doc has day-names × period-slots, it is
+         administrative (ملفات إدارية), never planning — prevent mis-promotion.
+      2. Planning keywords — real planning documents (خطة، توزيع المنهج، نواتج).
+      3. Follow-up keywords — attendance/tracking records.
+      4. Assessment keywords — only promote generic docs; never demote specific ones.
     """
     text = " ".join(part for part in parts if part)
+
+    # Guard: school timetable (days × periods) → keep/force to administrative
+    if _is_school_timetable(text):
+        if category in {"التخطيط", "ملف إداري", "أخرى", ""}:
+            return "ملفات إدارية"
+        return category  # preserve other specific categories like سجل المتابعة
+
     if _contains_any(text, _PLANNING_KEYWORDS):
         return "التخطيط"
     if _contains_any(text, _FOLLOW_UP_KEYWORDS):

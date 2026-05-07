@@ -472,15 +472,25 @@ def _is_creator_question(text: str | None) -> bool:
 
 # ── PDF category inference from filename ──────────────────────────────────────
 _PDF_CATEGORY_HINTS: list[tuple[tuple[str, ...], str]] = [
-    # Specific first to avoid false matches from generic words
+    # Most-specific rules first to avoid false matches from generic words.
+    # ── Assessment ──────────────────────────────────────────────────────────────
     (("اختبار", "قياس", "exam", "test", "quiz"), "اختبار"),
     (("ورقة عمل", "worksheet"), "ورقة عمل"),
-    (("سجل", "متابعة", "followup", "follow"), "سجل المتابعة"),
+    # ── Follow-up / attendance ───────────────────────────────────────────────────
+    (("سجل", "متابعة", "followup", "follow", "كشف الحضور"), "سجل المتابعة"),
+    # ── Certificates / training ─────────────────────────────────────────────────
     (("شهادة", "certificate", "دورة", "تدريب"), "الدورات والشهادات"),
+    # ── School timetable / admin — must come BEFORE planning to avoid mis-match ──
+    # "جدول الحصص" / "جدول مدرسي" in filename → administrative, not planning.
+    (("جدول الحصص", "جدول المدرسة", "جدول مدرسي"), "ملف إداري"),
+    # ── Pure administrative ──────────────────────────────────────────────────────
     (("تعميم", "قرار", "اجتماع", "circular"), "ملف إداري"),
+    # ── Reports / analysis ──────────────────────────────────────────────────────
     (("تقرير", "تحليل", "نتائج", "report", "result"), "تقويم"),
-    (("خطة", "خطط", "plan", "lesson"), "التخطيط"),
-    (("توزيع", "منهج", "curriculum"), "التخطيط"),
+    # ── Planning — curriculum distribution (توزيع) before generic "خطة" ─────────
+    (("توزيع منهج", "توزيع المنهج", "توزيع الدروس", "توزيع زمني", "curriculum"), "التخطيط"),
+    (("خطة", "خطط", "plan", "lesson", "تحضير"), "التخطيط"),
+    # ── Classroom activity ───────────────────────────────────────────────────────
     (("نشاط", "activity"), "نشاط صفي"),
 ]
 
