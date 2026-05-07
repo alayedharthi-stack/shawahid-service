@@ -1,0 +1,1173 @@
+/*
+  Ministry V1 — theme.css (Phase 2)
+  ─────────────────────────────────
+  Identity, colours, typography, components, smart-layout cards.
+  Page-break / print-only rules live in print.css.
+
+  Contract:
+    • This file MUST NOT change a single byte of `ExportPayload`.
+    • The renderer MUST NOT read this file directly. It is included
+      verbatim into `<style>` by `template.html` so Playwright can
+      rasterise the PDF without any HTTP round-trip.
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap');
+
+/* ── VARIABLES ─────────────────────────────────────────────────────────── */
+:root {
+  --teal:      #2F6F73;
+  --teal-dk:   #1e4e51;
+  --teal-lt:   #e8f2f3;
+  --teal-mid:  #3d8f94;
+  --gold:      #C9A646;
+  --gold-lt:   #faf5e4;
+  --gold-dk:   #8a6f2e;
+  --white:     #ffffff;
+  --card:      #f8fafb;
+  --text:      #1f2d3d;
+  --body:      #3d4f61;
+  --muted:     #8595a6;
+  --border:    #e2eaed;
+  --border-dk: #c8d8dc;
+  --shadow:    0 1px 4px rgba(47,111,115,0.08), 0 0 0 1px rgba(47,111,115,0.06);
+  --radius:    10px;
+  --margin:    15mm;
+}
+
+/* ── RESET + BASE ──────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  /* Stable Arabic font stack: Cairo (web) → Tahoma (best Arabic on
+     Chromium) → Arial → Segoe UI. Avoids any letter-spacing glitches
+     in Playwright when the Google font fails to load. */
+  font-family: 'Cairo', 'Tahoma', 'Arial', 'Segoe UI', sans-serif;
+  font-size: 10.5pt;
+  color: var(--body);
+  background: var(--white);
+  direction: rtl;
+  line-height: 1.7;
+}
+
+/* ── PAGES ─────────────────────────────────────────────────────────────── */
+/* No min-height — content is natural; each .page forces a new PDF page *before* it */
+.page {
+  padding: var(--margin);
+  break-before: page;
+  page-break-before: always;
+  position: relative;
+  background: var(--white);
+}
+/* First inner page (stats) immediately follows cover — cover already breaks after */
+.page-first { break-before: avoid; page-break-before: avoid; }
+
+/* Teal accent strip on top of every inner page */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: calc(-1 * var(--margin)) calc(-1 * var(--margin)) 22px;
+  padding: 8px var(--margin);
+  background: var(--teal);
+  border-bottom: 2px solid var(--gold);
+}
+.ph-left  { color: #fff; font-size: 10pt; font-weight: 700; }
+.ph-right { color: rgba(255,255,255,0.6); font-size: 8.5pt; }
+
+/* ══════════════════════════════════════════════════════════════════
+   COVER PAGE — STABLE LAYOUT (DO NOT REINTRODUCE clip-path / 297mm absolutes)
+   ─────────────────────────────────────────────────────────────────
+   Hard contract:
+     • Single A4 page, no overflow, no phantom second page.
+     • Logo never clipped (kept inside the safe box with hard limits).
+     • Negative margins cancel Playwright's outer page margins so the
+       cover fills the full A4 (210×297mm) without splitting.
+     • All values fit comfortably inside 297mm height and 210mm width.
+     • Classes are `tcover-*` only — they never collide with .page/.cover.
+   Font: same Cairo + Tahoma/Arial fallback as the rest of the report.
+══════════════════════════════════════════════════════════════════ */
+/* ══ COVER PAGE — Reference-match: right-side white triangle ══════
+   A4 fixed. No overflow. All absolute elements stay inside bounds.
+════════════════════════════════════════════════════════════════════ */
+.tcover-page {
+  margin: -18mm -15mm 0 -15mm;
+  width: 210mm;
+  height: 297mm;
+  max-height: 297mm;
+  overflow: hidden;
+  position: relative;
+  box-sizing: border-box;
+  background:
+    radial-gradient(circle at 52% 36%, rgba(255,255,255,0.10) 0%, transparent 42%),
+    linear-gradient(135deg, #0A5558 0%, #0F6F70 46%, #127A78 100%);
+  color: #ffffff;
+  direction: rtl;
+  font-family: 'Cairo', 'Tajawal', 'IBM Plex Sans Arabic', 'Tahoma', 'Arial', sans-serif;
+  font-feature-settings: "kern" 1, "liga" 1;
+  -webkit-font-smoothing: antialiased;
+  page-break-after: always;
+  break-after: page;
+  padding: 0;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.tcover-page * { box-sizing: border-box; }
+
+/* No grid texture */
+.tcover-page::before { display: none; }
+
+/* White geometric area — from the RIGHT side, diagonal to lower-left */
+.tcover-page::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 125mm;
+  background: #F5F6F0;
+  clip-path: polygon(54% 0, 100% 0, 100% 100%, 0% 100%);
+  z-index: 2;
+  pointer-events: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* ── Large glass hero card (encompasses logo + badge + title + teacher) ─ */
+.tcover-hero-card {
+  position: absolute;
+  top: 18mm;
+  left: 14mm;
+  right: 14mm;
+  min-height: 150mm;
+  border-radius: 8mm;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.20);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Top bar: logo (RTL-left = visual-left) + badge wrap (RTL-right = visual-right) */
+.tc-topbar {
+  display: flex;
+  flex-direction: row-reverse;   /* logo ends up on left visually in RTL */
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 9mm 10mm 0mm 10mm;
+}
+.tc-logo {
+  width: 44mm;
+  height: auto;
+  max-height: 46mm;
+  object-fit: contain;
+  opacity: 0.88;
+}
+.tc-topright {
+  text-align: right;
+}
+.tc-breadcrumb {
+  font-size: 8.5pt;
+  color: rgba(255,255,255,0.70);
+  margin-bottom: 3.5mm;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.tc-badge {
+  display: inline-block;
+  background: #D8B354;
+  color: #ffffff;
+  padding: 3.5mm 10mm;
+  border-radius: 999px;
+  font-size: 11pt;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+}
+
+/* Main content area inside hero card */
+.tc-main {
+  flex: 1;
+  padding: 7mm 12mm 10mm;
+  text-align: right;
+}
+
+/* ── Headline ─────────────────────────────────────────────────────────── */
+.tcover-headline { margin-bottom: 0; }
+.tcover-headline h1 {
+  font-size: 40pt;
+  font-weight: 800;
+  line-height: 1.28;
+  margin: 0;
+  color: rgba(255,255,255,0.94);
+  word-spacing: 0;
+}
+.tcover-headline h1 .tcover-line2 {
+  display: block;
+  font-size: 34pt;
+  font-weight: 800;
+  color: rgba(255,255,255,0.88);
+  margin-top: 1mm;
+}
+
+/* ── Teacher block ────────────────────────────────────────────────────── */
+.tcover-teacher { margin-top: 0; }
+.tcover-teacher-rule {
+  width: 42mm;
+  height: 0.45mm;
+  background: rgba(216,179,84,0.45);
+  margin: 6mm 0 4mm;
+}
+.tcover-teacher-name {
+  font-size: 20pt;
+  font-weight: 800;
+  color: #e2b85b;
+  line-height: 1.25;
+  margin-bottom: 3mm;
+}
+.tcover-teacher-meta {
+  font-size: 10.5pt;
+  font-weight: 500;
+  color: rgba(255,255,255,0.88);
+  line-height: 1.5;
+}
+
+/* ── Legacy elements (replaced by tc-topbar inside card) ─────────────── */
+.tcover-moe-logo       { display: none; }
+.tcover-moe-logo-img   { display: none; }
+.tcover-moe-logo-block { display: none; }
+.tcover-top            { display: none; }
+.tcover-ministry       { display: none; }
+.tcover-pill           { display: none; }
+
+/* ── White data card — bottom-right, inside the white wedge ─────────── */
+.tcover-card {
+  position: absolute;
+  right: 20mm;
+  bottom: 22mm;
+  width: 122mm;
+  background: rgba(255,255,255,0.97);
+  color: #1a3833;
+  border-radius: 7mm;
+  padding: 8mm 10mm 9mm;
+  box-shadow: 0 14px 28px rgba(0,0,0,0.13);
+  z-index: 6;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.tcover-card-title {
+  font-size: 14pt;
+  font-weight: 800;
+  margin: 0 0 5mm 0;
+  color: #0f5e57;
+  text-align: right;
+  line-height: 1.2;
+}
+.tcover-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3mm;
+}
+.tcover-field {
+  background: #F7F9F8;
+  border: 1px solid #E0E7E5;
+  border-radius: 4mm;
+  padding: 4mm 5mm;
+  text-align: right;
+}
+.tcover-field-label {
+  font-size: 9pt;
+  font-weight: 700;
+  color: #0f5e57;
+  margin-bottom: 1.5mm;
+  line-height: 1.2;
+}
+.tcover-field-value {
+  font-size: 9pt;
+  font-weight: 400;
+  color: #324e49;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* ── Footer note ─────────────────────────────────────────────────────── */
+.tcover-note {
+  position: absolute;
+  bottom: 11mm;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 8pt;
+  color: rgba(15,94,87,0.55);
+  line-height: 1.4;
+  z-index: 7;
+}
+
+/* ── Subtle watermark ────────────────────────────────────────────────── */
+.tcover-watermark {
+  position: absolute;
+  top: 126mm;
+  left: 14mm;
+  font-size: 28pt;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: rgba(255,255,255,0.03);
+  z-index: 4;
+  pointer-events: none;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   STATS PAGE
+══════════════════════════════════════════════════════════════════ */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 26px;
+}
+
+.stat-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 12px;
+  text-align: center;
+  background: var(--white);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.stat-card-accent {
+  border-top: 3px solid #155e2e;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.stat-icon { font-size: 22px; margin-bottom: 8px; }
+.stat-num  { font-size: 24pt; font-weight: 900; color: #155e2e; line-height: 1; margin-bottom: 4px; }
+.stat-lbl  { font-size: 9pt; color: var(--muted); font-weight: 600; }
+
+.media-chart {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin: -10px 0 20px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.chart-title {
+  font-size: 10.5pt;
+  font-weight: 800;
+  color: var(--teal);
+  margin-bottom: 10px;
+  padding-right: 8px;
+  border-right: 3px solid var(--gold);
+}
+.media-row {
+  display: grid;
+  grid-template-columns: 82px 1fr 34px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.media-row:last-child { margin-bottom: 0; }
+.media-label {
+  font-size: 9pt;
+  color: var(--text);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.media-track {
+  height: 10px;
+  background: #e8f2ee;
+  border-radius: 999px;
+  overflow: hidden;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.media-fill {
+  height: 100%;
+  border-radius: 999px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  background: #155e2e; /* default teal */
+}
+.media-fill.mf-images { background: #155e2e; }
+.media-fill.mf-videos { background: #1e3a8a; }
+.media-fill.mf-audio  { background: #92400e; }
+.media-fill.mf-files  { background: #5b21b6; }
+.media-fill.mf-links  { background: #0c4a6e; }
+.media-count {
+  font-size: 9pt;
+  color: var(--teal);
+  font-weight: 900;
+  text-align: center;
+}
+
+.top-cats-title {
+  font-size: 11pt;
+  font-weight: 700;
+  color: var(--teal);
+  margin-bottom: 14px;
+  padding-right: 10px;
+  border-right: 3px solid var(--gold);
+}
+
+.top-cat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.tc-name  { font-size: 10pt; color: var(--text); min-width: 120px; }
+.tc-track { flex: 1; background: var(--teal-lt); border-radius: 4px; height: 9px; overflow: hidden; }
+.tc-fill  { height: 100%; background: var(--teal); border-radius: 4px; }
+.tc-num   { font-size: 9.5pt; font-weight: 700; color: var(--teal); min-width: 30px; text-align: center; }
+
+/* ══════════════════════════════════════════════════════════════════
+   PERFORMANCE ANALYSIS
+══════════════════════════════════════════════════════════════════ */
+.analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.analysis-card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--gold);
+  border-radius: var(--radius);
+  padding: 14px 12px;
+  text-align: center;
+}
+.analysis-label {
+  font-size: 8.5pt;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.analysis-value {
+  font-size: 12pt;
+  color: var(--teal-dk);
+  font-weight: 900;
+  line-height: 1.35;
+}
+.analysis-note {
+  background: var(--teal-lt);
+  border-right: 4px solid var(--teal);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 14px 16px;
+  font-size: 10.2pt;
+  color: var(--teal-dk);
+  line-height: 1.8;
+}
+.analysis-lists {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+}
+.analysis-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: var(--white);
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.analysis-list h4 {
+  font-size: 10pt;
+  color: var(--teal);
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 5px;
+}
+.analysis-list ul {
+  padding-right: 16px;
+  margin: 0;
+}
+.analysis-list li {
+  font-size: 8.8pt;
+  line-height: 1.65;
+  margin-bottom: 5px;
+  color: var(--body);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   SECTION TITLE HELPER
+══════════════════════════════════════════════════════════════════ */
+.sec {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.sec-icon {
+  width: 32px; height: 32px;
+  background: var(--teal);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+  color: #fff;
+}
+.sec-title { font-size: 14pt; font-weight: 700; color: var(--teal); flex: 1; }
+.sec-line  { height: 1px; flex: 1; background: var(--border); }
+
+/* ══════════════════════════════════════════════════════════════════
+   TOC
+══════════════════════════════════════════════════════════════════ */
+.toc-table { width: 100%; border-collapse: collapse; }
+.toc-table tr { border-bottom: 1px solid var(--border); }
+.toc-table tr:last-child { border-bottom: none; }
+.toc-table td { padding: 9px 12px; font-size: 10.5pt; vertical-align: middle; }
+.toc-num  { color: var(--teal); font-weight: 900; font-size: 11pt; width: 32px; }
+.toc-name { font-weight: 600; color: var(--text); }
+.toc-dot  { flex: 1; color: var(--border); letter-spacing: 2px; padding: 0 8px; }
+.toc-badge {
+  background: var(--teal-lt);
+  color: var(--teal);
+  font-size: 8.5pt;
+  font-weight: 700;
+  padding: 2px 11px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.toc-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 12px 0;
+  margin-top: 10px;
+  border-top: 2px solid var(--teal);
+  font-weight: 700;
+  font-size: 11pt;
+  color: var(--teal);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   INFO TABLE (teacher profile)
+══════════════════════════════════════════════════════════════════ */
+.info-table { width: 100%; border-collapse: collapse; border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; }
+.info-table tr { border-bottom: 1px solid var(--border); }
+.info-table tr:last-child { border-bottom: none; }
+.info-table td { padding: 10px 14px; font-size: 10.5pt; }
+.info-table .lbl { background: var(--teal); color: #fff; font-weight: 700; width: 38%; font-size: 10pt; }
+
+.philosophy {
+  background: var(--gold-lt);
+  border-right: 4px solid var(--gold);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 16px 18px;
+  font-size: 10.5pt;
+  line-height: 1.9;
+  color: #4a3800;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   SECTION HERO BAND (replaces full-teal section pages)
+══════════════════════════════════════════════════════════════════ */
+.section-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--teal);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 8px;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.sh-num {
+  font-size: 28pt;
+  font-weight: 900;
+  color: rgba(201,166,70,0.6);
+  line-height: 1;
+  flex-shrink: 0;
+  width: 50px;
+  text-align: center;
+}
+
+.sh-content { flex: 1; }
+.sh-name { font-size: 16pt; font-weight: 900; color: #fff; line-height: 1.2; }
+.sh-en   { font-size: 9.5pt; color: rgba(255,255,255,0.55); letter-spacing: 0.5px; margin-top: 2px; }
+
+.sh-count {
+  background: var(--gold);
+  color: var(--teal-dk);
+  font-size: 9pt;
+  font-weight: 900;
+  padding: 3px 14px;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.section-desc {
+  background: var(--teal-lt);
+  border-right: 3px solid var(--teal-mid);
+  border-radius: 0 6px 6px 0;
+  padding: 9px 14px;
+  font-size: 9.5pt;
+  color: var(--teal-dk);
+  margin-bottom: 18px;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   EVIDENCE CARD
+   ─────────────────────────────────────────────────────────────────
+   Phase 2 alias: `.evidence-card` is the new canonical name used by
+   `components/evidence_card.html`. We keep `.ev-card` for backward
+   compatibility with the legacy markup that may still ship in older
+   themes. Rules below apply to both selectors equally.
+══════════════════════════════════════════════════════════════════ */
+.ev-card,
+.evidence-card {
+  background: var(--white);
+  border: 1px solid var(--border-dk);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 12px;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  box-shadow: var(--shadow);
+}
+
+/* ── card header ── */
+.ev-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+.ev-badge {
+  flex-shrink: 0;
+  width: 32px; height: 32px;
+  background: var(--gold);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+  font-size: 7.3pt;
+  font-weight: 900;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.ev-title-block { flex: 1; min-width: 0; }
+.ev-title { font-size: 11pt; font-weight: 700; color: var(--teal-dk); }
+
+.ev-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+.tag {
+  font-size: 7.5pt;
+  padding: 1.5px 8px;
+  border-radius: 20px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.t-teal  { background: var(--teal); color: #fff; }
+.t-gold  { background: var(--gold-lt); color: var(--gold-dk); border: 1px solid #e0c56a; }
+.t-gray  { background: #eef0f2; color: var(--muted); }
+.t-green { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+
+/* ── card body ── */
+.ev-body { padding: 10px 12px; }
+
+.field-label {
+  font-size: 8.5pt;
+  font-weight: 700;
+  color: var(--teal);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 5px;
+}
+
+.ev-desc {
+  font-size: 10.5pt;
+  line-height: 1.65;
+  color: var(--body);
+  margin-bottom: 10px;
+}
+.evidence-sections {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.evidence-section {
+  border: 1px solid var(--border);
+  border-right: 3px solid var(--teal);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: #fbfdfd;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.evidence-section-label {
+  font-size: 8.3pt;
+  font-weight: 900;
+  color: var(--teal);
+  margin-bottom: 3px;
+}
+.evidence-section-text {
+  font-size: 9.5pt;
+  line-height: 1.55;
+  color: var(--body);
+}
+
+/* Educational value box */
+.edu-value {
+  background: var(--gold-lt);
+  border: 1px solid #e8cf7a;
+  border-radius: 7px;
+  padding: 8px 11px;
+  margin-bottom: 10px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.edu-value-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.edu-value-content {}
+.edu-value-label { font-size: 8pt; font-weight: 700; color: var(--gold-dk); margin-bottom: 3px; }
+.edu-value-text  { font-size: 9pt; color: #5a4200; line-height: 1.55; }
+
+/* ── Media ─────────────────────────────────────────────────────── */
+.media-wrap { margin-top: 4px; }
+
+/* Phase 2 alias for the wrapping "card" of any media type. Keeps
+   page-break protection on the visual container even when the card
+   internally uses .audio-card / .file-card / .url-card / etc. */
+.media-card {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* Placeholder when storage_path missing or image fails to load */
+.media-placeholder {
+  background: var(--card);
+  border: 2px dashed var(--border-dk);
+  border-radius: 8px;
+  padding: 18px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 10pt;
+  margin-bottom: 8px;
+}
+
+/* Image Grid */
+.img-grid {
+  display: grid;
+  gap: 8px;
+}
+.img-grid.g1 { grid-template-columns: 1fr; }
+.img-grid.g2 { grid-template-columns: 1fr 1fr; }
+.img-grid.g3 { grid-template-columns: 1fr 1fr 1fr; }
+.img-grid.g4 { grid-template-columns: 1fr 1fr; }
+
+.img-grid img {
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  display: block;
+}
+.img-grid.g1 img { object-fit: contain; max-height: 220px; }
+.img-grid.g2 img { height: 170px; }
+.img-grid.g3 img { height: 135px; }
+.img-grid.g4 img { height: 135px; }
+.gallery-note {
+  margin-top: 7px;
+  font-size: 8.5pt;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Audio */
+.audio-card {
+  display: flex;
+  gap: 12px;
+  background: var(--teal-lt);
+  border: 1px solid #b8d8da;
+  border-radius: 7px;
+  padding: 10px 12px;
+}
+.audio-icon  { font-size: 22px; flex-shrink: 0; }
+.audio-label { font-size: 8pt; font-weight: 700; color: var(--teal); margin-bottom: 4px; }
+.audio-text  { font-size: 9.5pt; color: var(--body); line-height: 1.7; font-style: italic; }
+
+/* Video */
+.video-wrap { position: relative; border-radius: 7px; overflow: hidden; background: #111; }
+.video-thumb {
+  width: 100%; max-height: 165px;
+  object-fit: cover;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  display: block;
+}
+.video-placeholder {
+  width: 100%; min-height: 100px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 42px;
+  background: #1a1a2e; color: #fff;
+  border-radius: 7px;
+}
+.play-btn {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 48px; height: 48px;
+  background: rgba(47,111,115,0.85);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+  color: #fff;
+  pointer-events: none;
+}
+.video-caption {
+  margin-top: 8px;
+  font-size: 9.5pt;
+  color: var(--body);
+  font-style: italic;
+}
+.video-hint {
+  margin-top: 6px;
+  font-size: 8.8pt;
+  color: var(--muted);
+  font-weight: 700;
+}
+.media-action {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 7px 20px;
+  border-radius: 999px;
+  background: var(--teal);
+  color: #fff !important;
+  text-decoration: none !important;
+  font-size: 9pt;
+  font-weight: 800;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* File / PDF card */
+.file-card {
+  display: flex;
+  gap: 12px;
+  background: var(--card);
+  border: 1px dashed var(--border-dk);
+  border-radius: 7px;
+  padding: 10px 12px;
+  align-items: flex-start;
+}
+.pdf-card {
+  border-color: #a3c4c5;
+  background: #f4fafa;
+}
+.file-icon { font-size: 28px; flex-shrink: 0; padding-top: 2px; }
+.file-name { font-size: 10pt; font-weight: 700; color: var(--teal-dk); }
+.file-type { font-size: 8.5pt; color: var(--muted); font-weight: 700; margin-top: 2px; }
+.file-unavailable {
+  margin-top: 4px;
+  font-size: 8.8pt;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+/* URL */
+.url-card {
+  display: flex;
+  gap: 12px;
+  background: var(--gold-lt);
+  border: 1px solid #e0c97a;
+  border-radius: 7px;
+  padding: 10px 12px;
+  align-items: flex-start;
+}
+.url-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+.url-text  { font-size: 9.5pt; color: var(--teal-dk); word-break: break-all; font-weight: 600; }
+.url-button {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 6px 18px;
+  border-radius: 999px;
+  background: var(--teal);
+  color: #fff;
+  text-decoration: none;
+  font-size: 9pt;
+  font-weight: 800;
+}
+.url-type {
+  display: inline-block;
+  margin-top: 3px;
+  color: var(--gold-dk);
+  font-size: 8.6pt;
+  font-weight: 700;
+}
+
+/* ── card footer ── */
+.ev-footer {
+  display: flex;
+  gap: 12px;
+  padding: 6px 12px;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  font-size: 8.5pt;
+  color: var(--muted);
+}
+.ev-footer span { display: flex; align-items: center; gap: 4px; }
+
+/* ══════════════════════════════════════════════════════════════════
+   EMPTY CATEGORY
+══════════════════════════════════════════════════════════════════ */
+.empty {
+  text-align: center;
+  padding: 24px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 10pt;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   CLOSING
+══════════════════════════════════════════════════════════════════ */
+.closing-hero {
+  background: linear-gradient(135deg, var(--teal-dk), var(--teal));
+  border-radius: 14px;
+  padding: 32px 28px;
+  color: #fff;
+  text-align: center;
+  margin-bottom: 28px;
+}
+.closing-hero h3  { font-size: 18pt; color: var(--gold); margin-bottom: 12px; }
+.closing-hero p   { font-size: 10.5pt; line-height: 1.9; color: rgba(255,255,255,0.78); }
+.closing-hero p + p { margin-top: 10px; font-size: 9.5pt; color: rgba(255,255,255,0.5); }
+
+.sig-row {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.sig-block { line-height: 1.8; font-size: 10.5pt; }
+.sig-block strong { color: var(--teal); }
+.sig-line { margin-top: 22px; font-size: 9pt; color: var(--muted); }
+
+.stamp {
+  text-align: center;
+  margin-top: 24px;
+  font-size: 8pt;
+  color: #ccc;
+}
+
+.dev-credit {
+  text-align: center;
+  margin-top: 10px;
+  font-size: 7.5pt;
+  color: #d0d8dc;
+  letter-spacing: 0.2px;
+}
+.dev-credit a { text-decoration: none; }
+
+.contact-box {
+  margin: 18px auto 6px;
+  max-width: 360px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  text-align: center;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.whatsapp-btn {
+  display: inline-block;
+  padding: 7px 18px;
+  border-radius: 999px;
+  background: var(--teal);
+  color: #fff;
+  text-decoration: none;
+  font-size: 9pt;
+  font-weight: 800;
+  margin-bottom: 7px;
+}
+.print-note {
+  font-size: 8pt;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* ── TEACHER STRIP (Philosophy page) ──────────────────────────── */
+.teacher-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.ts-field {
+  background: var(--teal-lt);
+  border: 1px solid var(--border-dk);
+  border-radius: 8px;
+  padding: 9px 14px;
+  min-width: 130px;
+  flex: 1 1 130px;
+}
+.ts-label {
+  font-size: 8pt;
+  font-weight: 700;
+  color: var(--teal);
+  margin-bottom: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.ts-value {
+  font-size: 10.5pt;
+  font-weight: 600;
+  color: var(--teal-dk);
+  line-height: 1.4;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   SMART LAYOUT v2 — Compact admin gallery + importance scoring
+══════════════════════════════════════════════════════════════════ */
+
+/* PDF preview thumbnail — strict height cap so the description AND the
+   thumbnail always live on the same page. Without this, A4 portrait
+   previews rendered at 340px wide become ~480px tall and force a
+   page-break that orphans the preview alone on the next page. */
+.pdf-preview-img {
+  display: block;
+  max-width: 260px;
+  max-height: 200px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 6px;
+  border: 1px solid #e0e7e5;
+  margin: 8px 0;
+  background: #fafbfc;
+}
+
+
+/* Compact 2-column grid for admin/reference categories.
+   Replaces the per-card full-page layout with a dense gallery. */
+.compact-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+/* Compact card: half width, fixed height, no description bloat. */
+.ev-card.compact,
+.evidence-card.compact {
+  margin-bottom: 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.ev-card.compact .ev-header,
+.evidence-card.compact .ev-header {
+  padding: 6px 9px;
+  gap: 7px;
+}
+.ev-card.compact .ev-badge,
+.evidence-card.compact .ev-badge {
+  width: 24px; height: 24px;
+  font-size: 6.5pt;
+}
+.ev-card.compact .ev-title,
+.evidence-card.compact .ev-title {
+  font-size: 9.5pt;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ev-card.compact .ev-tags,
+.evidence-card.compact .ev-tags { margin-top: 3px; }
+.ev-card.compact .ev-tags .tag,
+.evidence-card.compact .ev-tags .tag { font-size: 6.5pt; padding: 1px 6px; }
+.ev-card.compact .ev-body,
+.evidence-card.compact .ev-body { padding: 6px 9px; }
+.ev-card.compact .field-label,
+.evidence-card.compact .field-label { font-size: 7.5pt; margin-bottom: 3px; }
+.ev-card.compact .ev-desc,
+.evidence-card.compact .ev-desc {
+  font-size: 8.8pt;
+  line-height: 1.4;
+  margin-bottom: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ev-card.compact .file-card,
+.evidence-card.compact .file-card {
+  padding: 7px 9px;
+  gap: 7px;
+}
+.ev-card.compact .file-icon,
+.evidence-card.compact .file-icon {
+  width: 32px;
+  height: 32px;
+  font-size: 14pt;
+}
+.ev-card.compact .file-name,
+.evidence-card.compact .file-name { font-size: 9pt; }
+.ev-card.compact .file-type,
+.evidence-card.compact .file-type { font-size: 7.5pt; }
+.ev-card.compact .media-action,
+.evidence-card.compact .media-action {
+  font-size: 8pt;
+  padding: 4px 9px;
+  margin-top: 5px;
+}
+.ev-card.compact .ev-footer,
+.evidence-card.compact .ev-footer {
+  padding: 5px 9px;
+  font-size: 7.3pt;
+  gap: 7px;
+}
+/* Compact admin cards: hide enriched_sections + edu-value to save space — */
+/* the per-section القيمة التربوية is repeated for every weak admin doc and */
+/* duplicates the section-level desc above. Keep only essentials.            */
+.ev-card.compact .evidence-sections,
+.ev-card.compact .edu-value,
+.ev-card.compact .pdf-preview-img,
+.evidence-card.compact .evidence-sections,
+.evidence-card.compact .edu-value,
+.evidence-card.compact .pdf-preview-img {
+  display: none !important;
+}
+/* Hide PDF preview thumbnails specifically inside compact cards —
+   they double the card height for negligible extra information. */
+.ev-card.compact img[alt="معاينة الملف"],
+.evidence-card.compact img[alt="معاينة الملف"] {
+  display: none !important;
+}
+
+/* Importance hints (subtle visual): strong gets stronger left rail,
+   weak gets a muted rail. Used for non-compact cards. */
+.ev-card.imp-strong,
+.evidence-card.imp-strong { border-right: 4px solid var(--teal); }
+.ev-card.imp-medium,
+.evidence-card.imp-medium { border-right: 3px solid var(--gold); }
+.ev-card.imp-weak,
+.evidence-card.imp-weak   { border-right: 2px solid #d8dcd8; }

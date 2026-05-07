@@ -27,16 +27,13 @@ _jinja = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)), autoescape=Tr
 
 
 def _public_thumb(ev) -> str | None:
-    """Return a public /files URL for image thumbnails in the review page."""
-    storage_path = ev.storage_path
-    if not storage_path:
-        return None
-    file_path = Path(storage_path)
-    try:
-        rel = file_path.resolve().relative_to(settings.storage_path.resolve())
-        return f"{settings.effective_base_url}/files/{rel.as_posix()}"
-    except Exception:
-        return None
+    """Phase-4 adapter — URL construction lives in ``media_engine``."""
+    from app.media_engine.media_urls import storage_root_to_public_url
+    return storage_root_to_public_url(
+        ev.storage_path,
+        storage_root=settings.storage_path,
+        base_url=settings.effective_base_url,
+    )
 
 
 @router.get("/review/{token}", response_class=HTMLResponse)

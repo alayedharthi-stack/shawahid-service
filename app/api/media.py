@@ -38,70 +38,52 @@ _AUDIO_EXTS = (".ogg", ".mp3", ".m4a", ".wav", ".opus", ".aac", ".flac")
 
 
 def _resolve_video_url(ev, base_url: str) -> str | None:
+    """Phase-4 adapter — resolution lives in ``media_engine.video_pipeline``.
+
+    Keeps the original signature (ORM row + base_url) so the route
+    handler in this file is untouched. The ORM access is confined to
+    this two-line wrapper; the engine sees plain strings only.
     """
-    For video evidence, the DB storage_path holds the thumbnail (.thumb.jpg).
-    Find the actual video file in the same directory using ev.file_name.
-    Falls back to looking for any video file with the same stem.
-    """
-    sp = ev.storage_path
-    if not sp:
-        return None
+    from app.media_engine.video_pipeline import resolve_video_file
+    from app.media_engine.media_urls import storage_path_to_public_url
 
-    sp_path = Path(sp)
-
-    # Case 1: storage_path is a thumbnail — find original video via file_name
-    if sp_path.name.endswith(".thumb.jpg") and ev.file_name:
-        video_candidate = sp_path.parent / ev.file_name
-        if video_candidate.exists():
-            return storage_path_to_file_url(str(video_candidate), base_url)
-
-    # Case 2: storage_path is already a video file
-    if sp_path.suffix.lower() in _VIDEO_EXTS and sp_path.exists():
-        return storage_path_to_file_url(sp, base_url)
-
-    # Case 3: derive video path from thumbnail stem (strip .thumb.jpg → try extensions)
-    if sp_path.name.endswith(".thumb.jpg"):
-        stem = sp_path.name[: -len(".thumb.jpg")]
-        for ext in _VIDEO_EXTS:
-            candidate = sp_path.parent / (stem + ext)
-            if candidate.exists():
-                return storage_path_to_file_url(str(candidate), base_url)
-
-    return None
+    actual = resolve_video_file(ev.storage_path, ev.file_name)
+    return storage_path_to_public_url(actual, base_url) if actual else None
 
 
 def _resolve_audio_url(ev, base_url: str) -> str | None:
-    """Return the public URL for an audio evidence file with a correct path."""
-    sp = ev.storage_path
-    if not sp:
-        return None
-    sp_path = Path(sp)
-    if sp_path.exists():
-        return storage_path_to_file_url(sp, base_url)
-    # Try via file_name in the same directory
-    if ev.file_name:
-        candidate = sp_path.parent / ev.file_name
-        if candidate.exists():
-            return storage_path_to_file_url(str(candidate), base_url)
-    return None
+    """Phase-4 adapter — resolution lives in ``media_engine.audio_pipeline``."""
+    from app.media_engine.audio_pipeline import resolve_audio_file
+    from app.media_engine.media_urls import storage_path_to_public_url
+
+    actual = resolve_audio_file(ev.storage_path, ev.file_name)
+    return storage_path_to_public_url(actual, base_url) if actual else None
 
 
 def _guess_mime(path_str: str | None, stored_mime: str | None, ev_type: str) -> str:
-    """Best-effort MIME type from stored value, filename, or evidence type."""
+    """Best-effort MIME type from stored value, filename, or evidence type.
+
+    Phase-4 keeps the original behaviour (PDF / image defaults are
+    used by the viewer route), but routes audio guessing through
+    ``media_engine.audio_pipeline`` so audio MIME logic exists in one
+    place.
+    """
     if stored_mime:
         return stored_mime
+    et = (ev_type or "").lower()
+    if et in ("audio", "voice"):
+        from app.media_engine.audio_pipeline import guess_audio_mime
+        return guess_audio_mime(path_str, stored_mime, et)
     if path_str:
         guessed = mimetypes.guess_type(path_str)[0]
         if guessed:
             return guessed
     defaults = {
         "video": "video/mp4",
-        "audio": "audio/mpeg",
-        "voice": "audio/ogg",
         "pdf":   "application/pdf",
         "image": "image/jpeg",
     }
-    return defaults.get(ev_type, "application/octet-stream")
+    return defaults.get(et, "application/octet-stream")
 
 
 def _build_viewer_html(ev, file_url: str | None, base_url: str, *,

@@ -1,0 +1,105 @@
+{#
+  components/evidence_card.html — Phase 2
+  ───────────────────────────────────────
+  Single evidence card: header (badge + title + tags),
+  body (description / enriched sections / educational value), media,
+  and a small footer of meta tags.
+
+  Inputs (must be provided by caller / parent template):
+    - ev: legacy evidence dict (i.e. `ExportItem.raw`).
+    - cat: legacy category dict (i.e. `ExportSection.raw`) — used
+      only for `cat.value` (the per-section educational value box).
+    - is_compact (optional): force the compact admin layout. When the
+      caller is `admin_grid.html` this is true.
+
+  Notes:
+    • Class `evidence-card` (Phase-2 canonical) is used in addition to
+      the legacy `ev-card`. Both selectors share the same theme rules
+      so visual output is identical.
+    • Media rendering is delegated to `media_card.html`.
+
+  TODO(phase-3): replace `ev.*` legacy access with typed
+  `ExportItem.{title,description,evidence_type,media,...}`.
+#}
+{% set _is_compact = is_compact or ev.is_compact %}
+{% set _imp_class = 'imp-' ~ (ev.importance or 'medium') %}
+<div class="ev-card evidence-card {{ _imp_class }}{% if _is_compact %} compact{% endif %}">
+
+  {# ── Header ── #}
+  <div class="ev-header">
+    <div class="ev-badge">شاهد</div>
+    <div class="ev-title-block">
+      <div class="ev-title">{{ ev.title or 'شاهد بدون عنوان' }}</div>
+      <div class="ev-tags">
+        {% if ev.category %}<span class="tag t-gold">{{ ev.category }}</span>{% endif %}
+        {% if not _is_compact %}
+          {% for tag in ev.tags[:4] %}
+          <span class="tag t-teal">{{ tag }}</span>
+          {% endfor %}
+        {% endif %}
+        <span class="tag t-gray">
+          {%- if ev.evidence_type == 'image_gallery' %}📷 {{ ev.gallery_count }} صور
+          {%- elif ev.evidence_type == 'image'    %}📷 صورة
+          {%- elif ev.evidence_type == 'video'  %}🎥 فيديو
+          {%- elif ev.evidence_type in ('audio', 'voice')  %}🎙 صوت
+          {%- elif ev.evidence_type in ('pdf','document') %}📄 ملف
+          {%- elif ev.evidence_type == 'url'    %}🔗 رابط
+          {%- else %}📝 نص{%- endif %}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  {# ── Body ── #}
+  <div class="ev-body">
+
+    {# Compact admin cards skip the lengthy professional description AND
+       the القيمة التربوية box — both repeat the same template wording for
+       every weak file and waste vertical space. #}
+    {% if not _is_compact %}
+    {% if ev.enriched_sections %}
+    <div class="field-label">الشاهد التربوي الاحترافي</div>
+    <div class="evidence-sections">
+      {% for section in ev.enriched_sections %}
+      <div class="evidence-section">
+        <div class="evidence-section-label">{{ section.label }}</div>
+        <div class="evidence-section-text">{{ section.text }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% elif ev.ai_enriched_description or ev.description %}
+    <div class="field-label">الوصف التربوي</div>
+    <div class="ev-desc">{{ ev.ai_enriched_description or ev.description }}</div>
+    {% elif ev.message_text %}
+    <div class="field-label">المحتوى</div>
+    <div class="ev-desc" style="color:var(--muted); font-style:italic;">
+      {{ ev.message_text[:500] }}{% if ev.message_text|length > 500 %}…{% endif %}
+    </div>
+    {% endif %}
+
+    {% if cat is defined and cat.value %}
+    <div class="edu-value">
+      <div class="edu-value-icon">✨</div>
+      <div class="edu-value-content">
+        <div class="edu-value-label">القيمة التربوية</div>
+        <div class="edu-value-text">{{ cat.value }}</div>
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}{# end if not _is_compact #}
+
+    {% include "exports/ministry_v1/components/media_card.html" %}
+
+  </div>{# /ev-body #}
+
+  {# ── Footer ── #}
+  {% set footer_has_meta = ev.created_at or ev.subject or ev.grade or ev.category %}
+  {% if footer_has_meta %}
+  <div class="ev-footer">
+    {% if ev.created_at %}<span>📅 {{ ev.created_at.strftime('%Y/%m/%d') }}</span>{% endif %}
+    {% if ev.subject  %}<span>📖 {{ ev.subject }}</span>{% endif %}
+    {% if ev.grade    %}<span>🎓 {{ ev.grade }}</span>{% endif %}
+    {% if ev.category %}<span>🏷 {{ ev.category }}</span>{% endif %}
+  </div>
+  {% endif %}
+</div>{# /evidence-card #}

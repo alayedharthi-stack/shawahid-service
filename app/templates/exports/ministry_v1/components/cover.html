@@ -1,0 +1,74 @@
+{#
+  components/cover.html — Phase 2
+  ────────────────────────────────
+  Single-page cover. Reads from:
+    - teacher (legacy proxy / DTO; both expose .name .subject .stage .grades
+      .school_name .principal_name)
+    - subject_with_al, ministry_logo, export_type, academic_year
+      (legacy bridge variables surfaced by `app.export_engine.renderer`).
+
+  TODO(phase-3): swap `teacher.*` for `payload.teacher.*` and read
+  `ministry_logo` / `subject_with_al` from typed payload fields.
+#}
+<div class="tcover-page">
+
+  {# ═══ LARGE GLASS HERO CARD: logo + badge + title + teacher ═══ #}
+  <div class="tcover-hero-card">
+
+    <div class="tc-topbar">
+      <img class="tc-logo" src="{{ ministry_logo }}" alt="وزارة التعليم - Ministry of Education">
+      <div class="tc-topright">
+        <div class="tc-breadcrumb">المملكة العربية السعودية &nbsp;–&nbsp; وزارة التعليم</div>
+        <div class="tc-badge">ملف الشواهد</div>
+      </div>
+    </div>
+
+    <div class="tc-main">
+      <div class="tcover-headline">
+        <h1>
+          ملف الشواهد
+          {% if teacher.subject %}<span class="tcover-line2">لمعلم {{ subject_with_al or teacher.subject }}</span>{% endif %}
+        </h1>
+      </div>
+      <div class="tcover-teacher">
+        <div class="tcover-teacher-rule"></div>
+        {% if teacher.name %}<div class="tcover-teacher-name">{{ teacher.name }}</div>{% endif %}
+        {% if teacher.stage or teacher.grades %}
+        <div class="tcover-teacher-meta">
+          {% if teacher.stage %}{{ teacher.stage }}{% endif %}
+          {% if teacher.stage and teacher.grades %} &nbsp;–&nbsp; {% endif %}
+          {% if teacher.grades %}الصفوف: {{ teacher.grades }}{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>{# /tcover-hero-card #}
+
+  <div class="tcover-watermark">SHAWAHID</div>
+
+  <div class="tcover-card">
+    <div class="tcover-card-title">بيانات الملف</div>
+    <div class="tcover-grid">
+      <div class="tcover-field">
+        <div class="tcover-field-label">مدير المدرسة</div>
+        <div class="tcover-field-value">{{ teacher.principal_name or '—' }}</div>
+      </div>
+      <div class="tcover-field">
+        <div class="tcover-field-label">المدرسة</div>
+        <div class="tcover-field-value">{{ teacher.school_name or '—' }}</div>
+      </div>
+      <div class="tcover-field">
+        <div class="tcover-field-label">محور النسخة</div>
+        <div class="tcover-field-value">{{ export_type or 'كامل' }}</div>
+      </div>
+      <div class="tcover-field">
+        <div class="tcover-field-label">المادة</div>
+        <div class="tcover-field-value">{{ teacher.subject or '—' }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tcover-note">إعداد وتنظيم الشواهد بصيغة PDF جاهزة للطباعة &nbsp;|&nbsp; {{ academic_year }}</div>
+
+</div>

@@ -1,0 +1,21 @@
+{#
+  components/admin_grid.html — Phase 2
+  ────────────────────────────────────
+  Compact 2-column gallery for administrative / reference sections
+  (where `section.layout_mode == 'compact_grid'`).
+
+  Inputs:
+    - section: ExportSection
+    - cat:     legacy section dict (i.e. `section.raw`) — used only
+               so the inner cards can show `cat.value` if present.
+
+  Each evidence card is forced into compact mode so titles and
+  descriptions are line-clamped and previews are hidden.
+#}
+<div class="compact-grid">
+  {% for item in section.items %}
+    {% with ev=item.raw, is_compact=True %}
+      {% include "exports/ministry_v1/components/evidence_card.html" %}
+    {% endwith %}
+  {% endfor %}
+</div>

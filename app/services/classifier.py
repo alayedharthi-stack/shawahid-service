@@ -16,7 +16,6 @@ Safety invariants:
 
 from __future__ import annotations
 
-import base64
 import logging
 import re
 from enum import Enum
@@ -149,16 +148,24 @@ def fallback_classify(
 # ── Image helpers ─────────────────────────────────────────────────────────────
 
 def _image_content_from_path(storage_path: str) -> dict | None:
-    """Encode a local image as base64 data URL for GPT Vision."""
+    """Phase-4: data-URI generation is centralised in ``media_engine``.
+
+    All callers still get the GPT-vision ``image_url`` block they
+    expect; the actual base64 encoding happens inside
+    :mod:`app.media_engine._base64_utils`.
+    """
     try:
         p = Path(storage_path)
         if not p.exists() or p.stat().st_size == 0:
             return None
-        ext = p.suffix.lower().lstrip(".")
-        mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
-                "gif": "image/gif", "webp": "image/webp"}.get(ext, "image/jpeg")
-        b64 = base64.b64encode(p.read_bytes()).decode()
-        return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}", "detail": "high"}}
+        from app.media_engine._base64_utils import file_to_data_uri
+        from app.media_engine.image_pipeline import guess_image_mime
+
+        mime = guess_image_mime(p) or "image/jpeg"
+        data_uri = file_to_data_uri(str(p), mime_type=mime)
+        if not data_uri:
+            return None
+        return {"type": "image_url", "image_url": {"url": data_uri, "detail": "high"}}
     except Exception as exc:
         logger.warning("Could not encode image %s: %s", storage_path, exc)
         return None

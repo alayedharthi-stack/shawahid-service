@@ -1,0 +1,348 @@
+{#
+  Ministry V1 export theme — Phase 2 (decoupled).
+  ────────────────────────────────────────────────
+  Orchestrator template. Replaces the Phase-1 include of portfolio.html
+  with a fully self-contained file that:
+
+    1. Pulls the entire stylesheet from `theme.css` + `print.css`
+       (loaded via Jinja `{% include %}` so Playwright sees a single
+        inline `<style>` block — no HTTP fetches).
+    2. Composes the report from small components under `components/`.
+    3. Drives section iteration off the typed `payload.sections`
+       array. The split between foundational ("leading") sections
+       and the rest is read from `section.is_leading`, not from the
+       legacy `leading_categories` / `remaining_categories` lists.
+
+  Phase-3 TODOs (kept tracked here so reviewers can spot the bridges):
+    - Replace every `section.raw` access with typed
+      `ExportSection` fields once `cat.en`, `cat.value`,
+      `cat.evidences[*].importance`, `cat.evidences[*].is_compact`,
+      `cat.evidences[*].enriched_sections`, `cat.evidences[*].media_*`
+      are all surfaced on `ExportItem`.
+    - Replace `total_count`, `stats`, `performance_analysis`,
+      `academic_year`, `ministry_logo`, `subject_with_al`,
+      `whatsapp_phone`, `whatsapp_url` with typed payload fields.
+    - Drop the `_LegacyTeacherProxy` adapter inside
+      `app.export_engine.renderer` once the cover stops touching
+      legacy `teacher.*` attributes.
+
+  Strict contract:
+    • The template MUST NOT import or call any ORM model.
+    • The template MUST NOT make HTTP calls; every URL needed at
+      print time is already on the payload.
+    • Editing this file MUST NEVER require a database migration.
+#}
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8"/>
+  <title>ملف الشواهد – {{ teacher.name or 'المعلم' }}</title>
+  <style>
+    {# CSS files are pure text — autoescape would mangle `>` / `&` /
+       `<` characters inside comment headers and selectors. #}
+    {% autoescape false %}
+    {% include "exports/ministry_v1/theme.css" %}
+    {% include "exports/ministry_v1/print.css" %}
+    {% endautoescape %}
+  </style>
+</head>
+<body>
+
+{# ── COVER ───────────────────────────────────────────────────────── #}
+{% include "exports/ministry_v1/components/cover.html" %}
+
+
+{# ── PHILOSOPHY / TEACHER PROFILE ────────────────────────────────── #}
+{% set _has_teacher_profile =
+     teacher.name or teacher.subject or teacher.school_name or teacher.principal_name %}
+{% if _has_teacher_profile %}
+<div class="page page-first">
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">التعريف بالمعلم</span>
+  </div>
+
+  <div class="sec">
+    <div class="sec-icon">👤</div>
+    <div class="sec-title">التعريف بالمعلم والفلسفة التعليمية</div>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="teacher-strip">
+    {% if teacher.name %}<div class="ts-field"><div class="ts-label">الاسم الكامل</div><div class="ts-value">{{ teacher.name }}</div></div>{% endif %}
+    {% if teacher.subject %}<div class="ts-field"><div class="ts-label">التخصص / المادة</div><div class="ts-value">{{ teacher.subject }}</div></div>{% endif %}
+    {% if teacher.stage %}<div class="ts-field"><div class="ts-label">المرحلة الدراسية</div><div class="ts-value">{{ teacher.stage }}</div></div>{% endif %}
+    {% if teacher.grades %}<div class="ts-field"><div class="ts-label">الصفوف</div><div class="ts-value">{{ teacher.grades }}</div></div>{% endif %}
+    {% if teacher.school_name %}<div class="ts-field"><div class="ts-label">المدرسة</div><div class="ts-value">{{ teacher.school_name }}</div></div>{% endif %}
+    {% if teacher.principal_name %}<div class="ts-field"><div class="ts-label">مدير المدرسة</div><div class="ts-value">{{ teacher.principal_name }}</div></div>{% endif %}
+    {% if teacher.education_admin %}<div class="ts-field"><div class="ts-label">إدارة التعليم</div><div class="ts-value">{{ teacher.education_admin }}</div></div>{% endif %}
+    {% if teacher.region %}<div class="ts-field"><div class="ts-label">المنطقة</div><div class="ts-value">{{ teacher.region }}</div></div>{% endif %}
+    <div class="ts-field"><div class="ts-label">العام الدراسي</div><div class="ts-value">{{ academic_year }}</div></div>
+    <div class="ts-field"><div class="ts-label">إجمالي الشواهد</div><div class="ts-value">{{ total_count }} شاهد</div></div>
+  </div>
+
+  <div class="sec" style="margin-top:24px;">
+    <div class="sec-icon">💡</div>
+    <div class="sec-title">الفلسفة التعليمية</div>
+    <div class="sec-line"></div>
+  </div>
+  <div class="philosophy">
+    {% if teacher.name %}يؤمن المعلم <strong>{{ teacher.name }}</strong>{% else %}يؤمن هذا المعلم{% endif %}
+    بأن التعليم الفعّال يقوم على التخطيط المحكم، والتنفيذ الإبداعي، والتقويم المستمر.
+    ويسعى دائمًا إلى تنمية مهارات التفكير الناقد، وتعزيز قيم التعاون والمسؤولية،
+    مستعينًا بأساليب التعلم النشط والتقنيات الحديثة لتحقيق مخرجات تعليمية متميزة
+    تُسهم في رفع مستوى الطلاب وتُنمّي شخصياتهم.
+  </div>
+</div>
+{% endif %}{# /philosophy #}
+
+
+{# ── LEADING SECTIONS (Planning, Follow-up Log, …) ──────────────── #}
+{% set ns_idx = namespace(value=0) %}
+{% for section in payload.sections if section.is_leading and section.count > 0 %}
+  {% set ns_idx.value = ns_idx.value + 1 %}
+  {% set cat = section.raw %}
+  {% set section_index = ns_idx.value %}
+  {% include "exports/ministry_v1/components/section.html" %}
+{% endfor %}
+
+
+{# ── STATISTICS ──────────────────────────────────────────────────── #}
+{% if payload.summary.total_count > 0 %}
+{% set image_count = payload.summary.image_count %}
+{% set video_count = payload.summary.video_count %}
+{% set audio_count = payload.summary.audio_count %}
+{% set file_count  = payload.summary.file_count %}
+{% set url_count   = payload.summary.url_count %}
+{% set _total      = payload.summary.total_count %}
+<div class="page">
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">ملخص إحصائي</span>
+  </div>
+
+  <div class="sec">
+    <div class="sec-icon">📊</div>
+    <div class="sec-title">ملخص الشواهد والإحصائيات</div>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card stat-card-accent"><div class="stat-icon">📁</div><div class="stat-num">{{ _total }}</div><div class="stat-lbl">إجمالي الشواهد</div></div>
+    <div class="stat-card stat-card-accent"><div class="stat-icon">📷</div><div class="stat-num">{{ image_count }}</div><div class="stat-lbl">صور توثيقية</div></div>
+    <div class="stat-card stat-card-accent"><div class="stat-icon">🎥</div><div class="stat-num">{{ video_count }}</div><div class="stat-lbl">مقاطع فيديو</div></div>
+    <div class="stat-card stat-card-accent"><div class="stat-icon">🎙</div><div class="stat-num">{{ audio_count }}</div><div class="stat-lbl">تسجيلات صوتية</div></div>
+    <div class="stat-card stat-card-accent"><div class="stat-icon">📄</div><div class="stat-num">{{ file_count }}</div><div class="stat-lbl">ملفات ووثائق</div></div>
+    <div class="stat-card stat-card-accent"><div class="stat-icon">🔗</div><div class="stat-num">{{ url_count }}</div><div class="stat-lbl">روابط إثرائية</div></div>
+  </div>
+
+  <div class="media-chart">
+    <div class="chart-title">توزيع الوسائط</div>
+    <div class="media-row">
+      <span class="media-label">الصور</span>
+      <div class="media-track"><div class="media-fill mf-images" style="width: {{ (image_count / _total * 100)|round(1) }}%;"></div></div>
+      <span class="media-count">{{ image_count }}</span>
+    </div>
+    <div class="media-row">
+      <span class="media-label">الفيديو</span>
+      <div class="media-track"><div class="media-fill mf-videos" style="width: {{ (video_count / _total * 100)|round(1) }}%;"></div></div>
+      <span class="media-count">{{ video_count }}</span>
+    </div>
+    <div class="media-row">
+      <span class="media-label">الصوتيات</span>
+      <div class="media-track"><div class="media-fill mf-audio" style="width: {{ (audio_count / _total * 100)|round(1) }}%;"></div></div>
+      <span class="media-count">{{ audio_count }}</span>
+    </div>
+    <div class="media-row">
+      <span class="media-label">الملفات</span>
+      <div class="media-track"><div class="media-fill mf-files" style="width: {{ (file_count / _total * 100)|round(1) }}%;"></div></div>
+      <span class="media-count">{{ file_count }}</span>
+    </div>
+    <div class="media-row">
+      <span class="media-label">الروابط</span>
+      <div class="media-track"><div class="media-fill mf-links" style="width: {{ (url_count / _total * 100)|round(1) }}%;"></div></div>
+      <span class="media-count">{{ url_count }}</span>
+    </div>
+  </div>
+
+  {% if payload.summary.top_categories %}
+  <div class="sec" style="margin-top:10px; margin-bottom:14px;"><div class="sec-icon">🏆</div><div class="sec-title">أبرز التصنيفات</div><div class="sec-line"></div></div>
+  {% for top in payload.summary.top_categories %}
+  <div class="top-cat-row">
+    <span class="tc-name">{{ top.name }}</span>
+    <div class="tc-track"><div class="tc-fill" style="width:{{ top.pct }}%;"></div></div>
+    <span class="tc-num">{{ top.count }}</span>
+  </div>
+  {% endfor %}
+  {% endif %}
+</div>
+{% endif %}{# /stats conditional #}
+
+
+{# ── PERFORMANCE ANALYSIS ────────────────────────────────────────── #}
+{# TODO(phase-3): hoist `performance_analysis` to a typed payload field. #}
+{% if payload.summary.total_count > 0 and performance_analysis %}
+<div class="page">
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">تحليل الأداء</span>
+  </div>
+
+  <div class="sec">
+    <div class="sec-icon">📈</div>
+    <div class="sec-title">تحليل الأداء المهني</div>
+    <div class="sec-line"></div>
+  </div>
+
+  <div class="analysis-grid">
+    <div class="analysis-card"><div class="analysis-label">أعلى محور</div><div class="analysis-value">{{ performance_analysis.top_category.name }}<br/>{{ performance_analysis.top_category.count }} شاهد</div></div>
+    <div class="analysis-card"><div class="analysis-label">أقل محور</div><div class="analysis-value">{{ performance_analysis.low_category.name }}<br/>{{ performance_analysis.low_category.count }} شاهد</div></div>
+    <div class="analysis-card"><div class="analysis-label">أكثر نوع وسائط</div><div class="analysis-value">{{ performance_analysis.top_media.name }}<br/>{{ performance_analysis.top_media.count }} شاهد</div></div>
+    <div class="analysis-card"><div class="analysis-label">إجمالي الشواهد</div><div class="analysis-value">{{ performance_analysis.total_count }} شاهد</div></div>
+  </div>
+
+  <div class="analysis-note">{{ performance_analysis.note }}</div>
+
+  <div class="analysis-lists">
+    <div class="analysis-list">
+      <h4>أبرز نقاط القوة</h4>
+      <ul>
+        {% for item in performance_analysis.strengths %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="analysis-list">
+      <h4>مجالات التحسين</h4>
+      <ul>
+        {% for item in performance_analysis.improvements %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="analysis-list">
+      <h4>توصيات تطوير</h4>
+      <ul>
+        {% for item in performance_analysis.recommendations %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+
+{# ── TABLE OF CONTENTS ───────────────────────────────────────────── #}
+{% set _toc_sections = payload.sections | selectattr('count', '>', 0) | list %}
+{% if _toc_sections | length >= 2 %}
+<div class="page">
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">فهرس المحتويات</span>
+  </div>
+
+  <div class="sec">
+    <div class="sec-icon">📋</div>
+    <div class="sec-title">فهرس المحتويات</div>
+    <div class="sec-line"></div>
+  </div>
+
+  <table class="toc-table">
+    {% for section in _toc_sections %}
+    <tr>
+      <td class="toc-num">{{ loop.index }}</td>
+      <td class="toc-name">{{ section.title }}</td>
+      <td style="text-align:left;"><span class="toc-badge">{{ section.count }} شاهد</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <div class="toc-total">
+    <span>الإجمالي</span>
+    <span class="toc-badge" style="font-size:10pt; padding:3px 14px;">{{ payload.summary.total_count }} شاهد</span>
+  </div>
+</div>
+{% endif %}{# /toc conditional #}
+
+
+{# ── REMAINING SECTIONS ──────────────────────────────────────────── #}
+{# We keep the legacy numbering: leading sections get 1..N, the rest
+   continue at N+1 even if some leading sections are empty (matches
+   `_split_leading_categories` length used by the legacy template). #}
+{% set _leading_total = payload.sections | selectattr('is_leading') | list | length %}
+{% set ns_idx2 = namespace(value=_leading_total) %}
+{% for section in payload.sections if not section.is_leading and section.count > 0 %}
+  {% set ns_idx2.value = ns_idx2.value + 1 %}
+  {% set cat = section.raw %}
+  {% set section_index = ns_idx2.value %}
+  {% include "exports/ministry_v1/components/section.html" %}
+{% endfor %}
+
+
+{# ── CLOSING ─────────────────────────────────────────────────────── #}
+{% set _closing_has_content =
+     (payload.summary.total_count or 0) > 0
+     or teacher.name or teacher.principal_name or teacher.school_name %}
+{% if _closing_has_content %}
+<div class="page">
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">خاتمة الملف</span>
+  </div>
+
+  <div class="closing-hero">
+    <h3>خاتمة الملف</h3>
+    <p>
+      يُعدّ هذا الملف توثيقًا أمينًا لجهود المعلم
+      {% if teacher.name %}<strong style="color:var(--gold);">{{ teacher.name }}</strong>{% endif %}
+      خلال العام الدراسي {{ academic_year }}.
+      وقد حرص على تنويع شواهد أدائه المهني لتشمل التخطيط والتنفيذ والتقويم
+      والأنشطة الإثرائية، سعيًا نحو تحقيق الجودة التعليمية ورفع مستوى التحصيل.
+    </p>
+    <p>
+      إن ما يحويه هذا الملف من صور وخطط وتسجيلات وملفات ليس غاية في ذاته،
+      بل هو وسيلة للتأمل والتطوير المستمر.
+    </p>
+  </div>
+
+  <div class="sig-row">
+    <div class="sig-block">
+      <strong>المعلم</strong><br/>
+      {% if teacher.name %}{{ teacher.name }}<br/>{% endif %}
+      {% if teacher.subject or teacher.school_name %}
+      {% if teacher.subject %}{{ teacher.subject }}{% endif %}{% if teacher.subject and teacher.school_name %} — {% endif %}{% if teacher.school_name %}{{ teacher.school_name }}{% endif %}<br/>
+      {% endif %}
+      <div class="sig-line">التوقيع: ___________________________</div>
+    </div>
+    <div class="sig-block" style="text-align:left;">
+      <strong>مدير المدرسة</strong><br/>
+      {% if teacher.principal_name %}{{ teacher.principal_name }}<br/>{% endif %}
+      {% if teacher.school_name %}{{ teacher.school_name }}<br/>{% endif %}
+      <div class="sig-line">التوقيع: ___________________________</div>
+    </div>
+  </div>
+
+  <div class="stamp">
+    تم إنشاء هذا الملف تلقائيًا عبر منصة شواهد AI &nbsp;·&nbsp; {{ generated_at }}
+  </div>
+
+  <div class="contact-box">
+    <a href="{{ whatsapp_url }}" class="whatsapp-btn">تواصل عبر واتساب</a>
+    <div class="print-note">
+      للاشتراك أو الاستفسار:<br/>
+      واتساب: {{ whatsapp_phone }}
+    </div>
+  </div>
+
+  <div class="dev-credit">
+    Developed by <strong>Turki Alharthi</strong> &nbsp;·&nbsp;
+    <a href="https://nahlah.ai" style="color:inherit;">nahlah.ai</a>
+    &nbsp;·&nbsp;
+    <a href="https://wa.me/966544761054" style="color:inherit;">WhatsApp</a>
+  </div>
+</div>
+{% endif %}{# /closing conditional #}
+
+</body>
+</html>

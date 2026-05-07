@@ -310,24 +310,17 @@ def generate_pdf_preview(pdf_path: str | Path, max_pixels: int = 800) -> str | N
 
 
 def storage_path_to_file_url(storage_path: str | None, base_url: str) -> str | None:
-    """
-    Convert a local storage_path to a public /files/ URL.
+    """Phase-4 adapter — delegates to ``media_engine.media_urls``.
 
-    storage_path is typically an absolute path like:
-        /app/storage/teachers/123/evidences/file_abc.pdf
-    The /files/ static mount serves the storage root, so we strip
-    everything before 'teachers/' and prepend the base URL + /files/.
+    Kept here as a thin wrapper so the webhook (which we are forbidden
+    to touch in Phase 4) continues to import the function from its
+    historic location, while every URL byte is now produced inside
+    ``media_engine``.
     """
-    if not storage_path:
-        return None
-    try:
-        parts = Path(storage_path).parts
-        idx   = next(i for i, p in enumerate(parts) if p == "teachers")
-        rel   = "/".join(parts[idx:])
-        return f"{base_url.rstrip('/')}/files/{rel}"
-    except StopIteration:
-        logger.debug("[FILE URL] 'teachers' not in storage_path: %s", storage_path)
-        return None
+    # TODO(phase-5): migrate webhook + api.media imports to
+    # ``app.media_engine.media_urls`` and delete this wrapper.
+    from app.media_engine.media_urls import storage_path_to_public_url
+    return storage_path_to_public_url(storage_path, base_url)
 
 
 def detect_evidence_type(mime_type: str | None, file_name: str | None, text: str | None) -> str:

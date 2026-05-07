@@ -1,0 +1,23 @@
+{#
+  components/gallery.html — Phase 2
+  ─────────────────────────────────
+  Grouped image-gallery layout used when an evidence holds multiple
+  related photos for the same activity.
+
+  Inputs:
+    - ev: legacy evidence dict (see ExportItem.raw).
+      Must expose `images` (list of {media_src, title}) and
+      `evidence_type == 'image_gallery'`.
+
+  TODO(phase-3): consume typed media list off `ExportItem.media` once
+  the builder produces a `gallery` array of `ExportMedia` entries.
+#}
+{% set gsize = ev.images|length %}
+<div class="img-grid g{{ gsize if gsize <= 4 else 4 }}">
+  {% for image in ev.images[:4] %}
+  <img src="{{ image.media_src }}"
+       alt="{{ image.title }}"
+       onerror="this.style.display='none';" />
+  {% endfor %}
+</div>
+<div class="gallery-note">مجموعة صور توثيقية لنفس النشاط — {{ gsize }} صور</div>

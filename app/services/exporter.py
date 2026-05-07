@@ -2,9 +2,7 @@
 Portfolio PDF exporter using Playwright.
 HTML is rendered via Jinja2 then converted to A4 PDF via Playwright/Chromium.
 """
-import base64
 import logging
-import mimetypes
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -461,50 +459,31 @@ def _safe_link_href(media_url: str | None, message_text: str | None) -> str | No
 
 
 def _is_safe_public_url(url: str | None) -> bool:
-    text = _clean_text(url)
-    if not text:
-        return False
-    lowered = text.lower()
-    # These hosts serve temporary/auth-gated media that will return 401 for end users
-    blocked_hosts = (
-        "lookaside.fbsbx.com",
-        "lookaside.facebook.com",
-        "fbsbx.com",
-        "fbcdn.net",
-        "facebook.com",
-        "graph.facebook.com",
-        "whatsapp.net",
-        "whatsapp.com",
-        "mmg.whatsapp.net",
-        "media.whatsapp.net",
-    )
-    return lowered.startswith(("http://", "https://")) and not any(host in lowered for host in blocked_hosts)
+    """Phase-4 adapter — host-blocking lives in ``media_engine.media_urls``."""
+    from app.media_engine.media_urls import is_safe_public_url
+    return is_safe_public_url(_clean_text(url))
 
 
 def _public_storage_url(path: str | None) -> str | None:
-    """Build a stable public /files URL for files stored under STORAGE_ROOT."""
-    clean_path = _clean_text(path)
-    if not clean_path:
-        return None
-
-    file_path = Path(clean_path)
-    try:
-        rel_path = file_path.resolve().relative_to(settings.storage_path.resolve())
-    except Exception:
-        return None
-
-    return f"{settings.effective_base_url}/files/{rel_path.as_posix()}"
+    """Phase-4 adapter — URL construction lives in ``media_engine.media_urls``."""
+    from app.media_engine.media_urls import storage_root_to_public_url
+    return storage_root_to_public_url(
+        _clean_text(path),
+        storage_root=settings.storage_path,
+        base_url=settings.effective_base_url,
+    )
 
 
 def _public_media_url(evidence_type: str, storage_path: str | None, media_url: str | None) -> str | None:
-    """Prefer long-lived service-hosted links; never expose temporary CDN URLs."""
-    local_url = _public_storage_url(storage_path)
-    if local_url:
-        suffix = Path(storage_path or "").suffix.lower()
-        if evidence_type == "video" and suffix in _IMAGE_EXTS:
-            return None
-        return local_url
-    return media_url if _is_safe_public_url(media_url) else None
+    """Phase-4 adapter — URL construction lives in ``media_engine.media_urls``."""
+    from app.media_engine.media_urls import public_media_url
+    return public_media_url(
+        evidence_type,
+        _clean_text(storage_path),
+        _clean_text(media_url),
+        storage_root=settings.storage_path,
+        base_url=settings.effective_base_url,
+    )
 
 
 def _file_type_label(file_name: str | None, evidence_type: str, mime_type: str | None) -> str:
@@ -594,8 +573,9 @@ def _ministry_logo_svg_data_uri() -> str:
         letter-spacing="0.4">Ministry of Education</text>
 </svg>
 """.strip()
-    encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
-    return f"data:image/svg+xml;base64,{encoded}"
+    # Phase-4: all base64 / data:URI generation lives in media_engine.
+    from app.media_engine.image_pipeline import svg_text_to_data_uri
+    return svg_text_to_data_uri(svg)
 
 
 # ── Arabic-aware subject formatter ────────────────────────────────────────────
@@ -682,32 +662,24 @@ def _format_subject_with_al(subject: str | None) -> str:
 
 
 def _file_data_uri(path: str | None, mime_type: str | None = None) -> str | None:
-    """Return a browser-safe data URI for local media used inside Playwright PDF."""
-    if not path:
-        return None
+    """Phase-4 thin adapter — delegates to ``media_engine``.
 
-    file_path = Path(path)
-    if not file_path.exists() or not file_path.is_file():
-        logger.warning("[PDF MEDIA MISSING] path=%s", path)
-        return None
-
-    guessed = mime_type or mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
-    try:
-        encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
-    except Exception as exc:
-        logger.warning("[PDF MEDIA READ FAILED] path=%s error=%s", path, exc)
-        return None
-
-    return f"data:{guessed};base64,{encoded}"
+    Kept as a private name so existing call-sites inside this file
+    don't have to be rewritten in the same patch. Phase 5 will inline
+    the call through ``app.media_engine`` directly.
+    """
+    # TODO(phase-5): replace direct callers with media_engine imports
+    # and delete this wrapper.
+    from app.media_engine._base64_utils import file_to_data_uri
+    return file_to_data_uri(path, mime_type=mime_type)
 
 
 def _image_data_uri(path: str | None) -> str | None:
-    if not path:
-        return None
-    file_path = Path(path)
-    if file_path.suffix.lower() not in _IMAGE_EXTS:
-        return None
-    return _file_data_uri(str(file_path))
+    """Phase-4 thin adapter — delegates to ``media_engine``."""
+    # TODO(phase-5): replace direct callers with media_engine imports
+    # and delete this wrapper.
+    from app.media_engine.image_pipeline import image_to_data_uri
+    return image_to_data_uri(path)
 
 
 # ── Evidence normalisation for PDF export ─────────────────────────────────────
@@ -823,8 +795,18 @@ def _normalize_evidence_for_export(ev) -> dict:
     mime_type = _clean_text(ev.mime_type)
 
     # ── Media viewer URL — stable link for each evidence ──────────────────────
+    # Phase-4: routed through media_engine.build_media_urls so the
+    # exporter never builds a /media/{id} URL by hand.
     base_url = settings.effective_base_url
-    media_viewer_url = f"{base_url}/media/{ev.id}"
+    from app.media_engine.media_urls import build_media_urls as _build_media_urls
+    _engine_urls = _build_media_urls(
+        evidence_id=ev.id,
+        evidence_type=ev_type,
+        storage_path=ev.storage_path,
+        media_url=media_url,
+        base_url=base_url,
+    )
+    media_viewer_url = _engine_urls.player_url
 
     # ── File URL via /files/ static mount ─────────────────────────────────────
     file_public_url = storage_path_to_file_url(ev.storage_path, base_url)
@@ -1302,20 +1284,32 @@ def _select_evidences_for_mode(evidences: list, export_mode: str = "full") -> li
     return selected
 
 
-def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool = False) -> str:
+def _render_html(
+    teacher: Teacher,
+    evidences: list,
+    *,
+    include_intro_page: bool = False,
+    export_mode: str = "full",
+) -> str:
     """Render the portfolio HTML.
 
-    The cover page is the final design embedded in `portfolio.html`
-    (kept in sync with `app/templates/teacher_cover.html`). It is rendered
-    as a fixed A4 page with `overflow: hidden`, so it can never spill into
-    a phantom second page.
+    Phase-1 boundary: this function is now a thin adapter over
+    ``app.export_engine``. It builds an :class:`ExportPayload` from
+    the ORM rows and renders the ``ministry_v1`` theme. The PDF
+    rendering path (``_generate_pdf``) and the WhatsApp delivery flow
+    in :func:`run_export_background` are intentionally untouched.
 
-    `include_intro_page` controls the optional intro/credit/separator page.
-    Default is False — empty intro pages are never rendered automatically.
+    Visual output is bit-identical: the new theme delegates to the
+    legacy ``portfolio.html`` template via Jinja ``{% include %}``.
+
+    ``include_intro_page`` is forwarded through the payload's
+    ``legacy_context`` so the existing template still sees it.
     """
-    from app.services.deduplication import deduplicate_for_export
+    # Lazy imports keep the engine optional inside legacy code paths.
+    from app.export_engine.payload_builder import build_export_payload
+    from app.export_engine.renderer import render_template
 
-    # ── PDF VISIBILITY: log which PDFs entered the pipeline ──────────────────
+    # ── Visibility logging kept here (it inspects ORM, not payload) ──
     _input_pdfs = [
         ev for ev in evidences
         if (ev.evidence_type or "").lower() in ("pdf", "document")
@@ -1328,44 +1322,16 @@ def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool 
             [ev.id for ev in _input_pdfs],
         )
 
-    # ── Step 1: Normalise ALL evidences ──────────────────────────────────────
-    # Guarantees every evidence has a proper title, category, and description.
-    normalised = [_normalize_evidence_for_export(ev) for ev in evidences]
-    n_fixed    = sum(1 for e in normalised if e["was_normalised"])
-    if n_fixed:
-        logger.info("[PDF NORMALISE] %d/%d evidences had missing metadata — defaults applied",
-                    n_fixed, len(normalised))
+    payload = build_export_payload(teacher, evidences, mode=export_mode)
+    payload.legacy_context["include_intro_page"] = include_intro_page
 
-    # ── Step 2: Filter noisy export-only records + teacher-excluded ones ─────
-    # is_excluded_from_export is set by the review page — never deletes from DB.
-    _before_filter_ids = {ev["id"] for ev in normalised
-                          if ev.get("evidence_type") in ("pdf", "document")}
-    normalised = [ev for ev in normalised if _should_export_evidence(ev) and not ev.get("is_excluded_from_export")]
-    _after_filter_ids = {ev["id"] for ev in normalised
-                         if ev.get("evidence_type") in ("pdf", "document")}
-    _filtered_pdfs = _before_filter_ids - _after_filter_ids
-    if _filtered_pdfs:
-        logger.warning(
-            "[PDF FILTERED OUT] teacher_id=%s pdf_ids=%s — removed by _should_export_evidence/excluded_from_export",
-            getattr(teacher, "id", None), sorted(_filtered_pdfs),
-        )
-
-    # ── Step 3: Deduplicate before rendering ──────────────────────────────────
-    # Safety net: removes duplicate evidences that slipped through save-time checks
-    # (e.g. evidences added before dedup system was deployed, or content_hash=None).
-    deduped   = deduplicate_for_export(normalised)
-    n_removed = len(normalised) - len(deduped)
-    if n_removed:
-        logger.info("[PDF DEDUP] removed %d duplicate(s) before render", n_removed)
-
-    categories = _build_categories(deduped)
-
-    # ── PDF VISIBILITY: confirm which PDFs survived all the way to render ────
-    _final_pdf_ids = []
-    for cat in categories:
-        for ev in cat.get("evidences", []):
-            if ev.get("evidence_type") in ("pdf", "document"):
-                _final_pdf_ids.append(ev.get("id"))
+    # Survival check on PDFs after the engine pipeline (uses payload).
+    _final_pdf_ids = [
+        item.id
+        for section in payload.sections
+        for item in section.items
+        if (item.evidence_type or "").lower() in ("pdf", "document")
+    ]
     if _input_pdfs:
         _missing = {ev.id for ev in _input_pdfs} - set(_final_pdf_ids)
         if _missing:
@@ -1379,36 +1345,16 @@ def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool 
                 getattr(teacher, "id", None), len(_final_pdf_ids), _final_pdf_ids,
             )
 
-    stats      = _build_stats(deduped, categories)
-    leading_categories, remaining_categories = _split_leading_categories(categories)
-    performance_analysis = _build_performance_analysis(
-        categories, len(deduped), stats, teacher=teacher, evidences=deduped
-    )
-
     logger.info(
-        "[PDF RENDER] teacher_id=%s evidences=%d categories=%d include_intro_page=%s",
-        getattr(teacher, "id", None), len(deduped), len(categories), include_intro_page,
+        "[PDF RENDER] teacher_id=%s evidences=%d sections=%d include_intro_page=%s mode=%s",
+        getattr(teacher, "id", None),
+        payload.summary.total_count,
+        len(payload.sections),
+        include_intro_page,
+        payload.export_mode,
     )
 
-    template   = _jinja_env.get_template("portfolio.html")
-    return template.render(
-        teacher=teacher,
-        categories=categories,
-        leading_categories=leading_categories,
-        remaining_categories=remaining_categories,
-        performance_analysis=performance_analysis,
-        stats=stats,
-        total_count=len(deduped),
-        academic_year=_academic_year(),
-        generated_at=datetime.now().strftime("%Y/%m/%d %H:%M"),
-        ministry_logo=_ministry_logo_svg_data_uri(),
-        # Grammar-correct subject for the cover headline:
-        # "لمعلم الرياضيات" instead of "لمعلم رياضيات".
-        subject_with_al=_format_subject_with_al(getattr(teacher, "subject", None)),
-        whatsapp_phone=_SUPPORT_WHATSAPP,
-        whatsapp_url=f"https://wa.me/{_SUPPORT_WHATSAPP}",
-        include_intro_page=include_intro_page,
-    )
+    return render_template("ministry_v1", payload)
 
 
 async def _generate_pdf(html: str, output_path: Path) -> None:
@@ -1540,7 +1486,7 @@ async def run_export_background(teacher_id: int, export_id: int, export_mode: st
             teacher_id, len(evidences), export_id, export_mode,
         )
 
-        html = _render_html(teacher, evidences)
+        html = _render_html(teacher, evidences, export_mode=export_mode)
 
         export_dir = settings.export_storage(teacher_id)
         timestamp  = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")

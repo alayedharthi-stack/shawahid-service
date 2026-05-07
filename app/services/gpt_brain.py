@@ -14,7 +14,6 @@ No rule-based fallback. GPT leads, code executes.
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
 from pathlib import Path
@@ -541,20 +540,28 @@ def _build_content(
 
 
 def _encode_local_image(storage_path: str, mime_type: str | None) -> dict | None:
+    """Phase-4: data-URI generation is centralised in ``media_engine``.
+
+    The function still returns the OpenAI ``image_url`` block shape
+    callers expect, but the actual base64 work happens inside
+    :mod:`app.media_engine._base64_utils` so a single test can prove
+    no other module in the codebase touches ``base64.b64encode``.
+    """
     try:
         p = Path(storage_path)
         if not p.exists() or p.stat().st_size == 0:
             return None
-        ext  = p.suffix.lower().lstrip(".")
-        mime = mime_type or {
-            "jpg": "image/jpeg", "jpeg": "image/jpeg",
-            "png": "image/png",  "gif": "image/gif",
-            "webp": "image/webp",
-        }.get(ext, "image/jpeg")
-        b64 = base64.b64encode(p.read_bytes()).decode()
+        from app.media_engine._base64_utils import file_to_data_uri
+        from app.media_engine.image_pipeline import guess_image_mime
+
+        # Force a sensible image MIME — GPT vision rejects octet-stream.
+        mime = mime_type or guess_image_mime(p) or "image/jpeg"
+        data_uri = file_to_data_uri(str(p), mime_type=mime)
+        if not data_uri:
+            return None
         return {
             "type": "image_url",
-            "image_url": {"url": f"data:{mime};base64,{b64}", "detail": "high"},
+            "image_url": {"url": data_uri, "detail": "high"},
         }
     except Exception as exc:
         logger.warning("Could not encode image %s: %s", storage_path, exc)
@@ -1256,3 +1263,220 @@ def analyze_pdf_document(
     except Exception as exc:
         logger.warning("[PDF ANALYSIS GPT FAILED] file=%r model=%s error=%s", filename, model, exc)
         return None
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Phase-3 structured evidence analysis
+# ══════════════════════════════════════════════════════════════════════
+# A second, narrower analyser that returns the JSON shape the new
+# WhatsApp builders expect. It is *additive*: it does not replace
+# ``ask_gpt`` or ``analyze_pdf_document``, and the webhook can opt
+# in by calling ``analyze_evidence_structured`` for any evidence
+# where it wants a single rich classification + reply summary.
+#
+# The schema is fixed; downstream tests assert every key is present
+# (mock-friendly because no DB / network is required).
+
+_STRUCTURED_EVIDENCE_SYSTEM = """\
+أنت "عقل شواهد AI" — مشرف تربوي خبير في تصنيف الشواهد للمعلمين.
+مهمتك: استلام أي شاهد (صورة / صوت / ملف / نص / رابط) وإعادة JSON واحد منظم.
+
+══ التصنيفات الرسمية المسموحة (استخدم واحدة فقط في حقل category) ══
+- التخطيط          ← خطط، توزيع منهج، تحضير، نواتج التعلم
+- التقويم          ← اختبارات، أوراق عمل، درجات، مهام أدائية
+- سجل المتابعة     ← حضور وغياب الطلاب، متابعة يومية
+- ملفات إدارية     ← تعاميم، خطابات، قرارات، جدول مدرسي (أيام × حصص)
+- مصدر تعليمي      ← روابط إثرائية، فيديو تعليمي، مادة شارحة
+- التعلم النشط     ← تفاعل صفي، أنشطة عملية، مجموعات
+- التعلم التعاوني  ← عمل جماعي بين الطلاب
+- التحفيز          ← تعزيز، تكريم، ألعاب تعليمية
+- نشاط صفي         ← نشاط داخل الفصل لا يندرج تحت ما سبق
+- الدورات والشهادات ← شهادات تطوير المعلم المهنية
+- أخرى             ← فقط عند انعدام أي دليل
+
+══ قواعد ذهبية لا يُسمح بكسرها ══
+1. ❗ ممنوع تعديل أو "تصحيح" أي اسم إنسان أو مدرسة أو منطقة. أبقِها كما وردت حرفيًا.
+2. ❗ لا تستخرج اسم المعلم من محتوى الوثيقة. هذا الحقل يُملأ من الواجهة فقط.
+3. ❗ خطة أسبوعية/فصلية/توزيع منهج ≠ ملفات إدارية — صنّفها "التخطيط".
+4. ❗ جدول الحصص (أيام × حصص) = "ملفات إدارية"، وليس "التخطيط".
+5. اعتمد على المحتوى الفعلي قبل اسم الملف.
+6. إن كان الدليل ضعيفًا، فعّل needs_teacher_confirmation=true بدلاً من التخمين.
+
+══ حقول الإخراج ══
+- title: عنوان وصفي قصير (4-8 كلمات).
+- evidence_type: نوع الشاهد الأقرب: image | video | audio | voice | pdf | document | url | text
+- category: واحدة من التصنيفات الرسمية أعلاه.
+- subcategory: تخصيص داخل المحور (مثال: "خطة فصلية"، "اختبار شهري"). اتركه فارغًا إن لم يلزم.
+- description: وصف تربوي مختصر (1-2 جملة).
+- objective: الهدف التربوي للشاهد (جملة واحدة).
+- student_impact: الأثر المتوقع على الطلاب (جملة واحدة).
+- teacher_reflection: تأمل مهني للمعلم (جملة واحدة، اختياري).
+- confidence_score: ثقة عددية 0.0-1.0.
+- importance_score: قوة الشاهد، واحدة من: strong | medium | simple.
+- whatsapp_summary: سطر ودود قصير بالإيموجي المناسب يصلح للرد على واتساب (≤ 80 حرفًا).
+- needs_teacher_confirmation: true إذا التصنيف غير مؤكد ويحتاج تأكيدًا.
+- confirmation_question: سؤال موجز للمعلم في حال needs_teacher_confirmation=true. وإلا اتركه فارغًا.
+
+أرجع JSON فقط، بدون أي شرح خارج JSON.\
+"""
+
+_STRUCTURED_EVIDENCE_USER_TEMPLATE = """\
+المعطيات:
+  بيانات المعلم (لا تعدّلها أبدًا):
+    الاسم:  {teacher_name}
+    المادة: {subject}
+    المرحلة: {stage}
+
+  نوع الشاهد المُقدَّم: {evidence_type}
+  اسم الملف: {filename}
+  وصف المعلم: {caption}
+
+محتوى الشاهد المستخرج (نص / تفريغ / OCR):
+---
+{content}
+---
+
+تصنيف أوّلي مقترح (من المحرّك الحَتْمي): {prior_category} (ثقة: {prior_confidence})
+
+أعد JSON يحقق المخطط أعلاه فقط.\
+"""
+
+
+def analyze_evidence_structured(
+    *,
+    content: str,
+    evidence_type: str,
+    filename: str | None = None,
+    caption: str | None = None,
+    teacher_name: str | None = None,
+    subject: str | None = None,
+    stage: str | None = None,
+    prior_category: str | None = None,
+    prior_confidence: float | None = None,
+) -> dict | None:
+    """
+    Phase-3 evidence analyser — returns the structured JSON the
+    webhook needs to compose a friendly WhatsApp reply.
+
+    Returns ``None`` on any failure (no API key, network error,
+    malformed JSON). Callers must fall back to the deterministic
+    classifier in ``app.services.classification``.
+    """
+    if not settings.OPENAI_API_KEY:
+        return None
+    if not (content or "").strip():
+        return None
+
+    def _s(v, default="—"):
+        v = (v or "").strip()
+        return v if v and v.lower() not in ("null", "none") else default
+
+    user_prompt = _STRUCTURED_EVIDENCE_USER_TEMPLATE.format(
+        teacher_name=_s(teacher_name),
+        subject=_s(subject),
+        stage=_s(stage),
+        evidence_type=_s(evidence_type, "غير محدد"),
+        filename=_s(filename, "غير معروف"),
+        caption=_s(caption, "—"),
+        content=(content or "")[:2500],
+        prior_category=_s(prior_category, "غير محدد"),
+        prior_confidence=f"{prior_confidence:.2f}" if prior_confidence is not None else "—",
+    )
+
+    model = (
+        getattr(settings, "OPENAI_DEEP_MODEL", None)
+        or getattr(settings, "OPENAI_EXPORT_MODEL", None)
+        or settings.OPENAI_MODEL
+        or "gpt-4o"
+    )
+
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            timeout=float(getattr(settings, "OPENAI_TIMEOUT_SECONDS", 30)) * 2,
+        )
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": _STRUCTURED_EVIDENCE_SYSTEM},
+                {"role": "user",   "content": user_prompt},
+            ],
+            max_tokens=600,
+            temperature=0.15,
+            response_format={"type": "json_object"},
+        )
+        raw = (response.choices[0].message.content or "").strip()
+        data = json.loads(raw)
+        return _coerce_structured_evidence(data)
+    except Exception as exc:
+        logger.warning(
+            "[STRUCTURED ANALYSIS FAILED] type=%s file=%r model=%s err=%s",
+            evidence_type, filename, model, exc,
+        )
+        return None
+
+
+# Schema keys the downstream code expects — keep this in sync with
+# ``_STRUCTURED_EVIDENCE_SYSTEM`` and the Phase-3 plan.
+STRUCTURED_EVIDENCE_KEYS: tuple[str, ...] = (
+    "title",
+    "evidence_type",
+    "category",
+    "subcategory",
+    "description",
+    "objective",
+    "student_impact",
+    "teacher_reflection",
+    "confidence_score",
+    "importance_score",
+    "whatsapp_summary",
+    "needs_teacher_confirmation",
+    "confirmation_question",
+)
+
+
+def _coerce_structured_evidence(data: dict) -> dict:
+    """Fill in missing keys with safe defaults and clamp ranges.
+
+    The model occasionally drops a field or uses Arabic synonyms for
+    importance ("قوي" instead of "strong"). We normalise those here
+    so callers can rely on the schema being stable.
+    """
+    if not isinstance(data, dict):
+        data = {}
+    out: dict = {key: data.get(key) for key in STRUCTURED_EVIDENCE_KEYS}
+
+    # Normalise importance synonyms.
+    imp = (out.get("importance_score") or "").strip().lower()
+    arabic_to_label = {
+        "قوي": "strong", "متوسط": "medium",
+        "بسيط": "simple", "ضعيف": "simple", "weak": "simple",
+    }
+    if imp in arabic_to_label:
+        out["importance_score"] = arabic_to_label[imp]
+    elif imp not in {"strong", "medium", "simple"}:
+        out["importance_score"] = "medium"
+
+    # Clamp confidence to [0,1].
+    try:
+        cs = float(out.get("confidence_score") or 0.0)
+    except (TypeError, ValueError):
+        cs = 0.0
+    out["confidence_score"] = max(0.0, min(1.0, cs))
+
+    # Coerce booleans / strings to safe defaults.
+    out["needs_teacher_confirmation"] = bool(
+        out.get("needs_teacher_confirmation")
+    )
+    for key in (
+        "title", "evidence_type", "category", "subcategory",
+        "description", "objective", "student_impact",
+        "teacher_reflection", "whatsapp_summary",
+        "confirmation_question",
+    ):
+        v = out.get(key)
+        out[key] = (v or "").strip() if isinstance(v, str) else ""
+
+    return out

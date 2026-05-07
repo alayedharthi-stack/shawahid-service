@@ -1,0 +1,53 @@
+/*
+  Ministry V1 — print.css (Phase 2)
+  ─────────────────────────────────
+  Page-break, A4-only, print-optimised rules. Loaded *after* theme.css
+  so its rules win on equal specificity.
+
+  Contract:
+    • Pure CSS. No HTML, no JS, no Jinja.
+    • Cannot read or mutate `ExportPayload`.
+    • Cannot influence `_generate_pdf` (Playwright). It is a layout
+      hint only — the actual A4 page size is set in Python.
+*/
+
+/* Section-level page break tightening:
+   Keep section hero + description together with at least one card. */
+.section-hero,
+.section-desc,
+.section-title {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+/* Phase-2 contract: every evidence card and every media card must
+   stay on a single page if at all possible. Enforces the smart-layout
+   guarantee at the CSS layer so the template never has to special-case. */
+.evidence-card,
+.ev-card {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.media-card,
+.audio-card,
+.video-wrap,
+.file-card,
+.url-card,
+.img-grid {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* ── PRINT-ONLY ─────────────────────────────────────────────────── */
+@media print {
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Avoid orphaned single cards on a near-empty page. */
+  .ev-card,
+  .evidence-card { orphans: 2; widows: 2; }
+
+  /* Compact grid is allowed to flow across pages — its individual
+     cards are already break-inside:avoid so each card stays whole. */
+  .compact-grid { break-inside: auto; }
+}

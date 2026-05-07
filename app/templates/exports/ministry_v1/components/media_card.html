@@ -1,0 +1,122 @@
+{#
+  components/media_card.html — Phase 2
+  ────────────────────────────────────
+  Renders the body media block of an evidence card. Supports every
+  evidence type currently produced by the builder:
+    image_gallery / image / audio / voice / video / url /
+    pdf / document (or any ev.file_name) / text.
+
+  Inputs:
+    - ev: legacy evidence dict (see `ExportItem.raw`).
+      Read-only — do not mutate.
+
+  Wraps the inner card in `.media-card` so the print-CSS rule
+  `break-inside: avoid` keeps every media chunk on a single page.
+
+  TODO(phase-3): switch to typed `ExportItem.media` and remove the
+  legacy attribute access (file_name, message_text, link_href, etc.).
+#}
+<div class="media-card media-wrap">
+
+  {% if ev.evidence_type == 'image_gallery' %}
+    {% include "exports/ministry_v1/components/gallery.html" %}
+
+  {% elif ev.evidence_type == 'image' %}
+    {% if ev.media_src %}
+    <div class="img-grid g1">
+      <img src="{{ ev.media_src }}"
+           alt="{{ ev.title }}"
+           onerror="this.parentElement.innerHTML='<div class=\'media-placeholder\'>📷 صورة توثيقية — ' + '{{ ev.title | e }}' + '</div>';" />
+    </div>
+    {% else %}
+    <div class="media-placeholder">📷 صورة توثيقية — {{ ev.title }}</div>
+    {% endif %}
+
+  {% elif ev.evidence_type in ('audio', 'voice') %}
+  <div class="audio-card">
+    <div class="audio-icon">🎙</div>
+    <div style="flex:1;">
+      <div class="audio-label">
+        {% if ev.evidence_type == 'voice' %}رسالة صوتية{% else %}تسجيل صوتي{% endif %}
+        — نص التفريغ
+      </div>
+      {% if ev.message_text and ev.message_text|length > 3 %}
+      <div class="audio-text">{{ ev.message_text[:800] }}{% if ev.message_text|length > 800 %}…{% endif %}</div>
+      {% else %}
+      <div class="audio-text" style="color:var(--muted); font-style:normal;">
+        📎 تم حفظ التسجيل الصوتي بنجاح — اضغط الزر للاستماع.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% if ev.media_viewer_url %}
+  <a class="media-action" href="{{ ev.media_viewer_url }}" target="_blank" rel="noopener noreferrer">🎧 الاستماع للتسجيل</a>
+  {% endif %}
+
+  {% elif ev.evidence_type == 'video' %}
+  <div class="video-wrap">
+    {% if ev.media_src %}
+    <img class="video-thumb"
+         src="{{ ev.media_src }}"
+         alt="مقطع فيديو" />
+    {% else %}
+    <div class="video-placeholder">🎥</div>
+    {% endif %}
+    <div class="play-btn">▶</div>
+  </div>
+  {% if ev.message_text and ev.message_text|length > 3 %}
+  <div class="video-caption">{{ ev.message_text[:500] }}</div>
+  {% endif %}
+  <div class="video-hint">اضغط الزر لمشاهدة الفيديو</div>
+  <a class="media-action" href="{{ ev.media_viewer_url }}" target="_blank" rel="noopener noreferrer">▶ مشاهدة الفيديو</a>
+
+  {% elif ev.evidence_type == 'url' %}
+  <div class="url-card">
+    <div class="url-icon">🔗</div>
+    <div style="flex:1;">
+      <div class="file-name" style="margin-bottom:4px;">{{ ev.title }}</div>
+      <div class="url-type">{{ ev.link_type or 'رابط إثرائي' }}</div>
+      {% if ev.link_href %}
+      <br/>
+      <a class="url-button" href="{{ ev.link_href }}" target="_blank" rel="noopener noreferrer">🔗 فتح الرابط</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% elif ev.evidence_type in ('pdf', 'document') or ev.file_name %}
+  <div class="file-card pdf-card">
+    <div class="file-icon">
+      {%- if ev.evidence_type == 'pdf' or (ev.file_name and ev.file_name.lower().endswith('.pdf')) %}📄
+      {%- elif ev.file_name and (ev.file_name.lower().endswith('.docx') or ev.file_name.lower().endswith('.doc')) %}📝
+      {%- elif ev.file_name and ev.file_name.lower().endswith('.pptx') %}📊
+      {%- elif ev.evidence_type in ('audio','voice') %}🎙
+      {%- else %}🗂️{%- endif %}
+    </div>
+    <div style="flex:1;">
+      <div class="file-name">{{ ev.file_label or ev.title or 'ملف مرفق' }}</div>
+      <div class="file-type">{{ ev.file_type_label or 'ملف' }}</div>
+      {# Show PDF first-page preview if available — height-capped (theme.css)
+         so the entire evidence card always fits in one A4 page. #}
+      {% if ev.pdf_preview_src %}
+      <img src="{{ ev.pdf_preview_src }}"
+           alt="معاينة الملف"
+           class="pdf-preview-img" />
+      {% endif %}
+      <a class="media-action" href="{{ ev.media_viewer_url }}" target="_blank" rel="noopener noreferrer">📂 فتح الملف</a>
+    </div>
+  </div>
+
+  {% elif ev.evidence_type == 'text' and ev.message_text and ev.message_text|length > 10 %}
+  <div class="audio-card" style="background:#f5f8f5; border-color:#cde0cd;">
+    <div class="audio-icon">📝</div>
+    <div style="flex:1;">
+      <div class="audio-label" style="color:#3a6b3a;">نص موثق</div>
+      <div class="audio-text" style="font-style:normal; color:var(--body);">
+        {{ ev.message_text[:600] }}{% if ev.message_text|length > 600 %}…{% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% endif %}
+
+</div>{# /media-card #}

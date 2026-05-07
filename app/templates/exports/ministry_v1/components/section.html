@@ -1,0 +1,58 @@
+{#
+  components/section.html — Phase 2
+  ─────────────────────────────────
+  One full A4 section page: page-header strip, the section hero band,
+  optional description, and the list of evidence cards.
+
+  Inputs (must be set by caller):
+    - section: ExportSection (typed)
+    - cat:     legacy section dict (i.e. `section.raw`). Provides
+               `name`, `en`, `desc`, `value`, `evidences`, `count`,
+               `is_admin_grid`. The Phase-2 typed surface only covers
+               `title`, `description`, `count`, `layout_mode`.
+    - section_index: 1-based index used for the big number in the hero.
+    - teacher: legacy/teacher proxy used for the page-header text.
+
+  Layout decision:
+    section.layout_mode == 'compact_grid'  → admin_grid.html (gallery)
+    everything else                       → list of evidence cards.
+
+  TODO(phase-3): compute the icon / EN label / educational value off
+  typed fields on `ExportSection` instead of `section.raw`.
+#}
+<div class="page">
+  <div class="page-header">
+    <span class="ph-left">ملف الشواهد — {{ teacher.name or 'المعلم' }}</span>
+    <span class="ph-right">{{ section.title or cat.name }}</span>
+  </div>
+
+  {# Section hero band #}
+  <div class="section-hero">
+    <div class="sh-num">{{ section_index }}</div>
+    <div class="sh-content">
+      <div class="sh-name">{{ section.title or cat.name }}</div>
+      {% if cat.en %}<div class="sh-en">{{ cat.en }}</div>{% endif %}
+    </div>
+    <div class="sh-count">{{ section.count or cat.count }} شاهد</div>
+  </div>
+
+  {% set _section_desc = section.description or cat.desc %}
+  {% if _section_desc %}
+  <div class="section-desc">{{ _section_desc }}</div>
+  {% endif %}
+
+  {% if section.layout_mode == 'compact_grid' %}
+    {# Admin / reference layout — fallback to the same component if a
+       legacy theme forgets to set `layout_mode`; the template stays safe. #}
+    {% include "exports/ministry_v1/components/admin_grid.html" %}
+  {% else %}
+    {% for item in section.items %}
+      {% with ev=item.raw, is_compact=item.layout_mode == 'compact' %}
+        {% include "exports/ministry_v1/components/evidence_card.html" %}
+      {% endwith %}
+    {% endfor %}
+    {% if section.count == 0 %}
+    <div class="empty">لا توجد شواهد مسجّلة في هذا المحور بعد.</div>
+    {% endif %}
+  {% endif %}
+</div>
