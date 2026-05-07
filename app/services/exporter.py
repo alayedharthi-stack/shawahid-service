@@ -112,19 +112,23 @@ _CATEGORY_META.update({
 })
 
 _MAIN_CATEGORY_ORDER = [
+    # New educator-led order (Smart Layout v2):
+    # planning → classroom execution → active learning → assessment →
+    # motivation → cooperative learning → follow-up → resources → admin.
+    # Admin files always come LAST — they are reference material, not core evidence.
     "التخطيط",
-    "سجل المتابعة",        # تنظيمي أساسي — يأتي مبكرًا بعد التخطيط
     "التنفيذ داخل الصف",
     "التعلم النشط",
-    "التعلم التعاوني",     # محور مستقل (لم يعد sub لـ التعلم النشط)
-    "التعلم بالممارسة",    # محور مستقل
     "التقويم",
     "التحفيز",
+    "التعلم التعاوني",
+    "التعلم بالممارسة",     # ابقَ كمحور مستقل
+    "سجل المتابعة",
     "إدارة الصف",
     "التواصل",
     "مصادر تعليمية",
-    "ملفات إدارية",        # كان: ملفات واختبارات
-    "روابط إثرائية",       # محور مستقل (لم يعد sub لـ مصادر تعليمية)
+    "روابط إثرائية",
+    "ملفات إدارية",          # دائمًا في النهاية (gallery compact)
     "أخرى",
 ]
 
@@ -872,6 +876,32 @@ def _normalize_evidence_for_export(ev) -> dict:
     )
     public_media_url = _public_media_url(ev_type, ev.storage_path, media_url)
 
+    # ── Importance score & compact flag ──────────────────────────────────────
+    # strong  → has rich enriched_sections (4+ structured fields) → big card
+    # medium  → has custom title or substantive description       → normal card
+    # weak    → generic auto-filled content                        → compact card
+    enriched_sections_list = _parse_enriched_sections(enriched_description)
+    has_rich_enrichment = len(enriched_sections_list) >= 3
+    has_substantive_desc = bool(stored_desc) and len(stored_desc) > 60
+    has_real_transcript = bool(message_text) and len(message_text) > 80
+
+    if has_rich_enrichment:
+        importance = "strong"
+    elif has_custom_title and (has_substantive_desc or has_real_transcript):
+        importance = "medium"
+    elif has_custom_title or has_substantive_desc:
+        importance = "medium"
+    else:
+        importance = "weak"
+
+    # Admin files default to compact unless they are rich-enriched.
+    # Other categories: compact only when truly weak (saves vertical space).
+    is_admin_category = category == "ملفات إدارية"
+    is_compact = (
+        (is_admin_category and importance != "strong")
+        or (importance == "weak" and ev_type in ("pdf", "document", "url"))
+    )
+
     return {
         "id":            ev.id,
         "evidence_type": ev_type,
@@ -881,7 +911,7 @@ def _normalize_evidence_for_export(ev) -> dict:
         "tags":          tags,
         "description":   description,
         "ai_enriched_description": enriched_description,
-        "enriched_sections": _parse_enriched_sections(enriched_description),
+        "enriched_sections": enriched_sections_list,
         "message_text":  message_text,
         "media_url":     media_url,
         "storage_path":  ev.storage_path,
@@ -907,6 +937,9 @@ def _normalize_evidence_for_export(ev) -> dict:
         "raw_export_text": raw_export_text,
         "was_normalised": stored_desc == "" or raw_title.lower() in _RAW_TITLE_PATTERNS,
         "is_excluded_from_export": bool(getattr(ev, "is_excluded_from_export", False)),
+        # ── Smart Layout v2 metadata ─────────────────────────────────────────
+        "importance":    importance,    # strong | medium | weak
+        "is_compact":    is_compact,    # template uses compact card layout
     }
 
 
@@ -1066,6 +1099,8 @@ def _build_categories(normalised_evidences: list[dict]) -> list[dict]:
             if not has_critical:
                 continue
         meta = _CATEGORY_META.get(name, _DEFAULT_META)
+        # Admin section uses compact grid layout — many small cards per page.
+        is_admin_grid = name == "ملفات إدارية"
         result.append({
             "name":      name,
             "en":        meta["en"],
@@ -1074,6 +1109,9 @@ def _build_categories(normalised_evidences: list[dict]) -> list[dict]:
             "value":     meta.get("value", ""),
             "evidences": items,
             "count":     count,
+            # Smart Layout v2: per-section render hints
+            "is_admin_grid": is_admin_grid,
+            "layout":        "compact_grid" if is_admin_grid else "default",
         })
     return result
 

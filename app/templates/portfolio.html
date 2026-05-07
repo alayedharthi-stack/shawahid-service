@@ -1025,9 +1025,110 @@
       line-height: 1.4;
     }
 
+    /* ══════════════════════════════════════════════════════════════════
+       SMART LAYOUT v2 — Compact admin gallery + importance scoring
+       ══════════════════════════════════════════════════════════════════ */
+
+    /* Compact 2-column grid for admin/reference categories.
+       Replaces the per-card full-page layout with a dense gallery. */
+    .compact-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    /* Compact card: half width, fixed height, no description bloat. */
+    .ev-card.compact {
+      margin-bottom: 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .ev-card.compact .ev-header {
+      padding: 6px 9px;
+      gap: 7px;
+    }
+    .ev-card.compact .ev-badge {
+      width: 24px; height: 24px;
+      font-size: 6.5pt;
+    }
+    .ev-card.compact .ev-title {
+      font-size: 9.5pt;
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .ev-card.compact .ev-tags { margin-top: 3px; }
+    .ev-card.compact .ev-tags .tag { font-size: 6.5pt; padding: 1px 6px; }
+    .ev-card.compact .ev-body { padding: 6px 9px; }
+    .ev-card.compact .field-label { font-size: 7.5pt; margin-bottom: 3px; }
+    .ev-card.compact .ev-desc {
+      font-size: 8.8pt;
+      line-height: 1.4;
+      margin-bottom: 6px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .ev-card.compact .file-card {
+      padding: 7px 9px;
+      gap: 7px;
+    }
+    .ev-card.compact .file-icon {
+      width: 32px;
+      height: 32px;
+      font-size: 14pt;
+    }
+    .ev-card.compact .file-name { font-size: 9pt; }
+    .ev-card.compact .file-type { font-size: 7.5pt; }
+    .ev-card.compact .media-action {
+      font-size: 8pt;
+      padding: 4px 9px;
+      margin-top: 5px;
+    }
+    .ev-card.compact .ev-footer {
+      padding: 5px 9px;
+      font-size: 7.3pt;
+      gap: 7px;
+    }
+    /* Compact admin cards: hide enriched_sections + edu-value to save space — */
+    /* the per-section القيمة التربوية is repeated for every weak admin doc and */
+    /* duplicates the section-level desc above. Keep only essentials.            */
+    .ev-card.compact .evidence-sections,
+    .ev-card.compact .edu-value,
+    .ev-card.compact .pdf-preview-img {
+      display: none !important;
+    }
+    /* Hide PDF preview thumbnails specifically inside compact cards —
+       they double the card height for negligible extra information. */
+    .ev-card.compact img[alt="معاينة الملف"] {
+      display: none !important;
+    }
+
+    /* Importance hints (subtle visual): strong gets stronger left rail,
+       weak gets a muted rail. Used for non-compact cards. */
+    .ev-card.imp-strong { border-right: 4px solid var(--teal); }
+    .ev-card.imp-medium { border-right: 3px solid var(--gold); }
+    .ev-card.imp-weak   { border-right: 2px solid #d8dcd8; }
+
+    /* Section-level page break tightening:
+       Keep section hero + description together with at least one card. */
+    .section-hero,
+    .section-desc {
+      break-after: avoid;
+      page-break-after: avoid;
+    }
+
     /* ── PRINT ─────────────────────────────────────────────────────── */
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      /* Avoid orphaned single cards on a near-empty page. */
+      .ev-card { orphans: 2; widows: 2; }
+      .compact-grid { break-inside: auto; }
     }
   </style>
 </head>
@@ -1193,8 +1294,12 @@
   {% endif %}
 
   <!-- Evidence cards -->
+  {# Smart Layout v2: admin/reference sections render as a compact 2-col grid. #}
+  {% if cat.is_admin_grid %}<div class="compact-grid">{% endif %}
   {% for ev in cat.evidences %}
-  <div class="ev-card">
+  {% set _is_compact = ev.is_compact or cat.is_admin_grid %}
+  {% set _imp_class = 'imp-' ~ (ev.importance or 'medium') %}
+  <div class="ev-card {{ _imp_class }}{% if _is_compact %} compact{% endif %}">
 
     <!-- Header -->
     <div class="ev-header">
@@ -1203,9 +1308,11 @@
         <div class="ev-title">{{ ev.title or 'شاهد بدون عنوان' }}</div>
         <div class="ev-tags">
           {% if ev.category %}<span class="tag t-gold">{{ ev.category }}</span>{% endif %}
-          {% for tag in ev.tags[:4] %}
-          <span class="tag t-teal">{{ tag }}</span>
-          {% endfor %}
+          {% if not _is_compact %}
+            {% for tag in ev.tags[:4] %}
+            <span class="tag t-teal">{{ tag }}</span>
+            {% endfor %}
+          {% endif %}
           <span class="tag t-gray">
             {%- if ev.evidence_type == 'image_gallery' %}📷 {{ ev.gallery_count }} صور
             {%- elif ev.evidence_type == 'image'    %}📷 صورة
@@ -1222,6 +1329,11 @@
     <!-- Body -->
     <div class="ev-body">
 
+      {# Compact admin cards skip the lengthy professional description AND the
+         القيمة التربوية box — both repeat the same template wording for every
+         weak file and waste vertical space. The section-level desc + value
+         already tell the reader what this category represents. #}
+      {% if not _is_compact %}
       <!-- Professional Description -->
       {% if ev.enriched_sections %}
       <div class="field-label">الشاهد التربوي الاحترافي</div>
@@ -1253,6 +1365,7 @@
         </div>
       </div>
       {% endif %}
+      {% endif %}{# end if not _is_compact #}
 
       <!-- ── MEDIA ─────────────────────────────────────────────────── -->
       <div class="media-wrap">
@@ -1391,6 +1504,7 @@
     {% endif %}
   </div><!-- /ev-card -->
   {% endfor %}
+  {% if cat.is_admin_grid %}</div><!-- /compact-grid -->{% endif %}
 
   {% if not cat.evidences %}
   <div class="empty">لا توجد شواهد مسجّلة في هذا المحور بعد.</div>
