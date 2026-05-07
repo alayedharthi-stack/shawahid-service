@@ -1,387 +1,508 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>مراجعة الشواهد — {{ teacher.name or 'المعلم' }}</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>مراجعة الشواهد — شواهد AI</title>
 <style>
+  /* ── Reset & base ─────────────────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --teal: #155e2e;
-    --teal-lt: #e8f2ee;
-    --gold: #b48a00;
-    --border: #d9e3df;
-    --muted: #6b7280;
-    --white: #ffffff;
-    --body: #1f2937;
-    --radius: 10px;
-  }
+  html { font-size: 16px; -webkit-text-size-adjust: 100%; }
   body {
-    font-family: 'Segoe UI', 'Tahoma', 'Cairo', Arial, sans-serif;
-    background: #f0f4f2;
-    color: var(--body);
+    font-family: "Segoe UI", Tahoma, "Arial", sans-serif;
+    background: #f0f4f8;
+    color: #1a1a2e;
     min-height: 100vh;
+    direction: rtl;
   }
 
-  /* ── Header ── */
-  .top-bar {
-    background: var(--teal);
+  /* ── Top bar ──────────────────────────────────────────── */
+  .topbar {
+    background: linear-gradient(135deg, #0f6f70, #0a5152);
     color: #fff;
-    padding: 14px 20px;
+    padding: 18px 16px 14px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,.15);
+  }
+  .topbar h1 { font-size: 18px; font-weight: 700; margin-bottom: 2px; }
+  .topbar .subtitle { font-size: 13px; opacity: .85; }
+
+  /* ── Summary banner ───────────────────────────────────── */
+  .summary-banner {
+    background: #fff;
+    margin: 14px 12px 0;
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
     display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .stat-chip {
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    box-shadow: 0 2px 8px rgba(0,0,0,.2);
-  }
-  .top-bar h1 { font-size: 16px; font-weight: 700; }
-  .top-bar .subtitle { font-size: 12px; opacity: .75; margin-top: 2px; }
-
-  .export-btn {
-    background: #f5c842;
-    color: #1a3a00;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 18px;
+    gap: 6px;
+    background: #f0f4f8;
+    border-radius: 999px;
+    padding: 6px 14px;
     font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    white-space: nowrap;
-    text-decoration: none;
-    display: inline-block;
+    font-weight: 600;
   }
-  .export-btn:hover { background: #e6b800; }
-  .export-btn:disabled { opacity: .5; cursor: wait; }
+  .stat-chip.green  { background: #d1fae5; color: #065f46; }
+  .stat-chip.yellow { background: #fef3c7; color: #92400e; }
+  .stat-chip.red    { background: #fee2e2; color: #991b1b; }
+  .stat-chip.blue   { background: #dbeafe; color: #1e40af; }
 
-  /* ── Stats strip ── */
-  .stats-strip {
+  /* ── Action bar ───────────────────────────────────────── */
+  .action-bar {
+    margin: 12px 12px 0;
     display: flex;
     gap: 10px;
-    padding: 12px 16px;
-    background: #fff;
-    border-bottom: 1px solid var(--border);
-    font-size: 13px;
-    color: var(--muted);
     flex-wrap: wrap;
   }
-  .stats-strip strong { color: var(--teal); }
-
-  /* ── Grid ── */
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 14px;
-    padding: 16px;
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-
-  /* ── Card ── */
-  .card {
-    background: var(--white);
-    border: 1.5px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-    transition: border-color .15s, opacity .15s;
-  }
-  .card.excluded {
-    opacity: .5;
-    border-color: #f87171;
-    border-style: dashed;
-  }
-  .card-thumb {
-    width: 100%;
-    height: 160px;
-    object-fit: cover;
-    display: block;
-    background: var(--teal-lt);
-  }
-  .card-thumb-placeholder {
-    width: 100%;
-    height: 80px;
-    display: flex;
+  .btn {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    font-size: 32px;
-    background: var(--teal-lt);
-  }
-  .card-body { padding: 11px 13px; }
-  .card-title {
+    gap: 6px;
+    padding: 10px 18px;
+    border: none;
+    border-radius: 999px;
     font-size: 14px;
-    font-weight: 700;
-    color: var(--body);
-    margin-bottom: 5px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: opacity .15s, transform .1s;
   }
-  .card-meta {
+  .btn:hover { opacity: .87; transform: scale(1.02); }
+  .btn:active { transform: scale(.98); }
+  .btn-primary { background: #0f6f70; color: #fff; }
+  .btn-outline { background: #fff; color: #0f6f70; border: 2px solid #0f6f70; }
+  .btn-danger  { background: #fff; color: #dc2626; border: 2px solid #dc2626; }
+
+  /* ── Filter / search strip ────────────────────────────── */
+  .filter-strip {
+    margin: 12px 12px 0;
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
-    font-size: 11px;
-    color: var(--muted);
-    margin-bottom: 8px;
   }
-  .badge {
-    background: var(--teal-lt);
-    color: var(--teal);
-    border-radius: 20px;
-    padding: 2px 9px;
-    font-weight: 600;
-    font-size: 11px;
+  .filter-strip select,
+  .filter-strip input {
+    padding: 9px 12px;
+    border: 1.5px solid #d1d5db;
+    border-radius: 10px;
+    font-size: 14px;
+    background: #fff;
+    color: #1a1a2e;
+    direction: rtl;
+    flex: 1 1 160px;
   }
-  .card-desc {
-    font-size: 12px;
-    color: var(--muted);
-    line-height: 1.5;
-    max-height: 48px;
+  .filter-strip select:focus,
+  .filter-strip input:focus {
+    outline: none;
+    border-color: #0f6f70;
+  }
+
+  /* ── Evidence grid ────────────────────────────────────── */
+  .ev-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 14px 12px;
+  }
+  @media (min-width: 640px) {
+    .ev-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (min-width: 1024px) {
+    .ev-grid { grid-template-columns: 1fr 1fr 1fr; }
+  }
+
+  /* ── Evidence card ────────────────────────────────────── */
+  .ev-card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.06);
     overflow: hidden;
-    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    transition: box-shadow .2s;
   }
-  .card-footer {
+  .ev-card:hover { box-shadow: 0 6px 24px rgba(0,0,0,.1); }
+  .ev-card.excluded { opacity: .55; }
+
+  .ev-card .thumb {
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+    background: #e5e7eb;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    border-top: 1px solid var(--border);
-    padding: 9px 13px;
-    background: #fafafa;
+    justify-content: center;
+    font-size: 48px;
   }
-  .excluded-label {
-    font-size: 11px;
-    color: #b91c1c;
-    font-weight: 600;
-    display: none;
+  .ev-card .thumb img {
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
   }
-  .card.excluded .excluded-label { display: block; }
-  .toggle-btn {
-    border: none;
-    border-radius: 7px;
-    padding: 6px 14px;
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: background .15s;
+  .ev-card .body {
+    padding: 12px 14px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
-  .toggle-btn.hide-btn {
-    background: #fef2f2;
-    color: #b91c1c;
-    border: 1px solid #fca5a5;
-  }
-  .toggle-btn.hide-btn:hover { background: #fee2e2; }
-  .toggle-btn.restore-btn {
-    background: #f0fdf4;
-    color: var(--teal);
-    border: 1px solid #86efac;
-  }
-  .toggle-btn.restore-btn:hover { background: var(--teal-lt); }
-  .toggle-btn:disabled { opacity: .5; cursor: wait; }
-
-  /* ── Empty state ── */
-  .empty {
-    text-align: center;
-    color: var(--muted);
-    padding: 60px 20px;
+  .ev-card .title {
     font-size: 15px;
+    font-weight: 700;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .badge {
+    display: inline-block;
+    background: #e0f2f1;
+    color: #00695c;
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge.strong { background: #fef9c3; color: #92400e; }
+  .badge.medium { background: #dbeafe; color: #1e40af; }
+  .badge.simple { background: #f3f4f6; color: #6b7280; }
+  .badge.needs  { background: #fef2f2; color: #dc2626; }
+  .badge.dup    { background: #fef2f2; color: #dc2626; }
+  .badge.excl   { background: #f1f5f9; color: #475569; }
+
+  .ev-date { font-size: 12px; color: #94a3b8; margin-top: auto; }
+
+  /* ── Card action row ──────────────────────────────────── */
+  .card-actions {
+    padding: 10px 14px 12px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    border-top: 1px solid #f1f5f9;
+  }
+  .card-btn {
+    flex: 1 1 auto;
+    min-width: 60px;
+    padding: 7px 10px;
+    border: 1.5px solid transparent;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    background: #f8fafc;
+    color: #475569;
+    transition: background .15s, color .15s;
+  }
+  .card-btn:hover { background: #e2e8f0; }
+  .card-btn.approve { color: #065f46; border-color: #d1fae5; background: #d1fae5; }
+  .card-btn.approve:hover { background: #a7f3d0; }
+  .card-btn.del  { color: #dc2626; border-color: #fee2e2; background: #fee2e2; }
+  .card-btn.del:hover  { background: #fca5a5; }
+  .card-btn.restore { color: #1e40af; border-color: #dbeafe; background: #dbeafe; }
+  .card-btn.restore:hover { background: #bfdbfe; }
+  .card-btn.edit { color: #0f6f70; border-color: #e0f2f1; background: #e0f2f1; }
+  .card-btn.edit:hover { background: #99f6e4; }
+
+  /* ── Edit overlay ─────────────────────────────────────── */
+  .edit-panel {
+    display: none;
+    padding: 10px 14px 14px;
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    gap: 8px;
+    flex-direction: column;
+  }
+  .edit-panel.open { display: flex; }
+  .edit-panel input,
+  .edit-panel select {
+    padding: 9px 12px;
+    border: 1.5px solid #d1d5db;
+    border-radius: 10px;
+    font-size: 14px;
+    width: 100%;
+    direction: rtl;
+    background: #fff;
+  }
+  .edit-panel input:focus,
+  .edit-panel select:focus { outline: none; border-color: #0f6f70; }
+  .edit-panel .save-btn {
+    background: #0f6f70;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 9px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
   }
 
-  /* ── Toast ── */
+  /* ── Empty state ──────────────────────────────────────── */
+  .empty-state {
+    text-align: center;
+    padding: 60px 24px;
+    color: #94a3b8;
+  }
+  .empty-state .icon { font-size: 56px; margin-bottom: 12px; }
+
+  /* ── Footer ───────────────────────────────────────────── */
+  footer {
+    text-align: center;
+    padding: 20px;
+    font-size: 12px;
+    color: #94a3b8;
+    margin-top: 16px;
+  }
+
+  /* ── Toast ────────────────────────────────────────────── */
   #toast {
     position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%) translateY(60px);
-    background: #1f2937;
+    bottom: 24px;
+    right: 50%;
+    transform: translateX(50%);
+    background: #1e293b;
     color: #fff;
-    padding: 10px 22px;
-    border-radius: 8px;
-    font-size: 13px;
-    transition: transform .25s;
+    padding: 12px 24px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity .3s;
     z-index: 9999;
     pointer-events: none;
   }
-  #toast.show { transform: translateX(-50%) translateY(0); }
-
-  /* ── Export overlay ── */
-  #export-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,.45);
-    align-items: center;
-    justify-content: center;
-    z-index: 200;
-  }
-  #export-overlay.active { display: flex; }
-  .overlay-box {
-    background: var(--white);
-    border-radius: 14px;
-    padding: 28px 24px;
-    max-width: 340px;
-    width: 90%;
-    text-align: center;
-  }
-  .overlay-box h3 { font-size: 17px; margin-bottom: 10px; color: var(--teal); }
-  .overlay-box p { font-size: 13px; color: var(--muted); margin-bottom: 18px; line-height: 1.6; }
-  .overlay-actions { display: flex; flex-direction: column; gap: 10px; }
-  .overlay-btn {
-    width: 100%;
-    padding: 12px;
-    border: none;
-    border-radius: 9px;
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-  }
-  .overlay-btn.primary { background: var(--teal); color: #fff; }
-  .overlay-btn.secondary { background: #f3f4f6; color: var(--body); }
-  .overlay-btn.close-btn { background: transparent; color: var(--muted); font-size: 13px; margin-top: 4px; }
+  #toast.show { opacity: 1; }
 </style>
 </head>
 <body>
 
-<!-- ── Top bar ── -->
-<div class="top-bar">
-  <div>
-    <h1>📋 مراجعة الشواهد</h1>
-    <div class="subtitle">{{ teacher.name or 'المعلم' }} — اضغط إخفاء لاستبعاد الشاهد من الملف</div>
-  </div>
-  <button class="export-btn" onclick="showExportOverlay()">📘 تصدير الملف</button>
+<!-- ── Top bar ─────────────────────────────────────────── -->
+<div class="topbar">
+  <h1>مراجعة شواهد المعلم — {{ teacher.name or "بدون اسم" }}</h1>
+  <div class="subtitle">راجع شواهدك وعدّل التصنيفات قبل التصدير</div>
 </div>
 
-<!-- ── Stats strip ── -->
-{% set visible = items | selectattr('is_excluded', 'equalto', false) | list | length %}
-{% set excluded = items | selectattr('is_excluded', 'equalto', true) | list | length %}
-<div class="stats-strip">
-  <span>إجمالي الشواهد: <strong>{{ items|length }}</strong></span>
-  <span>سيُصدَّر: <strong>{{ visible }}</strong></span>
-  {% if excluded > 0 %}<span>مُستبعَد: <strong style="color:#b91c1c;">{{ excluded }}</strong></span>{% endif %}
-</div>
-
-<!-- ── Grid ── -->
-<div class="grid" id="grid">
-  {% if items %}
-  {% for ev in items %}
-  {% set type_icon = {'image': '📷', 'video': '🎥', 'audio': '🎙', 'voice': '🎙', 'pdf': '📄', 'document': '📄', 'url': '🔗', 'text': '📝'} %}
-  <div class="card {% if ev.is_excluded %}excluded{% endif %}" id="card-{{ ev.id }}">
-    {% if ev.thumb %}
-    <img class="card-thumb" src="{{ ev.thumb }}" alt="{{ ev.title }}" loading="lazy" onerror="this.style.display='none'" />
-    {% else %}
-    <div class="card-thumb-placeholder">{{ type_icon.get(ev.evidence_type, '📌') }}</div>
-    {% endif %}
-    <div class="card-body">
-      <div class="card-title">{{ ev.title }}</div>
-      <div class="card-meta">
-        <span class="badge">{{ ev.category }}</span>
-        <span>{{ ev.evidence_type }}</span>
-        {% if ev.created_at %}<span>{{ ev.created_at }}</span>{% endif %}
-      </div>
-      {% if ev.description %}
-      <div class="card-desc">{{ ev.description }}</div>
-      {% endif %}
-    </div>
-    <div class="card-footer">
-      <span class="excluded-label">🚫 مستبعد من الملف</span>
-      {% if not ev.is_excluded %}
-      <button class="toggle-btn hide-btn" onclick="toggleEvidence({{ ev.id }}, this)">🗑 إخفاء من الملف</button>
-      {% else %}
-      <button class="toggle-btn restore-btn" onclick="toggleEvidence({{ ev.id }}, this)">↩ استعادة</button>
-      {% endif %}
-    </div>
-  </div>
-  {% endfor %}
-  {% else %}
-  <div class="empty" style="grid-column: 1/-1;">لا توجد شواهد مسجّلة بعد.</div>
+<!-- ── Summary banner ──────────────────────────────────── -->
+<div class="summary-banner">
+  <span class="stat-chip green">✅ {{ session.active_items }} جاهز</span>
+  {% if session.strong_count %}
+  <span class="stat-chip yellow">⭐ {{ session.strong_count }} قوي</span>
+  {% endif %}
+  {% if session.low_confidence_count %}
+  <span class="stat-chip yellow">✏️ {{ session.low_confidence_count }} يحتاج مراجعة</span>
+  {% endif %}
+  {% if session.duplicates_count %}
+  <span class="stat-chip red">⚠️ {{ session.duplicates_count }} مكرر</span>
+  {% endif %}
+  {% if session.total_items > session.active_items %}
+  <span class="stat-chip blue">🗑️ {{ session.total_items - session.active_items }} مستبعد</span>
   {% endif %}
 </div>
 
-<!-- ── Export overlay ── -->
-<div id="export-overlay">
-  <div class="overlay-box">
-    <h3>📘 تصدير ملف الشواهد</h3>
-    <p>سنرسل لك رسالة واتساب لاختيار نوع الملف (كامل / ذكي / مختصر)، ثم يُنشأ الملف مباشرة.</p>
-    <div class="overlay-actions">
-      <button class="overlay-btn primary" id="confirm-export-btn" onclick="confirmExport()">إرسال رسالة التصدير على واتساب</button>
-      <button class="overlay-btn secondary close-btn" onclick="closeExportOverlay()">إلغاء</button>
-    </div>
-  </div>
+<!-- ── Action bar ───────────────────────────────────────── -->
+<div class="action-bar">
+  <form method="post" action="{{ export_url }}">
+    <button type="submit" class="btn btn-primary">🚀 بدء التصدير</button>
+  </form>
 </div>
 
-<!-- ── Toast ── -->
+<!-- ── Filter strip ────────────────────────────────────── -->
+<div class="filter-strip">
+  <select id="filterCat" onchange="filterCards()">
+    <option value="">كل المحاور</option>
+    {% for cat in session.categories_summary %}
+    <option value="{{ cat }}">{{ cat }} ({{ session.categories_summary[cat] }})</option>
+    {% endfor %}
+  </select>
+  <select id="filterStatus" onchange="filterCards()">
+    <option value="">كل الحالات</option>
+    <option value="needs_review">يحتاج مراجعة</option>
+    <option value="duplicate">مكرر</option>
+    <option value="excluded">مستبعد</option>
+    <option value="active">نشط</option>
+  </select>
+  <input type="search" id="searchBox" placeholder="بحث بالعنوان…" oninput="filterCards()" />
+</div>
+
+<!-- ── Evidence grid ───────────────────────────────────── -->
+<div class="ev-grid" id="evGrid">
+{% for item in session.items %}
+<div class="ev-card {% if item.is_excluded %}excluded{% endif %}"
+     data-id="{{ item.evidence_id }}"
+     data-cat="{{ item.category }}"
+     data-needs="{{ 'true' if item.needs_review else 'false' }}"
+     data-dup="{{ 'true' if item.is_duplicate else 'false' }}"
+     data-excl="{{ 'true' if item.is_excluded else 'false' }}"
+     data-title="{{ item.title }}">
+
+  <!-- Thumbnail -->
+  <div class="thumb">
+    {% if item.preview_url %}
+    <img src="{{ item.preview_url }}" alt="{{ item.title }}" loading="lazy">
+    {% else %}
+    {{ {"image":"🖼️","video":"🎥","audio":"🎙","voice":"🎙","pdf":"📄","document":"🗂️","url":"🔗","text":"📝"}.get(item.media_type, "📁") }}
+    {% endif %}
+  </div>
+
+  <!-- Body -->
+  <div class="body">
+    <div class="title">{{ item.title }}</div>
+    <div class="meta-row">
+      <span class="badge">{{ item.category }}</span>
+      {% if item.importance_score == "strong" %}<span class="badge strong">⭐ قوي</span>{% endif %}
+      {% if item.importance_score == "medium" %}<span class="badge medium">متوسط</span>{% endif %}
+      {% if item.importance_score == "simple" %}<span class="badge simple">بسيط</span>{% endif %}
+      {% if item.needs_review %}<span class="badge needs">✏️ راجع</span>{% endif %}
+      {% if item.is_duplicate %}<span class="badge dup">⚠️ مكرر</span>{% endif %}
+      {% if item.is_excluded %}<span class="badge excl">🗑️ مستبعد</span>{% endif %}
+    </div>
+    {% if item.message_text %}
+    <div style="font-size:13px;color:#64748b;line-height:1.5;word-break:break-word;">{{ item.message_text }}</div>
+    {% endif %}
+    <div class="ev-date">{{ item.created_at }}</div>
+  </div>
+
+  <!-- Actions -->
+  <div class="card-actions">
+    {% if item.is_excluded %}
+    <button class="card-btn restore" onclick="restoreEvidence({{ item.evidence_id }}, this)">↩ استعادة</button>
+    {% else %}
+    <button class="card-btn approve" onclick="approveEvidence({{ item.evidence_id }}, this)">✅ اعتماد</button>
+    <button class="card-btn edit" onclick="toggleEdit({{ item.evidence_id }})">✏️ تعديل</button>
+    <button class="card-btn del" onclick="deleteEvidence({{ item.evidence_id }}, this)">🗑️ استبعاد</button>
+    {% endif %}
+  </div>
+
+  <!-- Edit panel -->
+  <div class="edit-panel" id="edit-{{ item.evidence_id }}">
+    <input type="text" id="title-{{ item.evidence_id }}"
+           value="{{ item.title }}" placeholder="العنوان">
+    <select id="cat-{{ item.evidence_id }}">
+      {% for cat in all_categories %}
+      <option value="{{ cat }}" {% if cat == item.category %}selected{% endif %}>{{ cat }}</option>
+      {% endfor %}
+    </select>
+    <button class="save-btn" onclick="saveEdits({{ item.evidence_id }})">💾 حفظ التغييرات</button>
+  </div>
+
+</div>
+{% else %}
+<div class="empty-state" style="grid-column:1/-1">
+  <div class="icon">📭</div>
+  <p>لا توجد شواهد بعد</p>
+</div>
+{% endfor %}
+</div>
+
+<footer>شواهد AI — ملف الإنجاز المهني للمعلم · نحلة AI</footer>
 <div id="toast"></div>
 
 <script>
-  const TOKEN = "{{ token }}";
-  const BASE  = "{{ base_url }}";
+const TOKEN = "{{ token }}";
+const BASE  = "{{ base_url }}";
 
-  function showToast(msg) {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2000);
-  }
+function showToast(msg, duration = 2200) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), duration);
+}
 
-  async function toggleEvidence(id, btn) {
-    btn.disabled = true;
-    try {
-      const res = await fetch(`${BASE}/review/${TOKEN}/toggle/${id}`, { method: 'POST' });
-      const data = await res.json();
-      const card = document.getElementById('card-' + id);
-      if (data.excluded) {
-        card.classList.add('excluded');
-        btn.className = 'toggle-btn restore-btn';
-        btn.textContent = '↩ استعادة';
-        btn.onclick = () => toggleEvidence(id, btn);
-        showToast('تم إخفاء الشاهد من الملف');
-      } else {
-        card.classList.remove('excluded');
-        btn.className = 'toggle-btn hide-btn';
-        btn.textContent = '🗑 إخفاء من الملف';
-        btn.onclick = () => toggleEvidence(id, btn);
-        showToast('تمت استعادة الشاهد');
-      }
-      // Update counts
-      const all     = document.querySelectorAll('.card').length;
-      const excl    = document.querySelectorAll('.card.excluded').length;
-      const visible = all - excl;
-    } catch (e) {
-      showToast('حدث خطأ، حاول مجددًا');
-    } finally {
-      btn.disabled = false;
+async function post(url, body = {}) {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return r.ok ? r.json() : null;
+}
+
+function cardEl(id) { return document.querySelector(`[data-id="${id}"]`); }
+
+function approveEvidence(id, btn) {
+  post(`${BASE}/review/${TOKEN}/approve/${id}`).then(d => {
+    if (d && d.ok) {
+      cardEl(id).dataset.excl = "false";
+      cardEl(id).classList.remove("excluded");
+      showToast("✅ تم الاعتماد");
     }
-  }
+  });
+}
 
-  function showExportOverlay() {
-    document.getElementById('export-overlay').classList.add('active');
-  }
-  function closeExportOverlay() {
-    document.getElementById('export-overlay').classList.remove('active');
-  }
-
-  async function confirmExport() {
-    const btn = document.getElementById('confirm-export-btn');
-    btn.disabled = true;
-    btn.textContent = 'جاري الإرسال…';
-    try {
-      const res = await fetch(`${BASE}/review/${TOKEN}/export`, { method: 'POST' });
-      const data = await res.json();
-      if (data.ok) {
-        btn.textContent = '✅ تم إرسال رسالة واتساب';
-        showToast('تحقق من واتساب لاختيار نوع الملف');
-        setTimeout(closeExportOverlay, 2500);
-      } else {
-        btn.disabled = false;
-        btn.textContent = 'إرسال رسالة التصدير على واتساب';
-        showToast('حدث خطأ، حاول مجددًا');
-      }
-    } catch (e) {
-      btn.disabled = false;
-      btn.textContent = 'إرسال رسالة التصدير على واتساب';
-      showToast('حدث خطأ في الاتصال');
+function deleteEvidence(id, btn) {
+  post(`${BASE}/review/${TOKEN}/delete/${id}`).then(d => {
+    if (d && d.ok) {
+      const card = cardEl(id);
+      card.dataset.excl = "true";
+      card.classList.add("excluded");
+      showToast("🗑️ تم الاستبعاد");
     }
-  }
+  });
+}
+
+function restoreEvidence(id, btn) {
+  post(`${BASE}/review/${TOKEN}/restore/${id}`).then(d => {
+    if (d && d.ok) {
+      const card = cardEl(id);
+      card.dataset.excl = "false";
+      card.classList.remove("excluded");
+      showToast("↩ تم الاستعادة");
+      location.reload();
+    }
+  });
+}
+
+function toggleEdit(id) {
+  const panel = document.getElementById(`edit-${id}`);
+  panel.classList.toggle("open");
+}
+
+function saveEdits(id) {
+  const title = document.getElementById(`title-${id}`).value.trim();
+  const cat   = document.getElementById(`cat-${id}`).value;
+
+  const chain = [];
+  if (title) chain.push(
+    post(`${BASE}/review/${TOKEN}/update_title/${id}`, { title })
+  );
+  if (cat) chain.push(
+    post(`${BASE}/review/${TOKEN}/update_category/${id}`, { category: cat })
+  );
+
+  Promise.all(chain).then(() => {
+    document.getElementById(`edit-${id}`).classList.remove("open");
+    showToast("💾 تم الحفظ");
+    location.reload();
+  });
+}
+
+// ── Filter ────────────────────────────────────────────────
+function filterCards() {
+  const cat    = document.getElementById("filterCat").value;
+  const status = document.getElementById("filterStatus").value;
+  const q      = document.getElementById("searchBox").value.toLowerCase();
+
+  document.querySelectorAll("#evGrid .ev-card").forEach(card => {
+    const matchCat    = !cat    || card.dataset.cat   === cat;
+    const matchSearch = !q      || card.dataset.title.toLowerCase().includes(q);
+    const matchStatus = !status || (
+      (status === "needs_review" && card.dataset.needs === "true") ||
+      (status === "duplicate"    && card.dataset.dup   === "true") ||
+      (status === "excluded"     && card.dataset.excl  === "true") ||
+      (status === "active"       && card.dataset.excl  !== "true")
+    );
+    card.style.display = (matchCat && matchSearch && matchStatus) ? "" : "none";
+  });
+}
 </script>
 </body>
 </html>

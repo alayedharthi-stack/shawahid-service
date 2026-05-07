@@ -215,3 +215,56 @@ def build_batch_summary(items: list[BatchItem]) -> str:
     if review_total:
         lines.append(f"📌 {review_total} يحتاج مراجعة بسيطة")
     return "\n".join(lines)
+
+
+# ── Phase-5: review_engine message builders ────────────────────────────
+
+
+def build_review_ready_message(
+    *,
+    active_count: int,
+    needs_review_count: int = 0,
+    duplicates_count: int = 0,
+    strong_count: int = 0,
+) -> str:
+    """Notify the teacher that their review page is ready.
+
+    Called after the export-readiness check in the webhook but *before*
+    sending the review link. Gives the teacher a concise overview so
+    the link feels motivated.
+
+    Example output:
+        تم تجهيز صفحة مراجعة الشواهد ✅
+
+        يمكنك الآن:
+        ✏️ تعديل التصنيفات
+        🗑️ حذف المكرر
+        ⭐ مراجعة الشواهد القوية
+    """
+    lines: list[str] = [
+        "تم تجهيز صفحة مراجعة الشواهد ✅",
+        "",
+        "يمكنك الآن:",
+        "✏️ تعديل التصنيفات",
+        "🗑️ حذف المكرر",
+        "⭐ مراجعة الشواهد القوية",
+    ]
+    if active_count:
+        lines.append(f"\n📊 لديك {active_count} شاهدًا جاهزًا")
+    if strong_count:
+        lines.append(f"⭐ {strong_count} شاهدًا قويًا")
+    if needs_review_count:
+        lines.append(f"✏️ {needs_review_count} تحتاج مراجعة")
+    if duplicates_count:
+        lines.append(f"⚠️ {duplicates_count} مكررة")
+    return "\n".join(lines)
+
+
+def build_review_link_message(review_url: str) -> str:
+    """Return a short, clickable message with the review link.
+
+    Example output:
+        🔗 رابط المراجعة:
+        https://...
+    """
+    return f"🔗 رابط المراجعة:\n{review_url}"
