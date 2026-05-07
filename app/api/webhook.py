@@ -56,6 +56,7 @@ from app.services.whatsapp import (
 from app.services import exporter as exporter_svc
 from app.core.config import settings
 from app.core.phone import normalize_phone
+from app.services import whatsapp_integration as wa_integration
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -68,6 +69,9 @@ _PENDING_EXPORT_REQUESTS: set[int] = set()
 _AWAITING_EXPORT_CHOICE: set[int] = set()
 # Pending name confirmation: teacher_id → name extracted from audio (needs user to confirm)
 _PENDING_NAME_CONFIRMATION: dict[int, str] = {}
+# Phase-6: teacher-provided category hint for the next evidence save.
+# Set when teacher sends "هذه خطة" / "هذا اختبار" as a standalone text.
+_PENDING_CATEGORY_HINT: dict[int, str] = {}
 
 
 # ─── Arabic text normalization ────────────────────────────────────────────────
@@ -637,19 +641,53 @@ async def whatsapp_webhook(
     # ── Pre-export button replies: مراجعة الملف / تصدير الآن ─────────────────
     _normalized_text = _normalize_arabic(text or "")
 
-    if _normalized_text in ("review_file", "مراجعة الملف", "مراجعه الملف") and not media_id:
+    # Phase-6: semantic intent detection — runs before GPT to short-circuit
+    # obvious commands without paying an OpenAI round-trip.
+    _wa_intent = wa_integration.resolve_text_intent(text) if (text and not media_id) else None
+
+    # ── Category hint: store for the next evidence save ───────────────────────
+    if (
+        _wa_intent
+        and _wa_intent.intent == "category"
+        and (_wa_intent.payload or {}).get("category")
+        and not media_id
+    ):
+        _hint_cat = _wa_intent.payload["category"]  # type: ignore[index]
+        _PENDING_CATEGORY_HINT[teacher.id] = _hint_cat
+        logger.info(
+            "[CATEGORY HINT] teacher_id=%d hint=%r (stored for next save)",
+            teacher.id, _hint_cat,
+        )
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone,
+            f"سأحفظ الشاهد القادم في محور: {_hint_cat} ✅",
+            teacher_id=teacher.id, context="category_hint_ack",
+        )
+        return {"ok": True, "teacher_id": teacher.id, "intent": "category_hint"}
+
+    # ── Review request: button ID *or* natural-language intent ────────────────
+    _is_review_intent = (
+        _normalized_text in ("review_file", "مراجعة الملف", "مراجعه الملف")
+        or (_wa_intent is not None and _wa_intent.intent == "review")
+    )
+    if _is_review_intent and not media_id:
         _AWAITING_EXPORT_CHOICE.discard(teacher.id)
-        logger.info("[REVIEW REQUESTED] teacher_id=%d", teacher.id)
+        _via = "button" if _normalized_text in ("review_file", "مراجعة الملف", "مراجعه الملف") else "intent"
+        logger.info("[REVIEW REQUESTED] teacher_id=%d via=%s", teacher.id, _via)
         from app.services.teachers import get_or_create_review_token
         _rt = get_or_create_review_token(db, teacher)
         _rv = f"{settings.effective_base_url}/review/{_rt}"
-        background_tasks.add_task(
-            send_whatsapp_button,
-            teacher.phone,
-            "راجع شواهدك قبل التصدير 📋",
-            "🔍 مراجعة الملف",
-            _rv,
+        _all_evidences = get_teacher_evidences(db, teacher.id)
+        _review_reply = wa_integration.make_review_link_reply(
+            _all_evidences,
             teacher_id=teacher.id,
+            teacher_name=teacher.name,
+            base_url=settings.effective_base_url,
+            review_url=_rv,
+        )
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone, _review_reply,
+            teacher_id=teacher.id, context="review_link_sent",
         )
         return {"ok": True, "teacher_id": teacher.id, "intent": "review_requested"}
 
@@ -712,6 +750,19 @@ async def whatsapp_webhook(
         from app.services.teachers import get_or_create_review_token
         _review_token = get_or_create_review_token(db, teacher)
         _review_url   = f"{settings.effective_base_url}/review/{_review_token}"
+        # Phase-6: send a smart warning if there are duplicates / low-confidence items
+        # before showing the مراجعة / تصدير 2-button card.
+        _export_warning = wa_integration.make_pre_export_warning(
+            get_teacher_evidences(db, teacher.id),
+            teacher_id=teacher.id,
+            teacher_name=teacher.name,
+            base_url=settings.effective_base_url,
+        )
+        if _export_warning:
+            background_tasks.add_task(
+                send_whatsapp_message, teacher.phone, _export_warning,
+                teacher_id=teacher.id, context="pre_export_warning",
+            )
         _AWAITING_EXPORT_CHOICE.add(teacher.id)
         background_tasks.add_task(
             send_pre_export_choice_buttons,
@@ -792,15 +843,25 @@ async def whatsapp_webhook(
             "[PDF RECEIVED] teacher_id=%d file=%s mime=%s",
             teacher.id, file_name, mime_type,
         )
-        # Note: this is a RECEIPT confirmation, not a save confirmation.
-        # We send the explicit "saved" message ONLY after verify_evidence_in_export
-        # confirms the row is persisted and visible to the export pipeline.
+        # Receipt confirmation — explicit "saved" message is sent ONLY after
+        # verify_evidence_in_export confirms the row is persisted.
+        # Phase-6: uses build_file_received_message for consistent tone.
         background_tasks.add_task(
             send_whatsapp_message,
             teacher.phone,
-            "📄 وصلني الملف، جارٍ تحليله الآن…",
+            wa_integration.make_file_received_reply("pdf"),
             teacher_id=teacher.id,
             context="pdf_received",
+        )
+    elif media_id and evidence_type and evidence_type not in ("text", "url"):
+        # Phase-6: universal immediate ack for images, video, audio, documents.
+        # Keeps the teacher informed the file arrived before GPT runs.
+        background_tasks.add_task(
+            send_whatsapp_message,
+            teacher.phone,
+            wa_integration.make_file_received_reply(evidence_type),
+            teacher_id=teacher.id,
+            context="media_received",
         )
 
     # ── Download media (WhatsApp URLs require auth — must download first) ─────
@@ -835,7 +896,7 @@ async def whatsapp_webhook(
             teacher.id, media_hash[:12],
         )
         _dup_ev = get_evidence_by_hash(db, teacher.id, media_hash)
-        _dup_msg = build_file_saved_message(
+        _dup_msg = wa_integration.make_save_reply(
             ev_type=(_dup_ev.evidence_type if _dup_ev else evidence_type or "document"),
             category=(_dup_ev.category if _dup_ev else ""),
             title=(_dup_ev.title if _dup_ev else None),
@@ -1133,12 +1194,8 @@ async def whatsapp_webhook(
             )
 
         if pending_name:
-            # Override reply: ask teacher to confirm the transcribed name
-            reply = (
-                f"سمعت الاسم: *{pending_name}*\n"
-                "هل هذا اسمك الصحيح؟\n"
-                "اكتب *نعم* للحفظ أو *لا* لإعادة الكتابة يدويًا."
-            )
+            # Phase-6: standardized name confirmation message with consistent tone.
+            reply = wa_integration.make_name_confirmation_question(pending_name)
         elif intent == "update_profile":
             reply = _format_profile_update_reply(profile_update)
 
@@ -1240,6 +1297,18 @@ async def whatsapp_webhook(
         review_token = get_or_create_review_token(db, teacher)
         review_url   = f"{settings.effective_base_url}/review/{review_token}"
 
+        # Phase-6: warn about duplicates / low-confidence before the 2-button card.
+        _gpt_export_warning = wa_integration.make_pre_export_warning(
+            get_teacher_evidences(db, teacher.id),
+            teacher_id=teacher.id,
+            teacher_name=teacher.name,
+            base_url=settings.effective_base_url,
+        )
+        if _gpt_export_warning:
+            background_tasks.add_task(
+                send_whatsapp_message, teacher.phone, _gpt_export_warning,
+                teacher_id=teacher.id, context="pre_export_warning",
+            )
         _AWAITING_EXPORT_CHOICE.add(teacher.id)
         background_tasks.add_task(
             send_pre_export_choice_buttons,
@@ -1323,6 +1392,17 @@ async def whatsapp_webhook(
                     teacher.id, _pre_cat, _pre_conf, gpt_category, _gpt_conf,
                 )
                 gpt_category = _pre_cat
+
+        # Phase-6: apply teacher-provided category hint when the AI fell back to
+        # a generic category. Never overrides a specific GPT or pre-analysis choice.
+        _teacher_hint = _PENDING_CATEGORY_HINT.get(teacher.id)
+        _GENERIC_FALLBACKS = {"ملفات إدارية", "ملف إداري", "نشاط صفي", "أخرى", ""}
+        if _teacher_hint and gpt_category in _GENERIC_FALLBACKS:
+            logger.info(
+                "[CATEGORY HINT APPLIED] teacher_id=%d hint=%r overrides fallback=%r",
+                teacher.id, _teacher_hint, gpt_category,
+            )
+            gpt_category = _teacher_hint
 
         # PDF: enrich title/description from pre-analysis if GPT title is too generic
         _gpt_title = decision["title"] or ""
@@ -1453,14 +1533,18 @@ async def whatsapp_webhook(
                     gpt_category, decision["title"], decision["confidence"],
                 )
                 # ── Structured save confirmation for all media evidence ────────
-                # Replace GPT's generic reply with a structured ✅ message that
-                # tells the teacher exactly what was saved and in which category.
+                # Phase-6: uses make_save_reply (build_evidence_saved_smart) which
+                # includes importance score and a review hint when confidence is low.
                 if media_id and ev_type not in ("text", "url"):
-                    reply = build_file_saved_message(
+                    reply = wa_integration.make_save_reply(
                         ev_type=ev_type,
                         category=gpt_category,
-                        title=_gpt_title or "",
+                        title=_gpt_title or None,
+                        confidence=decision.get("confidence"),
+                        ai_raw=dict(decision),
                     )
+                    # Clear any pending category hint now that the save completed.
+                    _PENDING_CATEGORY_HINT.pop(teacher.id, None)
             except Exception as save_exc:
                 logger.error(
                     "[SAVE FAILED] teacher_id=%d type=%s category=%r error=%s",
