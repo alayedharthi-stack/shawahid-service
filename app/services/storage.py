@@ -102,6 +102,57 @@ def _correct_image_orientation(raw_bytes: bytes, mime_type: str | None) -> bytes
         return raw_bytes
 
 
+def extract_pdf_text(file_path: str | Path, max_chars: int = 2000) -> str | None:
+    """
+    Extract plain text from a PDF file using pdfplumber.
+
+    Returns up to max_chars characters, or None if:
+    - File is not a readable PDF
+    - PDF is scan-only (no embedded text layer)
+    - pdfplumber is not installed
+
+    Logs: [PDF TEXT EXTRACTED] or [PDF NO TEXT] or [PDF EXTRACT ERROR]
+    """
+    path = Path(file_path)
+    if not path.exists():
+        logger.warning("[PDF EXTRACT ERROR] file not found: %s", path)
+        return None
+
+    try:
+        import pdfplumber
+
+        text_parts: list[str] = []
+        with pdfplumber.open(str(path)) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text() or ""
+                if page_text.strip():
+                    text_parts.append(page_text.strip())
+                if sum(len(p) for p in text_parts) >= max_chars:
+                    break
+
+        full_text = "\n".join(text_parts).strip()
+        if not full_text:
+            logger.info("[PDF NO TEXT] file=%s — likely a scanned image PDF", path.name)
+            return None
+
+        # Truncate to max_chars
+        if len(full_text) > max_chars:
+            full_text = full_text[:max_chars] + "…"
+
+        logger.info(
+            "[PDF TEXT EXTRACTED] file=%s chars=%d pages_read=%d",
+            path.name, len(full_text), len(text_parts),
+        )
+        return full_text
+
+    except ImportError:
+        logger.warning("[PDF EXTRACT ERROR] pdfplumber not installed — cannot extract text from PDF")
+        return None
+    except Exception as exc:
+        logger.warning("[PDF EXTRACT ERROR] file=%s error=%s", path.name if path else "?", exc)
+        return None
+
+
 def detect_evidence_type(mime_type: str | None, file_name: str | None, text: str | None) -> str:
     if not mime_type and not file_name:
         if text and _URL_RE.search(text):

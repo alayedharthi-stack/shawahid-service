@@ -14,3 +14,4 @@ openai==1.54.0
 playwright==1.44.0
 python-dotenv==1.0.1
 Pillow==10.3.0
+pdfplumber==0.11.4

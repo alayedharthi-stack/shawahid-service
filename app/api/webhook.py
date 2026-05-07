@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.db.base import get_db
 from app.services.teachers import get_or_create_teacher, get_teacher_by_id, update_teacher
 from app.services.evidences import create_evidence, get_teacher_evidences, set_enrichment_teacher_context
-from app.services.storage import download_and_save, detect_evidence_type, extract_urls
+from app.services.storage import download_and_save, detect_evidence_type, extract_urls, extract_pdf_text
 from app.services.deduplication import (
     is_exact_duplicate, find_near_duplicate_text,
     hash_text, hash_url,
@@ -465,6 +465,29 @@ def _is_creator_question(text: str | None) -> bool:
     return any(trigger in t for trigger in triggers)
 
 
+# ── PDF category inference from filename ──────────────────────────────────────
+_PDF_CATEGORY_HINTS: list[tuple[tuple[str, ...], str]] = [
+    # Specific first to avoid false matches from generic words
+    (("اختبار", "قياس", "exam", "test", "quiz"), "اختبار"),
+    (("ورقة عمل", "worksheet"), "ورقة عمل"),
+    (("سجل", "متابعة", "followup", "follow"), "سجل المتابعة"),
+    (("شهادة", "certificate", "دورة", "تدريب"), "الدورات والشهادات"),
+    (("تعميم", "قرار", "اجتماع", "circular"), "ملف إداري"),
+    (("تقرير", "تحليل", "نتائج", "report", "result"), "تقويم"),
+    (("خطة", "خطط", "plan", "lesson"), "التخطيط"),
+    (("توزيع", "منهج", "curriculum"), "التخطيط"),
+    (("نشاط", "activity"), "نشاط صفي"),
+]
+
+def _infer_pdf_category_from_name(filename: str) -> str:
+    """Guess evidence category from PDF filename. Falls back to 'ملف إداري'."""
+    name_lower = _normalize_arabic(filename.lower().replace("_", " ").replace("-", " "))
+    for keywords, category in _PDF_CATEGORY_HINTS:
+        if any(kw in name_lower for kw in keywords):
+            return category
+    return "ملف إداري"
+
+
 # ─── Main Webhook (POST) ─────────────────────────────────────────────────────
 
 @router.post("/webhook/whatsapp")
@@ -683,6 +706,26 @@ async def whatsapp_webhook(
             "export_mode": selected_export_mode,
         }
 
+    # ── PDF: send immediate acknowledgment before any processing ─────────────
+    # PDFs are critical (خطط / سجلات / اختبارات). Never stay silent.
+    _is_pdf_msg = (
+        mime_type == "application/pdf"
+        or (file_name or "").lower().endswith(".pdf")
+        or evidence_type == "pdf"
+    )
+    if _is_pdf_msg and media_id:
+        logger.info(
+            "[PDF RECEIVED] teacher_id=%d file=%s mime=%s",
+            teacher.id, file_name, mime_type,
+        )
+        background_tasks.add_task(
+            send_whatsapp_message,
+            teacher.phone,
+            "تم استلام ملف PDF وجارٍ حفظه وتحليله ✅",
+            teacher_id=teacher.id,
+            context="pdf_ack",
+        )
+
     # ── Download media (WhatsApp URLs require auth — must download first) ─────
     storage_path:   str | None = None
     safe_filename:  str | None = None
@@ -697,8 +740,16 @@ async def whatsapp_webhook(
                 mime_type=mime_type,
                 auth_token=settings.WHATSAPP_ACCESS_TOKEN or None,
             )
+            if _is_pdf_msg and storage_path:
+                logger.info(
+                    "[PDF DOWNLOADED] teacher_id=%d path=%s size=%.1fKB",
+                    teacher.id, storage_path,
+                    Path(storage_path).stat().st_size / 1024,
+                )
         except Exception as exc:
             logger.error("Media download failed for teacher %d: %s", teacher.id, exc)
+            if _is_pdf_msg:
+                logger.error("[PDF FAILED] teacher_id=%d — download failed: %s", teacher.id, exc)
 
     # ── Media deduplication: exact byte-hash check ────────────────────────────
     if media_hash and is_exact_duplicate(db, teacher.id, media_hash):
@@ -762,6 +813,29 @@ async def whatsapp_webhook(
                 "[TRANSCRIBE FAILED] teacher_id=%d — video audio not readable%s",
                 teacher.id,
                 " (thumbnail available)" if thumbnail_path else " (no thumbnail either)",
+            )
+
+    # ── PDF text extraction ───────────────────────────────────────────────────
+    # Extract text content from PDF so GPT can classify it intelligently.
+    # Result is stored as 'transcript' so GPT receives it via the same channel.
+    _pdf_text: str | None = None
+    if _is_pdf_msg and storage_path:
+        logger.info("[PDF ANALYSIS START] teacher_id=%d file=%s", teacher.id, safe_filename)
+        _pdf_text = extract_pdf_text(storage_path, max_chars=2000)
+        if _pdf_text:
+            # Prepend filename hint to help GPT classify (e.g. "خطة_اسبوعية.pdf")
+            _pdf_label = f"اسم الملف: {file_name or safe_filename}\n\n"
+            transcript = _pdf_label + "محتوى الملف (مستخرج):\n" + _pdf_text
+            logger.info(
+                "[PDF ANALYSIS DONE] teacher_id=%d chars=%d",
+                teacher.id, len(_pdf_text),
+            )
+        else:
+            # Scanned PDF or empty — use filename as only context hint
+            transcript = f"ملف PDF: {file_name or safe_filename or 'غير محدد'}"
+            logger.info(
+                "[PDF NO TEXT] teacher_id=%d — scanned/empty PDF, using filename hint",
+                teacher.id,
             )
 
     # ── Transcription failure: notify user before calling GPT ────────────────
@@ -1063,7 +1137,12 @@ async def whatsapp_webhook(
                     ai_status="force_saved" if is_force_saved else "completed",
                     ai_raw=dict(decision),
                 )
-                log_tag = "[EVIDENCE SAVED]" if intent == "evidence" else f"[{intent.upper()} SAVED]"
+                if ev_type == "pdf":
+                    log_tag = "[PDF SAVED]"
+                elif intent == "evidence":
+                    log_tag = "[EVIDENCE SAVED]"
+                else:
+                    log_tag = f"[{intent.upper()} SAVED]"
                 logger.info(
                     "%s teacher_id=%d evidence_id=%d type=%s category=%r title=%r confidence=%.2f",
                     log_tag, teacher.id, evidence.id, ev_type,
@@ -1074,25 +1153,77 @@ async def whatsapp_webhook(
                     "[SAVE FAILED] teacher_id=%d type=%s category=%r error=%s",
                     teacher.id, ev_type, gpt_category, save_exc, exc_info=True,
                 )
+                if _is_pdf_msg:
+                    logger.error("[PDF FAILED] teacher_id=%d — save exception: %s", teacher.id, save_exc)
 
     elif intent == "failure":
         # GPT failed after all retries.
-        # Send interim message + schedule background retry (without re-sending failure msg).
-        background_tasks.add_task(
-            send_whatsapp_message, teacher.phone, reply, teacher_id=teacher.id
-        )
-        background_tasks.add_task(
-            _gpt_retry_and_reply,
-            teacher.id,
-            teacher.phone,
-            text,
-            teacher_context,
-            storage_path if evidence_type == "image" else None,
-            None,  # image_url=None — WA URLs are auth-protected, base64 only
-            mime_type,
-            safe_filename or file_name,
-        )
-        return {"ok": False, "teacher_id": teacher.id, "intent": "failure", "retrying": True}
+        # CRITICAL: If this was a PDF, save it first before retrying — never lose a PDF.
+        if _is_pdf_msg and storage_path and not _skip_dedup:
+            try:
+                set_enrichment_teacher_context(
+                    name=teacher.name, subject=teacher.subject,
+                    stage=teacher.stage, grades=teacher.grades,
+                    school_name=teacher.school_name,
+                )
+                _pdf_fallback_title = (
+                    file_name.replace(".pdf", "").replace("_", " ").replace("-", " ")
+                    if file_name else "ملف PDF"
+                )
+                _pdf_fallback_cat = _infer_pdf_category_from_name(file_name or safe_filename or "")
+                create_evidence(
+                    db=db,
+                    teacher_id=teacher.id,
+                    source_phone=teacher.phone,
+                    evidence_type="pdf",
+                    message_text=transcript or gpt_text or text,
+                    media_url=media_url,
+                    storage_path=storage_path,
+                    file_name=safe_filename or file_name,
+                    mime_type=mime_type,
+                    category=_pdf_fallback_cat,
+                    title=_pdf_fallback_title,
+                    description="ملف PDF تم حفظه — تعذّر التحليل التلقائي.",
+                    content_hash=media_hash,
+                    ai_status="fallback",
+                )
+                logger.info(
+                    "[PDF SAVED] teacher_id=%d (GPT failure fallback) cat=%r title=%r",
+                    teacher.id, _pdf_fallback_cat, _pdf_fallback_title,
+                )
+                background_tasks.add_task(
+                    send_whatsapp_message,
+                    teacher.phone,
+                    "تم حفظ الملف لكن تعذّر تحليل محتواه بالكامل 📄\nسيظهر في ملف الشواهد.",
+                    teacher_id=teacher.id,
+                    context="pdf_saved_no_analysis",
+                )
+            except Exception as pdf_save_exc:
+                logger.error("[PDF FAILED] teacher_id=%d save error: %s", teacher.id, pdf_save_exc)
+                background_tasks.add_task(
+                    send_whatsapp_message,
+                    teacher.phone,
+                    "حدث خطأ أثناء حفظ الملف، أعد إرساله مرة أخرى 🙏",
+                    teacher_id=teacher.id,
+                    context="pdf_save_error",
+                )
+        else:
+            # Non-PDF failure: send interim + schedule retry
+            background_tasks.add_task(
+                send_whatsapp_message, teacher.phone, reply, teacher_id=teacher.id
+            )
+            background_tasks.add_task(
+                _gpt_retry_and_reply,
+                teacher.id,
+                teacher.phone,
+                text,
+                teacher_context,
+                storage_path if evidence_type == "image" else None,
+                None,  # image_url=None — WA URLs are auth-protected, base64 only
+                mime_type,
+                safe_filename or file_name,
+            )
+        return {"ok": False, "teacher_id": teacher.id, "intent": "failure", "retrying": not _is_pdf_msg}
 
     else:
         logger.info("[EVIDENCE SKIPPED] teacher_id=%d intent=%s", teacher.id, intent)
