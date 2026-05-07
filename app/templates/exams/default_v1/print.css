@@ -1,0 +1,16 @@
+/* exams/default_v1/print.css — PDF / print tweaks. */
+
+@page {
+  size: A4;
+  margin: 18mm 16mm;
+}
+
+@media print {
+  body.exam-sheet {
+    padding: 0;
+    max-width: none;
+  }
+  .exam-question { page-break-inside: avoid; }
+  .exam-header { page-break-after: avoid; }
+  .exam-footer { page-break-before: avoid; }
+}

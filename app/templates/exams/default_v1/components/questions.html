@@ -1,0 +1,40 @@
+{% for q in questions %}
+<article class="exam-question" data-qid="{{ q.id }}" data-qtype="{{ q.type }}">
+  <div class="exam-question__head">
+    <span class="exam-question__num">{{ q.text }}</span>
+    <span class="exam-question__marks">({{ q.marks }} درجة)</span>
+  </div>
+
+  {% if q.type == "mcq" and q.choices %}
+    <ol class="exam-choices">
+      {% for choice in q.choices %}
+        <li>{{ choice }}</li>
+      {% endfor %}
+    </ol>
+  {% elif q.type == "true_false" %}
+    <div class="exam-true-false">
+      <span>صح</span>
+      <span>خطأ</span>
+    </div>
+  {% elif q.type == "fill_blank" %}
+    <div><span class="exam-blank-answer"></span></div>
+  {% elif q.type == "short" %}
+    <div>
+      <span class="exam-blank-answer" style="display:block; min-height: 2.4em;"></span>
+    </div>
+  {% elif q.type == "match" and q.choices %}
+    <div class="exam-match">
+      {% for left in q.choices %}
+        <div class="exam-match__col">{{ left }}</div>
+        <div class="exam-match__col"></div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if q.learning_outcome %}
+    <p class="exam-question__outcome" style="font-size:11px;color:var(--exam-muted);margin-top:4px;">
+      <em>الناتج: {{ q.learning_outcome }}</em>
+    </p>
+  {% endif %}
+</article>
+{% endfor %}

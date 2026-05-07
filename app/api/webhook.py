@@ -387,6 +387,64 @@ _FIRST_VOICE_SUCCESS_MSG = (
 )
 
 
+async def _send_exam_pdf(
+    *,
+    teacher_phone: str,
+    teacher_id: int,
+    pdf_path: str | None,
+    exam,
+) -> None:
+    """Phase-12: deliver the generated exam PDF to the teacher.
+
+    Best-effort — if WhatsApp document upload isn't wired in this
+    deployment we fall back to a plain text "your exam is ready"
+    message. This never raises; failures only log.
+    """
+    if not pdf_path:
+        return
+    try:
+        from pathlib import Path as _P
+        if not _P(pdf_path).exists():
+            logger.warning(
+                "[EXAM FLOW] PDF path missing teacher_id=%d path=%s",
+                teacher_id, pdf_path,
+            )
+            return
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[EXAM FLOW] PDF stat failed: %s", exc)
+        return
+
+    # Document-upload helper is optional — fall back to a tiny ack
+    # when the deployment doesn't expose one.
+    sender = None
+    try:
+        from app.services.whatsapp import send_whatsapp_document  # type: ignore
+        sender = send_whatsapp_document
+    except ImportError:
+        sender = None
+
+    if sender is not None:
+        try:
+            await sender(teacher_phone, pdf_path, teacher_id=teacher_id)
+            logger.info(
+                "[EXAM PDF SENT] teacher_id=%d path=%s", teacher_id, pdf_path,
+            )
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[EXAM PDF SEND FAILED] teacher_id=%d err=%s",
+                teacher_id, exc,
+            )
+
+    # Fallback: tell the teacher the file is ready (without inlining it).
+    await send_whatsapp_message(
+        teacher_phone,
+        "تم تجهيز ملف الاختبار 📎\n"
+        "لتنزيله تواصل مع الدعم أو أعد المحاولة لاحقًا.",
+        teacher_id=teacher_id, context="exam_pdf_fallback",
+    )
+
+
 async def _send_welcome_message(phone: str, teacher_id: int) -> None:
     """
     Send one-time short onboarding welcome. Runs as a background task after the first reply.
@@ -644,6 +702,94 @@ async def whatsapp_webhook(
     # Phase-6: semantic intent detection — runs before GPT to short-circuit
     # obvious commands without paying an OpenAI round-trip.
     _wa_intent = wa_integration.resolve_text_intent(text) if (text and not media_id) else None
+
+    # ── Phase-12: exam flow routing ───────────────────────────────────────────
+    # When the teacher says "أريد اختبار رياضيات" (or similar) we run the
+    # exam conversation orchestrator instead of the evidence pipeline.
+    # The webhook sends the orchestrator's reply + (optionally) the PDF.
+    from app.services.intents import (
+        INTENT_CREATE_EXAM,
+        INTENT_EXAM_CONFIRM,
+        INTENT_EXAM_EXPORT,
+        INTENT_EXAM_REGENERATE,
+    )
+    from app.exam_engine.exam_flow import STAGE_READY, STAGE_MISSING_INFO
+
+    _exam_intent_names = (
+        INTENT_CREATE_EXAM,
+        INTENT_EXAM_CONFIRM,
+        INTENT_EXAM_EXPORT,
+        INTENT_EXAM_REGENERATE,
+    )
+    _is_exam_intent = bool(
+        _wa_intent
+        and _wa_intent.intent in _exam_intent_names
+    )
+    # When the exam state is mid-conversation (teacher already started a
+    # request) we keep routing follow-up text through the exam flow even
+    # if the intent detector didn't fire on this specific message.
+    _is_exam_followup = False
+    if not _is_exam_intent and not media_id and text:
+        try:
+            from app.conversation_engine.exam_state import get_exam_state
+            _ex_state = get_exam_state(teacher.id)
+            _is_exam_followup = bool(_ex_state.pending_fields)
+        except Exception:  # noqa: BLE001
+            _is_exam_followup = False
+
+    if (_is_exam_intent or _is_exam_followup) and not media_id:
+        logger.info(
+            "[EXAM FLOW] teacher_id=%d via=%s text=%r",
+            teacher.id,
+            "intent" if _is_exam_intent else "followup",
+            (text or "")[:60],
+        )
+        _grades_tuple: tuple[str, ...] = ()
+        if teacher.grades:
+            if isinstance(teacher.grades, (list, tuple)):
+                _grades_tuple = tuple(str(g) for g in teacher.grades if g)
+            else:
+                _grades_tuple = (str(teacher.grades),)
+
+        _exam_result = wa_integration.make_exam_flow_result(
+            teacher_id=teacher.id,
+            text=text,
+            teacher_name=teacher.name,
+            school_name=teacher.school_name,
+            education_admin=teacher.education_admin,
+            region=teacher.region,
+            teacher_subject=teacher.subject,
+            teacher_stage=teacher.stage,
+            teacher_grades=_grades_tuple,
+            render_pdf=True,
+        )
+
+        if _exam_result is not None:
+            # Optional progress messages first (fetch / source-found).
+            for _pm in (_exam_result.progress_messages or []):
+                background_tasks.add_task(
+                    send_whatsapp_message, teacher.phone, _pm,
+                    teacher_id=teacher.id, context="exam_progress",
+                )
+            background_tasks.add_task(
+                send_whatsapp_message, teacher.phone, _exam_result.reply_text,
+                teacher_id=teacher.id, context=f"exam_{_exam_result.stage}",
+            )
+            # Schedule PDF send (best-effort) when ready.
+            if _exam_result.is_ready and _exam_result.pdf_path:
+                background_tasks.add_task(
+                    _send_exam_pdf,
+                    teacher_phone=teacher.phone,
+                    teacher_id=teacher.id,
+                    pdf_path=_exam_result.pdf_path,
+                    exam=_exam_result.exam,
+                )
+            return {
+                "ok": True,
+                "teacher_id": teacher.id,
+                "intent": "exam_flow",
+                "exam_stage": _exam_result.stage,
+            }
 
     # ── Category hint: store for the next evidence save ───────────────────────
     if (

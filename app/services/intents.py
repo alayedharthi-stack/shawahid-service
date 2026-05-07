@@ -34,6 +34,14 @@ INTENT_CATEGORY_HINT = "category"   # "هذه خطة" / "هذا اختبار"
 INTENT_HELP = "help"                # "ساعدني / كيف"
 INTENT_GREETING = "greeting"        # "السلام عليكم / مرحبا"
 INTENT_NAME_CORRECTION = "name"     # voice/text correcting the saved name
+
+# Phase-12: exam flow intents
+INTENT_CREATE_EXAM = "create_exam"        # "أريد اختبار رياضيات"
+INTENT_EXAM_MISSING_INFO = "exam_missing"  # follow-up giving missing slots
+INTENT_EXAM_CONFIRM = "exam_confirm"       # "نعم اعتمده" after preview
+INTENT_EXAM_REGENERATE = "exam_regen"      # "أعد إنشاءه"
+INTENT_EXAM_EXPORT = "exam_export"         # "أرسل PDF" / "حمل الاختبار"
+
 INTENT_NONE = "none"
 
 
@@ -133,6 +141,42 @@ _GREETING_PATTERNS: tuple[str, ...] = (
 )
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Phase-12: exam intents — patterns
+# ──────────────────────────────────────────────────────────────────────
+
+# Strong creation triggers ("create / make / want an exam"). When any of
+# these matches, the webhook routes to the exam flow regardless of
+# missing slots — the flow itself handles slot gathering.
+_CREATE_EXAM_PATTERNS: tuple[str, ...] = (
+    "اريد اختبار", "اريد اختبارا", "اريد اختبارًا",
+    "ابغي اختبار", "ابغى اختبار", "ابي اختبار",
+    "انشئ اختبار", "انشي اختبار", "انشئ لي اختبار", "انشي لي اختبار",
+    "انشي لي نموذج", "انشئ لي نموذج", "اعطني اختبار", "اعطيني اختبار",
+    "سو اختبار", "سو لي اختبار", "اعمل اختبار", "اعمل لي اختبار",
+    "حضر اختبار", "حضر لي اختبار", "جهز اختبار", "جهز لي اختبار",
+    "ابغي ورقه اختبار", "ابي ورقه اختبار", "اريد ورقه اختبار",
+    "ابغي نموذج اختبار", "ابي نموذج اختبار", "اريد نموذج اختبار",
+    "اختبار نهائي", "اختبار قصير", "اختبار شهري", "ورقه قياس",
+)
+
+# Confirmation / regenerate / send-PDF replies the teacher gives AFTER
+# the bot generated a draft.
+_EXAM_CONFIRM_PATTERNS: tuple[str, ...] = (
+    "اعتمد الاختبار", "اعتمده", "نعم اعتمده", "موافق على الاختبار",
+    "خلاص اعتمده", "تمام اعتمده", "وافق على الاختبار",
+)
+_EXAM_REGEN_PATTERNS: tuple[str, ...] = (
+    "اعد الاختبار", "اعد انشاء الاختبار", "غير الاختبار",
+    "بدل الاختبار", "ولد لي اختبار جديد", "اختبار اخر",
+    "اعد التوليد", "نسخه ثانيه", "نسخه اخري",
+)
+_EXAM_SEND_PATTERNS: tuple[str, ...] = (
+    "ارسل الاختبار", "ارسل لي الاختبار", "حمل الاختبار",
+    "ارسل ال pdf", "ارسل البي دي اف", "ابعث الاختبار",
+)
+
+
 # ── Category hints — "هذا اختبار" / "هذه خطة" ──────────────────────────
 # Maps a hint phrase → official category name (Arabic).
 _CATEGORY_HINTS: tuple[tuple[tuple[str, ...], str], ...] = (
@@ -189,6 +233,19 @@ def detect_intent(text: str | None) -> Intent:
 
     if _matches_any(norm, _DUPLICATE_PATTERNS):
         return Intent(INTENT_DUPLICATE, 0.9)
+
+    # Phase-12: exam-creation intents must come BEFORE the category-hint
+    # bank (which contains "هذا اختبار") and BEFORE export/review so a
+    # teacher saying "أرسل الاختبار" gets routed to exam flow, not to
+    # shawahid export.
+    if _matches_any(norm, _EXAM_REGEN_PATTERNS):
+        return Intent(INTENT_EXAM_REGENERATE, 0.85)
+    if _matches_any(norm, _EXAM_CONFIRM_PATTERNS):
+        return Intent(INTENT_EXAM_CONFIRM, 0.85)
+    if _matches_any(norm, _EXAM_SEND_PATTERNS):
+        return Intent(INTENT_EXAM_EXPORT, 0.85)
+    if _matches_any(norm, _CREATE_EXAM_PATTERNS):
+        return Intent(INTENT_CREATE_EXAM, 0.9)
 
     for hints, category in _CATEGORY_HINTS:
         if _matches_any(norm, hints):

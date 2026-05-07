@@ -1,0 +1,322 @@
+{
+  "_doc": "Ground-truth dataset for Shawahid AI evaluation. Each section is consumed by a different evaluator. Edit with care — these labels are the source of truth.",
+  "version": 1,
+
+  "classification_pdf": [
+    {
+      "id": "weekly_plan_01",
+      "label": "خطة أسبوعية",
+      "expected_category": "التخطيط",
+      "filename": "weekly_plan_grade5.pdf",
+      "extracted_text": "الخطة الأسبوعية لمادة العلوم - الصف الخامس\n\nالأسبوع الأول\nنواتج التعلم:\n- يميز الطالب بين المخاليط المتجانسة وغير المتجانسة\n- يصف خصائص الماء وأهميته\n\nاستراتيجيات التعلم: التعلم التعاوني، الحوار والمناقشة\n\nالتوزيع الزمني: 4 حصص"
+    },
+    {
+      "id": "term_plan_01",
+      "label": "خطة فصلية",
+      "expected_category": "التخطيط",
+      "filename": "term_plan_lang.pdf",
+      "extracted_text": "توزيع المنهج للفصل الدراسي الأول\nمادة اللغة العربية - الصف السادس\n\nالأسبوع الأول: الوحدة الأولى - مدخل الوحدة\nالأسبوع الثاني: درس فهم المقروء\nالأسبوع الثالث: تحضير درس النص الشعري\n\nالتوزيع الزمني للمنهج موزع على 16 أسبوعاً."
+    },
+    {
+      "id": "exam_paper_01",
+      "label": "اختبار نهائي",
+      "expected_category": "التقويم",
+      "filename": "final_exam_math.pdf",
+      "extracted_text": "اختبار نهائي - مادة الرياضيات\nالسؤال الأول: أجب عن الفقرات التالية (10 درجات)\nالسؤال الثاني: اختر الإجابة الصحيحة (5 درجات)\nمجموع الدرجات: 40\nرصد الدرجات في الكشف المرفق"
+    },
+    {
+      "id": "worksheet_01",
+      "label": "ورقة عمل",
+      "expected_category": "التقويم",
+      "filename": "worksheet_science.pdf",
+      "extracted_text": "ورقة عمل: دورة الماء\nاختر الإجابة الصحيحة من بين الخيارات\n1. ينتقل الماء من الحالة السائلة إلى الغازية بعملية...\n2. اشرح بالرسم دورة الماء\nالدرجة: 10"
+    },
+    {
+      "id": "schedule_01",
+      "label": "جدول حصص",
+      "expected_category": "ملفات إدارية",
+      "filename": "weekly_schedule.pdf",
+      "extracted_text": "جدول الحصص الأسبوعي\nاليوم/الحصة | الحصة الأولى | الحصة الثانية | الحصة الثالثة\nالأحد | علوم | رياضيات | لغة عربية\nالاثنين | اجتماعيات | علوم | تربية فنية\nالثلاثاء | لغة إنجليزية | رياضيات | علوم\nالأربعاء | لغة عربية | تربية إسلامية | علوم\nالخميس | علوم | لغة عربية | رياضيات"
+    },
+    {
+      "id": "attendance_01",
+      "label": "سجل متابعة",
+      "expected_category": "سجل المتابعة",
+      "filename": "attendance_record.pdf",
+      "extracted_text": "سجل متابعة حضور وغياب الطلاب\nاسم الطالب | الأحد | الاثنين | الثلاثاء | الأربعاء | الخميس\nأحمد علي | حاضر | حاضر | غائب | حاضر | حاضر\nمتابعة يومية للطلاب - الفصل: 5/أ"
+    },
+    {
+      "id": "circular_01",
+      "label": "تعميم إداري",
+      "expected_category": "ملفات إدارية",
+      "filename": "circular_2026.pdf",
+      "extracted_text": "تعميم رقم 142 لسنة 1447هـ\nنحيطكم علماً بأن إدارة التعليم قررت تأجيل اجتماع المعلمين إلى الأسبوع القادم.\nمدير المدرسة"
+    },
+    {
+      "id": "certificate_01",
+      "label": "شهادة دورة",
+      "expected_category": "الدورات والشهادات",
+      "filename": "training_cert.pdf",
+      "extracted_text": "شهادة إتمام دورة تدريبية\nيشهد بأن الأستاذ قد اجتاز بنجاح دورة التعلم النشط\nالعدد: 20 ساعة تدريبية"
+    },
+    {
+      "id": "mixed_unclear_01",
+      "label": "ملف غامض",
+      "expected_category": "ملفات إدارية",
+      "filename": "document.pdf",
+      "extracted_text": "ملف"
+    }
+  ],
+
+  "classification_image": [
+    {
+      "id": "board_activity_01",
+      "label": "صورة سبورة - نشاط",
+      "expected_category": "نشاط صفي",
+      "filename": "board_activity.jpg",
+      "caption": "نشاط تعاوني مع الطلاب اليوم"
+    },
+    {
+      "id": "board_lesson_01",
+      "label": "صورة سبورة - درس",
+      "expected_category": "نشاط صفي",
+      "filename": "lesson_board.jpg",
+      "caption": "شرح درس قاعدة الجمع"
+    },
+    {
+      "id": "group_work_01",
+      "label": "تعلم تعاوني",
+      "expected_category": "التعلم النشط",
+      "filename": "group_work.jpg",
+      "caption": "مجموعات الطلاب في تعلم تعاوني"
+    }
+  ],
+
+  "classification_text": [
+    {
+      "id": "hint_plan",
+      "label": "تلميح خطة",
+      "expected_intent": "category",
+      "expected_payload_category": "التخطيط",
+      "text": "هذه خطة فصلية"
+    },
+    {
+      "id": "hint_test",
+      "label": "تلميح اختبار",
+      "expected_intent": "category",
+      "expected_payload_category": "التقويم",
+      "text": "هذا اختبار"
+    },
+    {
+      "id": "intent_export",
+      "label": "أمر تصدير",
+      "expected_intent": "export",
+      "text": "صدر الآن"
+    },
+    {
+      "id": "intent_review",
+      "label": "أمر مراجعة",
+      "expected_intent": "review",
+      "text": "راجع الشواهد"
+    },
+    {
+      "id": "intent_delete_last",
+      "label": "حذف الأخير",
+      "expected_intent": "delete_last",
+      "text": "احذف آخر شاهد"
+    },
+    {
+      "id": "intent_duplicate",
+      "label": "مكرر",
+      "expected_intent": "duplicate",
+      "text": "هذا مكرر"
+    }
+  ],
+
+  "ocr": [
+    {
+      "id": "ocr_clean",
+      "label": "نص نظيف",
+      "input_text": "نواتج التعلم لدرس العلوم: يميز الطالب بين الحالات الثلاث للمادة. التوزيع الزمني: حصتان.",
+      "min_keyword_matches": 3,
+      "expected_keywords": ["نواتج", "التعلم", "العلوم", "التوزيع"]
+    },
+    {
+      "id": "ocr_blurry",
+      "label": "نص ضبابي",
+      "input_text": "نواتج التعلـم   يميـز الطالـب  بيـن الحالات  الثلاث للمـادة",
+      "min_keyword_matches": 2,
+      "expected_keywords": ["نواتج", "الطالب"]
+    },
+    {
+      "id": "ocr_phone",
+      "label": "صورة جوال",
+      "input_text": "خطة الأسبوع الأول لمادة الرياضيات\nنواتج التعلم: يحل الطالب مسائل القسمة",
+      "min_keyword_matches": 3,
+      "expected_keywords": ["خطة", "نواتج", "الطالب", "الرياضيات"]
+    },
+    {
+      "id": "ocr_handwritten",
+      "label": "خط يد بسيط",
+      "input_text": "ورقة عمل اختر الاجابه الصحيحه السوال الاول",
+      "min_keyword_matches": 1,
+      "expected_keywords": ["ورقة", "اختر"]
+    }
+  ],
+
+  "audio_transcripts": [
+    {
+      "id": "name_aaid",
+      "label": "اسم: عايد",
+      "current_name": "محمد",
+      "transcript": "اسمي عايد الحارثي اعتمد هذا الاسم",
+      "expected_should_confirm": true,
+      "expected_extract_name": "عايد"
+    },
+    {
+      "id": "name_alharthi",
+      "label": "اسم: الحارثي (إضافة لقب)",
+      "current_name": "تركي العمري",
+      "transcript": "اسم المعلم الصحيح هو تركي بن عايد الحارثي",
+      "expected_should_confirm": true,
+      "expected_extract_name": "الحارثي",
+      "_note": "Saved name (تركي العمري) is NOT contained in transcript, so heuristic should ask to confirm."
+    },
+    {
+      "id": "name_hussein",
+      "label": "اسم: حسين",
+      "current_name": "علي",
+      "transcript": "صحح اسمي الاسم الصحيح هو حسين",
+      "expected_should_confirm": true,
+      "expected_extract_name": "حسين"
+    },
+    {
+      "id": "name_nouf",
+      "label": "اسم: نوف",
+      "current_name": "هند",
+      "transcript": "اسمي نوف العتيبي اعتمدوا هذا الاسم",
+      "expected_should_confirm": true,
+      "expected_extract_name": "نوف"
+    },
+    {
+      "id": "name_ghaida",
+      "label": "اسم: غيداء",
+      "current_name": "ريم",
+      "transcript": "اسمي غيداء السلمي غير اسمي رجاء",
+      "expected_should_confirm": true,
+      "expected_extract_name": "غيداء"
+    },
+    {
+      "id": "name_unchanged",
+      "label": "اسم: لم يتغير",
+      "current_name": "تركي",
+      "transcript": "انا اسمي تركي الحارثي",
+      "expected_should_confirm": false,
+      "expected_extract_name": "تركي"
+    },
+    {
+      "id": "audio_no_name",
+      "label": "صوت بدون اسم",
+      "current_name": "تركي",
+      "transcript": "هذا نشاط مع الطلاب اليوم في الفصل",
+      "expected_should_confirm": false,
+      "expected_extract_name": null
+    }
+  ],
+
+  "hallucination": [
+    {
+      "id": "empty_text",
+      "label": "نص فارغ",
+      "input_text": "",
+      "filename": "",
+      "expected_needs_confirmation": true
+    },
+    {
+      "id": "single_char",
+      "label": "حرف واحد",
+      "input_text": "أ",
+      "filename": "x.pdf",
+      "expected_needs_confirmation": true
+    },
+    {
+      "id": "noise_only",
+      "label": "ضوضاء فقط",
+      "input_text": "...........",
+      "filename": "image.jpg",
+      "expected_needs_confirmation": true
+    },
+    {
+      "id": "very_short",
+      "label": "نص قصير جداً",
+      "input_text": "ملف",
+      "filename": "doc.pdf",
+      "expected_needs_confirmation": true
+    }
+  ],
+
+  "teacher_flow": [
+    {
+      "id": "flow_batch_3_files",
+      "label": "3 ملفات متتالية",
+      "files": [
+        {"ev_type": "image", "category": "نشاط صفي"},
+        {"ev_type": "image", "category": "نشاط صفي"},
+        {"ev_type": "pdf",   "category": "التخطيط"}
+      ],
+      "max_messages": 1,
+      "must_contain": ["3", "نشاط صفي", "التخطيط"]
+    },
+    {
+      "id": "flow_save_high_conf",
+      "label": "حفظ بثقة عالية",
+      "ev_type": "image",
+      "category": "نشاط صفي",
+      "confidence": 0.95,
+      "must_not_contain": ["حفظته في المحور الأقرب"]
+    },
+    {
+      "id": "flow_save_low_conf",
+      "label": "حفظ بثقة منخفضة",
+      "ev_type": "image",
+      "category": "نشاط صفي",
+      "confidence": 0.45,
+      "must_contain": ["مراجع"]
+    }
+  ],
+
+  "export_readiness": [
+    {
+      "id": "ready_clean",
+      "label": "جاهز نظيف",
+      "evidences": [
+        {"id": 1, "category": "التخطيط",   "confidence": 0.92, "content_hash": "h1"},
+        {"id": 2, "category": "التقويم",   "confidence": 0.88, "content_hash": "h2"},
+        {"id": 3, "category": "نشاط صفي", "confidence": 0.85, "content_hash": "h3"}
+      ],
+      "expected_duplicates_count": 0,
+      "expected_low_confidence_count": 0,
+      "expected_active_count": 3
+    },
+    {
+      "id": "ready_with_duplicates",
+      "label": "جاهز مع مكررات",
+      "evidences": [
+        {"id": 1, "category": "التخطيط", "confidence": 0.9, "content_hash": "same"},
+        {"id": 2, "category": "التخطيط", "confidence": 0.9, "content_hash": "same"},
+        {"id": 3, "category": "التقويم", "confidence": 0.9, "content_hash": "h3"}
+      ],
+      "expected_duplicates_count_min": 1
+    },
+    {
+      "id": "ready_with_low_confidence",
+      "label": "جاهز مع تصنيفات ضعيفة",
+      "evidences": [
+        {"id": 1, "category": "التخطيط", "confidence": 0.45, "content_hash": "h1"},
+        {"id": 2, "category": "التقويم", "confidence": 0.4,  "content_hash": "h2"},
+        {"id": 3, "category": "نشاط صفي","confidence": 0.92, "content_hash": "h3"}
+      ],
+      "expected_low_confidence_count_min": 2
+    }
+  ]
+}

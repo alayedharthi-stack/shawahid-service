@@ -1,0 +1,17 @@
+<header class="exam-header">
+  <div class="exam-header__top">
+    <span>{{ profile.country }} — {{ profile.ministry }}</span>
+    <span>{{ profile.education_admin or "إدارة التعليم: ............" }}</span>
+  </div>
+  <h1 class="exam-header__title">{{ profile.exam_type_label() }}</h1>
+  <div class="exam-header__meta">
+    <div><strong>المنطقة:</strong> {{ profile.region or "............" }}</div>
+    <div><strong>المدرسة:</strong> {{ profile.school_name or "............" }}</div>
+    <div><strong>المادة:</strong> {{ profile.subject or "............" }}</div>
+    <div><strong>الصف:</strong> {{ profile.grade or "............" }}</div>
+    <div><strong>الفصل الدراسي:</strong> {{ profile.semester or "............" }}</div>
+    <div><strong>العام الدراسي:</strong> {{ profile.academic_year or "............" }}</div>
+    <div><strong>الزمن:</strong> {{ profile.duration_minutes }} دقيقة</div>
+    <div><strong>الدرجة الكلية:</strong> {{ profile.total_marks }}</div>
+  </div>
+</header>

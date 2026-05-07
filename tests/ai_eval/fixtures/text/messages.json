@@ -1,0 +1,55 @@
+{
+  "_doc": "Real Arabic message samples used by the AI evaluation suite.",
+  "intents": [
+    {
+      "text": "صدر الآن",
+      "expected_intent": "export"
+    },
+    {
+      "text": "صدّر الملف",
+      "expected_intent": "export"
+    },
+    {
+      "text": "أبغى ملف الشواهد",
+      "expected_intent": "export"
+    },
+    {
+      "text": "راجع الشواهد قبل التصدير",
+      "expected_intent": "review"
+    },
+    {
+      "text": "أرني ملفي",
+      "expected_intent": "review"
+    },
+    {
+      "text": "احذف آخر شاهد",
+      "expected_intent": "delete_last"
+    },
+    {
+      "text": "هذا مكرر",
+      "expected_intent": "duplicate"
+    },
+    {
+      "text": "هذه خطة فصلية",
+      "expected_intent": "category"
+    },
+    {
+      "text": "هذا اختبار نهائي",
+      "expected_intent": "category"
+    },
+    {
+      "text": "السلام عليكم",
+      "expected_intent": "greeting"
+    },
+    {
+      "text": "ساعدني في استخدام البرنامج",
+      "expected_intent": "help"
+    }
+  ],
+  "noise": [
+    "",
+    "....",
+    "??",
+    "ا"
+  ]
+}

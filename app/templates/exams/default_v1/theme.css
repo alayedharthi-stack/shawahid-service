@@ -1,0 +1,183 @@
+/* exams/default_v1/theme.css — visual theme for the exam sheet.
+   Independent from the shawahid theme. */
+
+:root {
+  --exam-primary: #0f5132;
+  --exam-accent:  #198754;
+  --exam-text:    #1a1a1a;
+  --exam-muted:   #6c757d;
+  --exam-border:  #cfd4da;
+  --exam-bg:      #ffffff;
+  --exam-soft-bg: #f6f8fa;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: "Segoe UI", "Tahoma", "Arial", sans-serif;
+  color: var(--exam-text);
+  background: var(--exam-bg);
+  line-height: 1.7;
+}
+
+body.exam-sheet {
+  padding: 24px 28px;
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+/* ── Header ─────────────────────────────────────────────────────── */
+
+.exam-header {
+  border-bottom: 2px solid var(--exam-primary);
+  padding-bottom: 12px;
+  margin-bottom: 18px;
+}
+
+.exam-header__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--exam-muted);
+  margin-bottom: 8px;
+}
+
+.exam-header__title {
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--exam-primary);
+  margin: 8px 0 4px;
+}
+
+.exam-header__meta {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 24px;
+  font-size: 14px;
+  margin-top: 10px;
+}
+
+.exam-header__meta strong {
+  color: var(--exam-muted);
+  font-weight: 600;
+  margin-left: 6px;
+}
+
+/* ── Student info strip ─────────────────────────────────────────── */
+
+.exam-student {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px 16px;
+  background: var(--exam-soft-bg);
+  border: 1px solid var(--exam-border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 18px;
+  font-size: 14px;
+}
+
+.exam-student__field {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.exam-student__field strong { color: var(--exam-muted); font-weight: 600; }
+
+.exam-student__placeholder {
+  flex: 1;
+  border-bottom: 1px dotted var(--exam-border);
+  min-height: 1.2em;
+}
+
+/* ── Questions ──────────────────────────────────────────────────── */
+
+.exam-questions { counter-reset: qnum; }
+
+.exam-question {
+  margin: 14px 0 18px;
+  page-break-inside: avoid;
+}
+
+.exam-question__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--exam-primary);
+}
+
+.exam-question__num::before {
+  counter-increment: qnum;
+  content: counter(qnum) ". ";
+  color: var(--exam-accent);
+  font-weight: 700;
+}
+
+.exam-question__marks {
+  font-size: 12px;
+  color: var(--exam-muted);
+  font-weight: 500;
+}
+
+.exam-question__text {
+  font-size: 15px;
+  margin: 0 0 6px;
+}
+
+.exam-choices { list-style: none; padding: 0; margin: 0; }
+.exam-choices li {
+  padding: 4px 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.exam-choices li::before {
+  content: "○";
+  color: var(--exam-muted);
+  font-size: 16px;
+}
+
+.exam-blank-answer {
+  display: inline-block;
+  min-width: 200px;
+  border-bottom: 1px solid var(--exam-text);
+  height: 1.4em;
+}
+
+.exam-true-false { display: inline-flex; gap: 22px; margin-top: 4px; }
+.exam-true-false span::before { content: "○ "; color: var(--exam-muted); }
+
+.exam-match { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
+.exam-match__col { padding: 4px 0; border-bottom: 1px dotted var(--exam-border); }
+
+/* ── Footer ─────────────────────────────────────────────────────── */
+
+.exam-footer {
+  margin-top: 28px;
+  padding-top: 12px;
+  border-top: 1px solid var(--exam-border);
+  font-size: 13px;
+  color: var(--exam-muted);
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.exam-footer__signature {
+  text-align: center;
+  min-width: 220px;
+}
+.exam-footer__signature::after {
+  content: "";
+  display: block;
+  border-top: 1px solid var(--exam-border);
+  margin-top: 28px;
+}

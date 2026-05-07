@@ -224,6 +224,65 @@ def resolve_text_intent(text: str | None):
         return None
 
 
+# ── Phase-12: exam flow helpers ───────────────────────────────────────
+
+
+def make_exam_flow_result(
+    *,
+    teacher_id: int,
+    text: str | None,
+    teacher_name: str | None = None,
+    school_name: str | None = None,
+    education_admin: str | None = None,
+    region: str | None = None,
+    teacher_subject: str | None = None,
+    teacher_stage: str | None = None,
+    teacher_grades: tuple[str, ...] = (),
+    render_pdf: bool = True,
+):
+    """Run one turn of the exam conversation and return the result.
+
+    Wrapper around ``app.exam_engine.exam_flow.handle_exam_request``
+    that swallows unexpected exceptions and falls back to a generic
+    failure message — keeps the webhook from ever crashing on the exam
+    path. Returns an ``ExamFlowResult`` (see ``exam_flow``).
+    """
+    try:
+        from app.exam_engine.exam_flow import (
+            ExamFlowResult,
+            STAGE_FAILED,
+            handle_exam_request,
+        )
+    except Exception as exc:
+        logger.error("[WA INTEGRATION] exam_flow import failed: %s", exc)
+        return None
+
+    try:
+        return handle_exam_request(
+            teacher_id=teacher_id,
+            text=text,
+            teacher_name=teacher_name,
+            school_name=school_name,
+            education_admin=education_admin,
+            region=region,
+            teacher_subject=teacher_subject,
+            teacher_stage=teacher_stage,
+            teacher_grades=teacher_grades,
+            render_pdf=render_pdf,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[WA INTEGRATION] make_exam_flow_result failed: %s", exc,
+        )
+        return ExamFlowResult(
+            stage=STAGE_FAILED,
+            reply_text=(
+                "حدث خطأ أثناء إنشاء الاختبار 🙏\n"
+                "أعد إرسال طلبك أو حدد المادة والصف ونوع الاختبار."
+            ),
+        )
+
+
 # ── 8. Name confirmation question ─────────────────────────────────────
 
 

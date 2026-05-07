@@ -1,0 +1,43 @@
+<!--
+  exams/default_v1/template.html
+  Standalone exam template — phase-10.
+
+  Renderer: app.exam_engine.exam_renderer.render_exam_html
+  Loader:   app.exam_engine.exam_template.load_environment
+
+  Variables expected in the Jinja context:
+      profile      — ExamProfile
+      questions    — list of ExamQuestion
+      exam_id      — str
+      generated_at — formatted datetime str
+
+  Files in this folder:
+      template.html      — entry-point (this file)
+      theme.css          — visual theme
+      print.css          — print/PDF tweaks
+      components/header.html
+      components/student_info.html
+      components/questions.html
+      components/footer.html
+-->
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ profile.exam_type_label() }} — {{ profile.subject or 'اختبار' }}</title>
+    <style>{% include "theme.css" %}</style>
+    <style>{% include "print.css" %}</style>
+</head>
+<body class="exam-sheet" data-exam-id="{{ exam_id }}">
+
+  {% include "components/header.html" %}
+  {% include "components/student_info.html" %}
+
+  <main class="exam-questions">
+    {% include "components/questions.html" %}
+  </main>
+
+  {% include "components/footer.html" %}
+
+</body>
+</html>

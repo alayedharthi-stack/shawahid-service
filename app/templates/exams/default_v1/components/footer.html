@@ -1,0 +1,9 @@
+<footer class="exam-footer">
+  <div>
+    <div>تاريخ الإنشاء: {{ generated_at }}</div>
+    <div>رقم الاختبار: {{ exam_id }}</div>
+  </div>
+  <div class="exam-footer__signature">
+    معلم المادة: {{ profile.teacher_name or "............" }}
+  </div>
+</footer>
