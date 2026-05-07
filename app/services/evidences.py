@@ -183,6 +183,34 @@ def get_teacher_evidences(db: Session, teacher_id: int, skip: int = 0, limit: in
     )
 
 
+def verify_evidence_in_export(db: Session, evidence_id: int, teacher_id: int) -> bool:
+    """
+    Confirm an evidence record actually exists in the DB and would be picked
+    up by the export query for this teacher.
+
+    Returns True only if:
+      • Row exists with matching id
+      • teacher_id matches
+      • is_excluded_from_export is False (or unset)
+
+    This is the source of truth before we send any "saved successfully" message
+    to the teacher. Never claim a save succeeded without calling this.
+    """
+    row = (
+        db.query(Evidence)
+        .filter(
+            Evidence.id == evidence_id,
+            Evidence.teacher_id == teacher_id,
+        )
+        .first()
+    )
+    if not row:
+        return False
+    if getattr(row, "is_excluded_from_export", False):
+        return False
+    return True
+
+
 def get_evidence_by_id(db: Session, evidence_id: int) -> Evidence | None:
     return db.query(Evidence).filter(Evidence.id == evidence_id).first()
 

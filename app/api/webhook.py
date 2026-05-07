@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import get_db
 from app.services.teachers import get_or_create_teacher, get_teacher_by_id, update_teacher
-from app.services.evidences import create_evidence, get_teacher_evidences, set_enrichment_teacher_context
+from app.services.evidences import create_evidence, get_teacher_evidences, set_enrichment_teacher_context, verify_evidence_in_export
 from app.services.storage import download_and_save, detect_evidence_type, extract_urls, extract_pdf_text, extract_pdf_smart
 from app.services.deduplication import (
     is_exact_duplicate, find_near_duplicate_text,
@@ -718,12 +718,15 @@ async def whatsapp_webhook(
             "[PDF RECEIVED] teacher_id=%d file=%s mime=%s",
             teacher.id, file_name, mime_type,
         )
+        # Note: this is a RECEIPT confirmation, not a save confirmation.
+        # We send the explicit "saved" message ONLY after verify_evidence_in_export
+        # confirms the row is persisted and visible to the export pipeline.
         background_tasks.add_task(
             send_whatsapp_message,
             teacher.phone,
-            "تم استلام ملف PDF وجارٍ حفظه وتحليله ✅",
+            "📄 وصلني الملف، جارٍ تحليله الآن…",
             teacher_id=teacher.id,
-            context="pdf_ack",
+            context="pdf_received",
         )
 
     # ── Download media (WhatsApp URLs require auth — must download first) ─────
@@ -1223,6 +1226,9 @@ async def whatsapp_webhook(
                     school_name=teacher.school_name,
                 )
                 is_force_saved = bool(decision.get("_force_saved"))
+                if ev_type == "pdf":
+                    logger.info("[PDF DB SAVE START] teacher_id=%d (gpt success path)", teacher.id)
+
                 evidence = create_evidence(
                     db=db,
                     teacher_id=teacher.id,
@@ -1250,6 +1256,21 @@ async def whatsapp_webhook(
                     ai_status="force_saved" if is_force_saved else "completed",
                     ai_raw=dict(decision),
                 )
+
+                # ── Verify PDF is actually visible to export pipeline ─────────
+                if ev_type == "pdf":
+                    _is_visible = verify_evidence_in_export(db, evidence.id, teacher.id)
+                    if not _is_visible:
+                        logger.error(
+                            "[PDF DB SAVE FAILED] teacher_id=%d id=%d not visible in export query after save",
+                            teacher.id, evidence.id,
+                        )
+                        raise RuntimeError("PDF saved but not visible in export query")
+                    logger.info(
+                        "[PDF DB SAVE SUCCESS] teacher_id=%d id=%d visible_in_export=True",
+                        teacher.id, evidence.id,
+                    )
+
                 if ev_type == "pdf":
                     log_tag = "[PDF SAVED]"
                 elif intent == "evidence":
@@ -1301,7 +1322,8 @@ async def whatsapp_webhook(
                     _pdf_fallback_cat = _infer_pdf_category_from_name(file_name or safe_filename or "")
                     _pdf_fallback_desc = "ملف PDF تم حفظه — تعذّر التحليل التلقائي."
 
-                create_evidence(
+                logger.info("[PDF DB SAVE START] teacher_id=%d (force-save path)", teacher.id)
+                _saved_ev = create_evidence(
                     db=db,
                     teacher_id=teacher.id,
                     source_phone=teacher.phone,
@@ -1317,9 +1339,18 @@ async def whatsapp_webhook(
                     content_hash=media_hash,
                     ai_status="fallback",
                 )
+                # ── Verify the row is actually persisted and visible to export ────
+                _is_visible = verify_evidence_in_export(db, _saved_ev.id, teacher.id)
+                if not _is_visible:
+                    logger.error(
+                        "[PDF DB SAVE FAILED] teacher_id=%d id=%d not visible in export query after save",
+                        teacher.id, _saved_ev.id,
+                    )
+                    raise RuntimeError("PDF saved but not visible in export query")
+
                 logger.info(
-                    "[PDF SAVED] teacher_id=%d (GPT failure fallback) cat=%r title=%r src=%s",
-                    teacher.id, _pdf_fallback_cat, _pdf_fallback_title,
+                    "[PDF DB SAVE SUCCESS] teacher_id=%d id=%d cat=%r title=%r src=%s",
+                    teacher.id, _saved_ev.id, _pdf_fallback_cat, _pdf_fallback_title,
                     "preanalysis" if _pdf_preanalysis else "filename",
                 )
                 background_tasks.add_task(

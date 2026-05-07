@@ -928,7 +928,15 @@ def _build_categories(normalised_evidences: list[dict]) -> list[dict]:
         items = _group_image_galleries(items)
         count = sum(_evidence_export_count(item) for item in items)
         if name == "أخرى" and count < 2:
-            continue
+            # Exception: never drop PDFs/documents — they're official artifacts
+            # (خطط، اختبارات، سجلات، تعاميم) that the teacher relies on.
+            has_critical = any(
+                (item.get("evidence_type") in ("pdf", "document"))
+                or (item.get("file_name") and item["file_name"].lower().endswith((".pdf", ".doc", ".docx")))
+                for item in items
+            )
+            if not has_critical:
+                continue
         meta = _CATEGORY_META.get(name, _DEFAULT_META)
         result.append({
             "name":      name,
@@ -1100,6 +1108,10 @@ def _evidence_quality_score(ev) -> float:
         score += 1
     if ev.evidence_type in ("image", "video"):
         score += 2
+    # PDFs are critical official documents (plans, tests, reports, follow-up logs).
+    # Treat them as first-class citizens — never deprioritise vs media in smart/elite modes.
+    if ev.evidence_type in ("pdf", "document"):
+        score += 3
     return score
 
 
@@ -1137,6 +1149,19 @@ def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool 
     """
     from app.services.deduplication import deduplicate_for_export
 
+    # ── PDF VISIBILITY: log which PDFs entered the pipeline ──────────────────
+    _input_pdfs = [
+        ev for ev in evidences
+        if (ev.evidence_type or "").lower() in ("pdf", "document")
+        or (ev.file_name and ev.file_name.lower().endswith((".pdf", ".doc", ".docx")))
+    ]
+    if _input_pdfs:
+        logger.info(
+            "[PDF EXPORT VISIBILITY CHECK] teacher_id=%s incoming_pdf_count=%d ids=%s",
+            getattr(teacher, "id", None), len(_input_pdfs),
+            [ev.id for ev in _input_pdfs],
+        )
+
     # ── Step 1: Normalise ALL evidences ──────────────────────────────────────
     # Guarantees every evidence has a proper title, category, and description.
     normalised = [_normalize_evidence_for_export(ev) for ev in evidences]
@@ -1147,7 +1172,17 @@ def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool 
 
     # ── Step 2: Filter noisy export-only records + teacher-excluded ones ─────
     # is_excluded_from_export is set by the review page — never deletes from DB.
+    _before_filter_ids = {ev["id"] for ev in normalised
+                          if ev.get("evidence_type") in ("pdf", "document")}
     normalised = [ev for ev in normalised if _should_export_evidence(ev) and not ev.get("is_excluded_from_export")]
+    _after_filter_ids = {ev["id"] for ev in normalised
+                         if ev.get("evidence_type") in ("pdf", "document")}
+    _filtered_pdfs = _before_filter_ids - _after_filter_ids
+    if _filtered_pdfs:
+        logger.warning(
+            "[PDF FILTERED OUT] teacher_id=%s pdf_ids=%s — removed by _should_export_evidence/excluded_from_export",
+            getattr(teacher, "id", None), sorted(_filtered_pdfs),
+        )
 
     # ── Step 3: Deduplicate before rendering ──────────────────────────────────
     # Safety net: removes duplicate evidences that slipped through save-time checks
@@ -1158,6 +1193,26 @@ def _render_html(teacher: Teacher, evidences: list, *, include_intro_page: bool 
         logger.info("[PDF DEDUP] removed %d duplicate(s) before render", n_removed)
 
     categories = _build_categories(deduped)
+
+    # ── PDF VISIBILITY: confirm which PDFs survived all the way to render ────
+    _final_pdf_ids = []
+    for cat in categories:
+        for ev in cat.get("evidences", []):
+            if ev.get("evidence_type") in ("pdf", "document"):
+                _final_pdf_ids.append(ev.get("id"))
+    if _input_pdfs:
+        _missing = {ev.id for ev in _input_pdfs} - set(_final_pdf_ids)
+        if _missing:
+            logger.error(
+                "[PDF MISSING FROM EXPORT] teacher_id=%s pdf_ids=%s — entered pipeline but did NOT reach render",
+                getattr(teacher, "id", None), sorted(_missing),
+            )
+        if _final_pdf_ids:
+            logger.info(
+                "[PDF INCLUDED IN EXPORT] teacher_id=%s pdf_count=%d ids=%s",
+                getattr(teacher, "id", None), len(_final_pdf_ids), _final_pdf_ids,
+            )
+
     stats      = _build_stats(deduped, categories)
     leading_categories, remaining_categories = _split_leading_categories(categories)
     performance_analysis = _build_performance_analysis(
