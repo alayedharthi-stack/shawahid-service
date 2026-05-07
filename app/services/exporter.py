@@ -309,6 +309,14 @@ _PLANNING_KEYWORDS = (
     "خطة دراسية",
     "توزيع منهج",
     "التخطيط",
+    "خطة أسبوعية",
+    "الخطة الأسبوعية",
+    "خطة فصلية",
+    "خطة درس",
+    "تحضير الدروس",
+    "خطة تعلم",
+    "فهرس المقرر",
+    "جدول الحصص",
 )
 _FOLLOW_UP_KEYWORDS = (
     "سجل متابعة",
@@ -316,16 +324,39 @@ _FOLLOW_UP_KEYWORDS = (
     "متابعة الطالب",
     "سجل الطالب",
     "لوحة الأداء",
+    "جدول الحضور",
+    "كشف الحضور",
+    "غياب الطلاب",
+)
+_ASSESSMENT_KEYWORDS = (
+    "اختبار",
+    "ورقة عمل",
+    "واجب منزلي",
+    "مهمة أدائية",
+    "درجات الطلاب",
+    "كشف الدرجات",
+    "رصد الدرجات",
+    "اختبار نهائي",
+    "اختبار منتصف الفصل",
+    "نتائج الاختبار",
 )
 
 
 def _official_category_from_content(category: str, *parts: str | None) -> str:
-    """Promote official planning/follow-up documents to their expected axes."""
+    """
+    Re-categorise a PDF/document evidence based on content keywords.
+    Applied both at save time (webhook) and export time (exporter) so PDFs
+    always land in their correct axis rather than defaulting to ملفات إدارية.
+    """
     text = " ".join(part for part in parts if part)
     if _contains_any(text, _PLANNING_KEYWORDS):
         return "التخطيط"
     if _contains_any(text, _FOLLOW_UP_KEYWORDS):
         return "سجل المتابعة"
+    # Only re-categorise to التقويم when the current category is generic
+    _generic = {"ملفات إدارية", "ملف إداري", "أخرى", ""}
+    if category in _generic and _contains_any(text, _ASSESSMENT_KEYWORDS):
+        return "التقويم"
     return category
 
 
@@ -705,6 +736,7 @@ def _normalize_evidence_for_export(ev) -> dict:
         _clean_text(ev.description),
         _clean_text(ev.message_text),
         raw_cat,
+        _clean_text(ev.file_name),   # file_name often contains useful keywords for PDFs
     )
     if category not in _MAIN_CATEGORY_ORDER and category not in _CATEGORY_META:
         category = _SUB_TO_MAIN_CATEGORY.get(defaults["category"], "التنفيذ داخل الصف")

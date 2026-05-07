@@ -1007,16 +1007,33 @@ async def whatsapp_webhook(
     if profile_update:
         # ── Name confirmation gate ────────────────────────────────────────────
         # If the update includes a "name" field AND the message came via audio
-        # (Whisper transcript), ask the teacher to confirm before saving.
+        # (Whisper transcript) OR PDF content, ask the teacher to confirm.
         # Whisper often mishears Arabic names (عايد → عائد, الحارثي → الحارفي).
+        # PDFs may contain the wrong name spelling in the document itself.
+        # If the teacher already has a confirmed name, never override it from media/PDF.
         pending_name: str | None = None
-        if "name" in profile_update and transcript:
-            pending_name = profile_update.pop("name")  # remove from immediate save
-            _PENDING_NAME_CONFIRMATION[teacher.id] = pending_name
-            logger.info(
-                "[NAME PENDING CONFIRMATION] teacher_id=%d raw_name=%r (from audio)",
-                teacher.id, pending_name,
-            )
+        if "name" in profile_update:
+            existing_name = (teacher.name or "").strip()
+            if _is_pdf_msg:
+                # Never extract teacher name from PDF content — discard silently
+                profile_update.pop("name")
+                logger.info(
+                    "[NAME BLOCKED] teacher_id=%d — ignoring name from PDF content (existing=%r)",
+                    teacher.id, existing_name,
+                )
+            elif transcript:
+                pending_name = profile_update.pop("name")  # remove from immediate save
+                # If teacher already has a confirmed name, don't replace without explicit confirmation
+                if existing_name and existing_name == pending_name:
+                    # Same name — no need to confirm again, put it back for immediate save
+                    profile_update["name"] = pending_name
+                    pending_name = None
+                else:
+                    _PENDING_NAME_CONFIRMATION[teacher.id] = pending_name
+                    logger.info(
+                        "[NAME PENDING CONFIRMATION] teacher_id=%d raw_name=%r (from audio)",
+                        teacher.id, pending_name,
+                    )
 
         # Apply all other profile fields immediately
         if profile_update:
@@ -1168,12 +1185,22 @@ async def whatsapp_webhook(
             if ev_type == "pdf" and _pdf_preanalysis:
                 _pre_cat = (_pdf_preanalysis.get("category") or "").strip()
                 _pre_conf = float(_pdf_preanalysis.get("confidence") or 0)
-                if _pre_cat and _pre_cat in ALLOWED_CATEGORIES and _pre_conf >= 0.70:
-                    gpt_category = _pre_cat
-                    logger.info(
-                        "[PDF CAT OVERRIDE] teacher_id=%d using pre-analysis cat=%r conf=%.2f",
-                        teacher.id, _pre_cat, _pre_conf,
-                    )
+                # Accept categories from both ALLOWED_CATEGORIES and _MAIN_CATEGORY_ORDER
+                _PDF_ALL_VALID_CATS = set(ALLOWED_CATEGORIES) | {
+                    "التخطيط", "سجل المتابعة", "التقويم", "التحفيز",
+                    "إدارة الصف", "التواصل", "مصادر تعليمية",
+                    "ملفات إدارية", "روابط إثرائية",
+                }
+                _GENERIC_CATS = {"ملفات إدارية", "ملف إداري", "أخرى", ""}
+                if _pre_cat and _pre_cat in _PDF_ALL_VALID_CATS and _pre_conf >= 0.55:
+                    if _pre_cat not in _GENERIC_CATS:
+                        gpt_category = _pre_cat
+                        logger.info(
+                            "[PDF CAT OVERRIDE] teacher_id=%d using pre-analysis cat=%r conf=%.2f",
+                            teacher.id, _pre_cat, _pre_conf,
+                        )
+                    else:
+                        gpt_category = fallback_cat
                 else:
                     gpt_category = fallback_cat
             else:
@@ -1185,13 +1212,22 @@ async def whatsapp_webhook(
             _pre_cat  = (_pdf_preanalysis.get("category") or "").strip()
             _pre_conf = float(_pdf_preanalysis.get("confidence") or 0)
             _gpt_conf = float(decision.get("confidence") or 0)
-            # Override if pre-analysis is significantly more confident (≥0.80) and GPT was uncertain
+            # Broad valid categories (includes _MAIN_CATEGORY_ORDER not just ALLOWED_CATEGORIES)
+            _PDF_ALL_VALID_CATS = set(ALLOWED_CATEGORIES) | {
+                "التخطيط", "سجل المتابعة", "التقويم", "التحفيز",
+                "إدارة الصف", "التواصل", "مصادر تعليمية",
+                "ملفات إدارية", "روابط إثرائية",
+            }
+            _GENERIC_CATS = {"ملفات إدارية", "ملف إداري", "أخرى", ""}
+            # Override when GPT returned a generic category but pre-analysis is more specific
             if (
                 _pre_cat
-                and _pre_cat in ALLOWED_CATEGORIES
-                and _pre_conf >= 0.80
-                and _gpt_conf < 0.75
-                and _pre_cat != gpt_category
+                and _pre_cat in _PDF_ALL_VALID_CATS
+                and _pre_cat not in _GENERIC_CATS
+                and (
+                    gpt_category in _GENERIC_CATS          # GPT chose generic → always prefer pre
+                    or (_pre_conf >= 0.75 and _gpt_conf < 0.80 and _pre_cat != gpt_category)
+                )
             ):
                 logger.info(
                     "[PDF CAT OVERRIDE] teacher_id=%d pre=%r(%.2f) > gpt=%r(%.2f)",
