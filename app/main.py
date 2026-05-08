@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import webhook, teachers, evidences, admin, downloads, review, media, exam_downloads
 from app.core.config import settings
+from app.services.tenant_guard import identity_snapshot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +30,26 @@ async def lifespan(app: FastAPI):
         settings.APP_ENV,
         os.environ.get("PORT", "unknown"),
         storage_root.resolve(),
+    )
+    # Identity banner — verifies on Railway logs that this deployment is
+    # Shawahid (not Nahla) and shows masked phone_number_id / WABA / DB
+    # fingerprints used by the running process.
+    snap = identity_snapshot()
+    logger.info(
+        "[SERVICE IDENTITY] service=%s env=%s webhook_path=%s "
+        "phone_number_id_suffix=%s verify_token_suffix=%s "
+        "access_token_suffix=%s db_url_masked=%s "
+        "openai_model=%s prompt_profile=%s public_base_url=%s",
+        snap["service"],
+        snap["app_env"],
+        snap["webhook_path"],
+        snap["phone_number_id_suffix"],
+        snap["verify_token_suffix"],
+        snap["access_token_suffix"],
+        snap["database_url_masked"],
+        snap["openai_model"],
+        snap["prompt_profile"],
+        snap["public_base_url"],
     )
     yield
 
@@ -76,3 +97,16 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "healthy", "service": "shawahid-service"}
+
+
+@app.get("/internal/identity")
+def internal_identity():
+    """Masked runtime identity for diagnosing webhook routing issues.
+
+    Use this to confirm — without exposing secrets — that the Shawahid
+    deployment is using the *Shawahid* phone_number_id, verify token,
+    database and GPT model. If any of these shows a suffix that matches
+    a different tenant's configuration, the Railway service has been
+    misconfigured.
+    """
+    return identity_snapshot()

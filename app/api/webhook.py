@@ -57,6 +57,11 @@ from app.services import exporter as exporter_svc
 from app.core.config import settings
 from app.core.phone import normalize_phone
 from app.services import whatsapp_integration as wa_integration
+from app.services.tenant_guard import (
+    build_inbound_debug_line,
+    is_foreign_tenant,
+    SERVICE_NAME as _TENANT_SERVICE_NAME,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -233,6 +238,26 @@ def _parse_meta_payload(body: dict) -> dict | None:
         from_phone = msg["from"]
         msg_type = msg.get("type", "text")
 
+        # ── Meta tenant metadata (Phase-15 contamination guard) ──
+        # Meta puts the business number that *received* the inbound
+        # message into ``value.metadata.phone_number_id``. We compare
+        # this against ``settings.WHATSAPP_PHONE_NUMBER_ID`` later so
+        # messages destined for any other business (Nahla / honey
+        # store / etc.) are dropped before any reply can leak.
+        metadata = value.get("metadata") or {}
+        phone_number_id = metadata.get("phone_number_id")
+        display_phone_number = metadata.get("display_phone_number")
+        waba_id = entry.get("id")
+
+        contacts = value.get("contacts") or []
+        contact_name = None
+        contact_wa_id = None
+        if contacts:
+            contact_name = (contacts[0].get("profile") or {}).get("name")
+            contact_wa_id = contacts[0].get("wa_id")
+
+        message_id = msg.get("id")
+
         text: str | None = None
         media_id: str | None = None
         mime_type: str | None = None
@@ -287,6 +312,13 @@ def _parse_meta_payload(body: dict) -> dict | None:
             "media_id":   media_id,
             "mime_type":  mime_type,
             "file_name":  file_name,
+            # ── Tenant identity (used by the contamination guard) ──
+            "phone_number_id":      phone_number_id,
+            "display_phone_number": display_phone_number,
+            "waba_id":              waba_id,
+            "contact_name":         contact_name,
+            "contact_wa_id":        contact_wa_id,
+            "message_id":           message_id,
         }
     except (KeyError, IndexError, TypeError) as exc:
         logger.debug("Meta payload parse error: %s", exc)
@@ -1208,6 +1240,43 @@ async def whatsapp_webhook(
     mime_type:  str | None = parsed.get("mime_type")
     file_name:  str | None = parsed.get("file_name")
     media_url:  str | None = parsed.get("media_url")
+
+    # ── Tenant identity (Meta-side) ──────────────────────────────────────────
+    # Exposed so a single log line is enough to verify *which* business
+    # number Meta routed this message to, and so the foreign-tenant
+    # guard below can drop messages destined for other services without
+    # ever replying on their behalf.
+    incoming_phone_number_id   = parsed.get("phone_number_id")
+    incoming_display_phone     = parsed.get("display_phone_number")
+    incoming_waba_id           = parsed.get("waba_id")
+    incoming_contact_name      = parsed.get("contact_name")
+    incoming_message_id        = parsed.get("message_id")
+
+    logger.info(
+        build_inbound_debug_line(
+            phone_number_id=incoming_phone_number_id,
+            display_phone_number=incoming_display_phone,
+            waba_id=incoming_waba_id,
+            from_phone=from_phone,
+            message_text=text,
+            contact_name=incoming_contact_name,
+            msg_type=msg_type,
+        )
+    )
+
+    # Hard guard: if Meta tells us this message was addressed to a
+    # different business number, ack 200 and stop. Shawahid must never
+    # reply on behalf of another tenant (e.g. Nahla / honey store).
+    if is_foreign_tenant(incoming_phone_number_id):
+        logger.warning(
+            "[WA INBOUND DROPPED] reason=foreign_tenant service=%s "
+            "incoming_phone_number_id=%s configured_suffix=%s message_id=%s",
+            _TENANT_SERVICE_NAME,
+            incoming_phone_number_id,
+            (settings.WHATSAPP_PHONE_NUMBER_ID or "")[-4:],
+            incoming_message_id,
+        )
+        return {"ok": True, "dropped": "foreign_tenant"}
 
     # Resolve temporary Meta media URL
     if media_id and not media_url:
