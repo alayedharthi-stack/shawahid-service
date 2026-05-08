@@ -456,6 +456,281 @@ async def _send_welcome_message(phone: str, teacher_id: int) -> None:
         logger.warning("[ONBOARDING] failed teacher_id=%d: %s", teacher_id, exc)
 
 
+# ─── Phase-13: GPT-First Router dispatcher ────────────────────────────────────
+
+async def _route_via_gpt_router(
+    *,
+    message: str,
+    teacher,
+    db: Session,
+    background_tasks: BackgroundTasks,
+    has_media: bool,
+    media_type: str | None,
+    has_transcript: bool,
+    sub_active: bool,
+):
+    """Run the GPT-first router and dispatch the chosen action.
+
+    Returns ``(decision, response_dict_or_None)``.
+
+    * ``response_dict`` is non-None when the webhook should return immediately
+      (chat_reply / ask_clarification / delete_or_edit / update_profile /
+      create_exam / export_portfolio / review_portfolio).
+    * Returns ``None`` for ``save_evidence`` and ``unknown`` — caller must
+      continue to the legacy ``ask_gpt`` flow.
+
+    The router itself does not write to the DB or send messages; this helper
+    is the single integration point that turns a decision into side effects.
+    """
+    from app.services.gpt_router import (
+        ACTION_ASK_CLARIFICATION,
+        ACTION_CHAT_REPLY,
+        ACTION_CREATE_EXAM,
+        ACTION_DELETE_OR_EDIT,
+        ACTION_EXPORT_PORTFOLIO,
+        ACTION_REVIEW_PORTFOLIO,
+        ACTION_UPDATE_PROFILE,
+        RouterContext,
+        decide_next_action,
+    )
+
+    # Best-effort: detect whether we're mid-exam-flow so GPT can lean toward
+    # create_exam for terse follow-ups like "اختبار قصير".
+    in_exam_flow = False
+    try:
+        from app.conversation_engine.exam_state import get_exam_state as _ges
+        in_exam_flow = bool(_ges(teacher.id).pending_fields)
+    except Exception:  # noqa: BLE001
+        in_exam_flow = False
+
+    decision = await decide_next_action(
+        message,
+        RouterContext(
+            teacher_id=teacher.id,
+            teacher_name=teacher.name,
+            teacher_subject=teacher.subject,
+            teacher_stage=teacher.stage,
+            teacher_grades=teacher.grades,
+            teacher_school=teacher.school_name,
+            teacher_region=teacher.region,
+            teacher_education_admin=teacher.education_admin,
+            has_media=has_media,
+            media_type=media_type,
+            has_transcript=has_transcript,
+            in_exam_flow=in_exam_flow,
+            awaiting_export_choice=teacher.id in _AWAITING_EXPORT_CHOICE,
+            pending_name_confirmation=teacher.id in _PENDING_NAME_CONFIRMATION,
+            pending_category_hint=_PENDING_CATEGORY_HINT.get(teacher.id),
+        ),
+    )
+
+    logger.info(
+        "[GPT ROUTER] teacher_id=%d action=%s conf=%.2f source=%s save=%s reply=%r",
+        teacher.id, decision.action, decision.confidence,
+        decision.source, decision.should_save_evidence,
+        (decision.reply_text or "")[:60],
+    )
+
+    # ── Pure replies: send and stop ───────────────────────────────────────
+    if decision.action == ACTION_CHAT_REPLY:
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone,
+            decision.reply_text or "تمام 🌿",
+            teacher_id=teacher.id, context="router_chat_reply",
+        )
+        return decision, {
+            "ok": True, "teacher_id": teacher.id,
+            "intent": "chat_reply", "router_action": decision.action,
+        }
+
+    if decision.action == ACTION_ASK_CLARIFICATION:
+        msg = (
+            decision.clarification_question
+            or decision.reply_text
+            or "هل يمكنك توضيح طلبك أكثر؟ 🌿"
+        )
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone, msg,
+            teacher_id=teacher.id, context="router_ask_clarification",
+        )
+        return decision, {
+            "ok": True, "teacher_id": teacher.id,
+            "intent": "ask_clarification", "router_action": decision.action,
+        }
+
+    if decision.action == ACTION_DELETE_OR_EDIT:
+        # Don't auto-delete from a freeform routed message — point the
+        # teacher to the review page (deterministic and undo-friendly).
+        reply = (
+            decision.reply_text
+            or "يمكنك تعديل/حذف أي شاهد من رابط مراجعة الملف ✏️"
+        )
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone, reply,
+            teacher_id=teacher.id, context="router_delete_or_edit",
+        )
+        return decision, {
+            "ok": True, "teacher_id": teacher.id,
+            "intent": "delete_or_edit", "router_action": decision.action,
+        }
+
+    # ── Profile update: apply + reply ─────────────────────────────────────
+    if decision.action == ACTION_UPDATE_PROFILE:
+        cleaned = _clean_profile_update(decision.profile_update)
+
+        # Voice-sourced names need confirmation (Whisper mishears Arabic).
+        pending_name: str | None = None
+        if has_transcript and "name" in cleaned:
+            new_name = cleaned.pop("name")
+            existing = (teacher.name or "").strip()
+            if existing != new_name:
+                _PENDING_NAME_CONFIRMATION[teacher.id] = new_name
+                pending_name = new_name
+            else:
+                cleaned["name"] = new_name
+
+        if cleaned:
+            update_teacher(db, teacher, cleaned)
+            _LAST_PROFILE_UPDATES[teacher.id] = cleaned
+            logger.info(
+                "[ROUTER PROFILE UPDATED] teacher_id=%d fields=%s",
+                teacher.id, list(cleaned.keys()),
+            )
+
+        if pending_name:
+            reply = wa_integration.make_name_confirmation_question(pending_name)
+        else:
+            reply = decision.reply_text or _format_profile_update_reply(cleaned)
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone, reply,
+            teacher_id=teacher.id, context="router_update_profile",
+        )
+        return decision, {
+            "ok": True, "teacher_id": teacher.id,
+            "intent": "update_profile", "router_action": decision.action,
+            "fields": list(cleaned.keys()),
+        }
+
+    # ── Exam creation: invoke exam_flow on the routed text/transcript ─────
+    if decision.action == ACTION_CREATE_EXAM:
+        grades_tuple: tuple[str, ...] = ()
+        if teacher.grades:
+            if isinstance(teacher.grades, (list, tuple)):
+                grades_tuple = tuple(str(g) for g in teacher.grades if g)
+            else:
+                grades_tuple = (str(teacher.grades),)
+
+        exam_result = wa_integration.make_exam_flow_result(
+            teacher_id=teacher.id,
+            text=message,
+            teacher_name=teacher.name,
+            school_name=teacher.school_name,
+            education_admin=teacher.education_admin,
+            region=teacher.region,
+            teacher_subject=teacher.subject,
+            teacher_stage=teacher.stage,
+            teacher_grades=grades_tuple,
+            render_pdf=True,
+        )
+
+        if exam_result is not None:
+            for pm in (exam_result.progress_messages or []):
+                background_tasks.add_task(
+                    send_whatsapp_message, teacher.phone, pm,
+                    teacher_id=teacher.id, context="exam_progress",
+                )
+            background_tasks.add_task(
+                send_whatsapp_message, teacher.phone, exam_result.reply_text,
+                teacher_id=teacher.id, context=f"exam_{exam_result.stage}",
+            )
+            if exam_result.is_ready and exam_result.pdf_path:
+                background_tasks.add_task(
+                    _send_exam_pdf,
+                    teacher_phone=teacher.phone,
+                    teacher_id=teacher.id,
+                    pdf_path=exam_result.pdf_path,
+                    exam=exam_result.exam,
+                )
+            return decision, {
+                "ok": True, "teacher_id": teacher.id,
+                "intent": "exam_flow", "router_action": decision.action,
+                "exam_stage": exam_result.stage,
+            }
+        # exam_flow unavailable — let caller fall through.
+        return decision, None
+
+    # ── Export portfolio: same shortcut as is_export_command ──────────────
+    if decision.action == ACTION_EXPORT_PORTFOLIO:
+        if not sub_active:
+            try:
+                payment_url = await _create_moyasar_link(
+                    db, teacher.id, teacher.name or "", teacher.phone or ""
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Moyasar invoice creation failed: %s", exc)
+                payment_url = get_payment_link(teacher.id)
+            background_tasks.add_task(
+                send_whatsapp_message, teacher.phone,
+                build_payment_link_message(payment_url, teacher.name or ""),
+                teacher_id=teacher.id, context="payment_link",
+            )
+            return decision, {
+                "ok": False, "teacher_id": teacher.id,
+                "intent": "export_portfolio",
+                "router_action": decision.action,
+                "reason": "subscription_required",
+            }
+
+        from app.services.teachers import get_or_create_review_token
+        review_token = get_or_create_review_token(db, teacher)
+        review_url = f"{settings.effective_base_url}/review/{review_token}"
+        warning = wa_integration.make_pre_export_warning(
+            get_teacher_evidences(db, teacher.id),
+            teacher_id=teacher.id, teacher_name=teacher.name,
+            base_url=settings.effective_base_url,
+        )
+        if warning:
+            background_tasks.add_task(
+                send_whatsapp_message, teacher.phone, warning,
+                teacher_id=teacher.id, context="pre_export_warning",
+            )
+        _AWAITING_EXPORT_CHOICE.add(teacher.id)
+        background_tasks.add_task(
+            send_pre_export_choice_buttons,
+            teacher.phone, review_url, teacher_id=teacher.id,
+        )
+        return decision, {
+            "ok": True, "teacher_id": teacher.id,
+            "intent": "export_portfolio",
+            "router_action": decision.action,
+            "awaiting_review_or_export": True,
+        }
+
+    # ── Review portfolio: send signed review link ─────────────────────────
+    if decision.action == ACTION_REVIEW_PORTFOLIO:
+        from app.services.teachers import get_or_create_review_token
+        rt = get_or_create_review_token(db, teacher)
+        rv = f"{settings.effective_base_url}/review/{rt}"
+        evidences = get_teacher_evidences(db, teacher.id)
+        review_reply = wa_integration.make_review_link_reply(
+            evidences,
+            teacher_id=teacher.id, teacher_name=teacher.name,
+            base_url=settings.effective_base_url, review_url=rv,
+        )
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone, review_reply,
+            teacher_id=teacher.id, context="router_review",
+        )
+        return decision, {
+            "ok": True, "teacher_id": teacher.id,
+            "intent": "review_portfolio",
+            "router_action": decision.action,
+        }
+
+    # save_evidence | unknown → caller continues to ask_gpt
+    return decision, None
+
+
 def _parse_export_mode(text: str | None) -> str | None:
     """Parse teacher's export mode selection with Arabic normalization."""
     if not text:
@@ -698,6 +973,27 @@ async def whatsapp_webhook(
 
     # ── Pre-export button replies: مراجعة الملف / تصدير الآن ─────────────────
     _normalized_text = _normalize_arabic(text or "")
+
+    # ── Phase-13: GPT-First Router (text-only path) ──────────────────────────
+    # GPT decides ONE action for plain-text messages BEFORE any save/dispatch.
+    # The router handles chat_reply / ask_clarification / delete_or_edit /
+    # update_profile / create_exam / export_portfolio / review_portfolio
+    # entirely on its own. For save_evidence and unknown it returns None and
+    # lets the legacy ask_gpt path run.
+    if text and not media_id:
+        _router_decision, _router_response = await _route_via_gpt_router(
+            message=text,
+            teacher=teacher,
+            db=db,
+            background_tasks=background_tasks,
+            has_media=False,
+            media_type=None,
+            has_transcript=False,
+            sub_active=sub_active,
+        )
+        if _router_response is not None:
+            db.commit()
+            return _router_response
 
     # Phase-6: semantic intent detection — runs before GPT to short-circuit
     # obvious commands without paying an OpenAI round-trip.
@@ -1212,6 +1508,26 @@ async def whatsapp_webhook(
         )
         logger.info("[TRANSCRIBE FAILED] sent fallback reply to teacher_id=%d", teacher.id)
         return {"ok": True, "teacher_id": teacher.id, "intent": "transcription_failed"}
+
+    # ── Phase-13: GPT-First Router (voice transcript path) ───────────────────
+    # When a teacher sends a voice note that asks for an exam, updates their
+    # profile, or is just chat — we must NOT silently save the audio as an
+    # evidence row. Route the transcript through the same router; if it
+    # decides a non-save action, return early and skip ask_gpt entirely.
+    if msg_type in ("audio", "voice") and transcript:
+        _v_router_decision, _v_router_response = await _route_via_gpt_router(
+            message=transcript,
+            teacher=teacher,
+            db=db,
+            background_tasks=background_tasks,
+            has_media=True,
+            media_type="audio",
+            has_transcript=True,
+            sub_active=sub_active,
+        )
+        if _v_router_response is not None:
+            db.commit()
+            return _v_router_response
 
     # ── Detect URLs in text (YouTube, websites, Google Drive, etc.) ──────────
     urls_in_text: list[str] = extract_urls(text or "")
