@@ -57,6 +57,7 @@ from app.conversation_engine.exam_state import (
     reset_all_exam_states,
     reset_exam_state,
     set_pending_fields,
+    update_last_exam_download_url,
 )
 from app.conversation_engine.entity_protection import (
     ProtectionDecision,
@@ -142,4 +143,5 @@ __all__ = [
     "reset_all_exam_states",
     "reset_exam_state",
     "set_pending_fields",
+    "update_last_exam_download_url",
 ]

@@ -41,6 +41,9 @@ INTENT_EXAM_MISSING_INFO = "exam_missing"  # follow-up giving missing slots
 INTENT_EXAM_CONFIRM = "exam_confirm"       # "نعم اعتمده" after preview
 INTENT_EXAM_REGENERATE = "exam_regen"      # "أعد إنشاءه"
 INTENT_EXAM_EXPORT = "exam_export"         # "أرسل PDF" / "حمل الاختبار"
+# Phase-13: re-send the most-recent exam after a teacher asks
+# "أين رابط الاختبار؟" / "ارسل الاختبار" / "الاختبار الذي أنشأته أنت"
+INTENT_SEND_LAST_EXAM = "send_last_exam"
 
 INTENT_NONE = "none"
 
@@ -171,10 +174,41 @@ _EXAM_REGEN_PATTERNS: tuple[str, ...] = (
     "بدل الاختبار", "ولد لي اختبار جديد", "اختبار اخر",
     "اعد التوليد", "نسخه ثانيه", "نسخه اخري",
 )
-_EXAM_SEND_PATTERNS: tuple[str, ...] = (
-    "ارسل الاختبار", "ارسل لي الاختبار", "حمل الاختبار",
-    "ارسل ال pdf", "ارسل البي دي اف", "ابعث الاختبار",
+# Phase-13: re-send the most-recent exam (the teacher asks for the link
+# they already received but lost, or asks "where is it?"). These do NOT
+# trigger a new generation — they look up ``last_exam_id`` in state.
+#
+# We are deliberately specific here: every pattern names the exam (or
+# its link/PDF) explicitly, so safe phrases like "اعتمد الاختبار"
+# (= "approve the exam") never trip this branch.
+_SEND_LAST_EXAM_PATTERNS: tuple[str, ...] = (
+    # "where is the link?"
+    "اين رابط الاختبار", "وين رابط الاختبار", "وش رابط الاختبار",
+    "رابط الاختبار", "اعطني رابط الاختبار", "اعطيني رابط الاختبار",
+    "ابي رابط الاختبار", "ابغي رابط الاختبار", "اريد رابط الاختبار",
+    # "where is the exam?"
+    "اين الاختبار", "وين الاختبار",
+    # "send / download me the exam"
+    "ارسل الاختبار", "ارسل لي الاختبار", "ابعث الاختبار",
+    "ابعث لي الاختبار", "ابعت لي الاختبار",
+    "حمل الاختبار", "حمل لي الاختبار", "نزل لي الاختبار",
+    "ارسل البي دي اف", "ارسل ال pdf", "ارسل لي البي دي اف",
+    "ارسل لي ال pdf", "ابعث البي دي اف",
+    # "the one you just made"
+    "الاختبار الذي انشاته", "الاختبار الذي انشاته انت",
+    "الاختبار الذي سويته", "الاختبار الذي عملته",
+    "الذي انشاته انت", "الذي سويته قبل قليل", "الذي عملته قبل قليل",
+    # "send me the file" (in exam context — ambiguity is handled by the
+    # webhook checking last_exam_download_url; if there's no exam we
+    # fall back gracefully).
+    "ارسل لي الملف", "ابعث لي الملف",
 )
+
+# Phase-12 legacy alias kept for backwards-compatibility — the new
+# ``_SEND_LAST_EXAM_PATTERNS`` superset handles every "send the exam"
+# phrase. Defined as an empty tuple so the existing detector branch
+# remains a no-op without crashing imports.
+_EXAM_SEND_PATTERNS: tuple[str, ...] = ()
 
 
 # ── Category hints — "هذا اختبار" / "هذه خطة" ──────────────────────────
@@ -233,6 +267,13 @@ def detect_intent(text: str | None) -> Intent:
 
     if _matches_any(norm, _DUPLICATE_PATTERNS):
         return Intent(INTENT_DUPLICATE, 0.9)
+
+    # Phase-13: "where is my exam?" must be checked BEFORE create-exam
+    # patterns so "ارسل الاختبار" / "اين رابط الاختبار" never starts
+    # a brand-new generation. The webhook resolves the link from
+    # ExamConversationState.last_exam_id.
+    if _matches_any(norm, _SEND_LAST_EXAM_PATTERNS):
+        return Intent(INTENT_SEND_LAST_EXAM, 0.9)
 
     # Phase-12: exam-creation intents must come BEFORE the category-hint
     # bank (which contains "هذا اختبار") and BEFORE export/review so a

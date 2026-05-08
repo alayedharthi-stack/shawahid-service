@@ -353,9 +353,11 @@ class TestExamMessages:
         assert "الصف" not in msg
 
     def test_ready_message_contains_summary(self, base_request, base_profile):
+        # Phase-13: the ready text was warmed up — the celebration line
+        # is now "تم تجهيز اختبارك بنجاح 🎉".
         exam = generate_exam(base_request, profile=base_profile)
         msg = build_exam_ready_message(exam)
-        assert "تم إنشاء الاختبار" in msg
+        assert "تم تجهيز اختبارك بنجاح" in msg
         assert "الرياضيات" in msg
 
     def test_failure_message_with_missing(self):

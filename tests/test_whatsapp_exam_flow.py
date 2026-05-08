@@ -89,8 +89,12 @@ class TestExamIntents:
         assert detect_intent("اختبار آخر").intent == INTENT_EXAM_REGENERATE
 
     def test_export_recognised(self):
-        assert detect_intent("أرسل الاختبار").intent == INTENT_EXAM_EXPORT
-        assert detect_intent("حمل الاختبار").intent == INTENT_EXAM_EXPORT
+        # Phase-13: "أرسل الاختبار" / "حمل الاختبار" now map to the new
+        # send_last_exam intent — they look up the most-recent exam in
+        # ExamConversationState instead of starting a new generation.
+        from app.services.intents import INTENT_SEND_LAST_EXAM
+        assert detect_intent("أرسل الاختبار").intent == INTENT_SEND_LAST_EXAM
+        assert detect_intent("حمل الاختبار").intent == INTENT_SEND_LAST_EXAM
 
     def test_create_exam_takes_priority_over_category_hint(self):
         # "هذا اختبار" matches category-hint ("التقويم"), but
@@ -286,16 +290,25 @@ class TestFailureIsolation:
 
 
 class TestPdfRendering:
-    def test_render_pdf_path_attempted(self, monkeypatch):
+    def test_render_pdf_path_attempted(self, monkeypatch, tmp_path):
         # Stub export_exam_pdf so we don't depend on Playwright/chromium.
+        # Phase-13: the flow now persists the result to disk, so the
+        # fake must look like the real ExamExportResult contract
+        # (``pdf_bytes`` for the Playwright path, ``html`` for fallback).
         from app.exam_engine import exam_flow as ef
+        from app.exam_engine.exam_export import ExamExportResult
 
-        class _FakeResult:
-            path = "/tmp/fake-exam.pdf"
+        # Redirect storage to tmp_path so we don't pollute repo dirs.
+        from app.core.config import settings
+        monkeypatch.setattr(settings, "STORAGE_DIR", str(tmp_path))
 
         monkeypatch.setattr(
             "app.exam_engine.exam_export.export_exam_pdf",
-            lambda exam: _FakeResult(),
+            lambda exam: ExamExportResult(
+                backend="playwright",
+                html="<html>x</html>",
+                pdf_bytes=b"%PDF-1.4 fake",
+            ),
         )
         result = handle_exam_request(
             teacher_id=50,
@@ -306,7 +319,14 @@ class TestPdfRendering:
             render_pdf=True,
         )
         assert result.is_ready
-        assert result.pdf_path == "/tmp/fake-exam.pdf"
+        assert result.pdf_path is not None
+        # Path must end with the deterministic ``{exam_id}.pdf`` shape
+        # and the bytes we returned must have actually landed on disk.
+        from pathlib import Path
+        p = Path(result.pdf_path)
+        assert p.is_file()
+        assert p.suffix == ".pdf"
+        assert p.read_bytes().startswith(b"%PDF")
 
     def test_render_pdf_failure_is_swallowed(self, monkeypatch):
         def _boom(exam):

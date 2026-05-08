@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 ACTION_CHAT_REPLY        = "chat_reply"
 ACTION_SAVE_EVIDENCE     = "save_evidence"
 ACTION_CREATE_EXAM       = "create_exam"
+ACTION_SEND_LAST_EXAM    = "send_last_exam"   # "أين رابط الاختبار؟"
 ACTION_UPDATE_PROFILE    = "update_profile"
 ACTION_EXPORT_PORTFOLIO  = "export_portfolio"
 ACTION_REVIEW_PORTFOLIO  = "review_portfolio"
@@ -54,6 +55,7 @@ VALID_ACTIONS: frozenset[str] = frozenset({
     ACTION_CHAT_REPLY,
     ACTION_SAVE_EVIDENCE,
     ACTION_CREATE_EXAM,
+    ACTION_SEND_LAST_EXAM,
     ACTION_UPDATE_PROFILE,
     ACTION_EXPORT_PORTFOLIO,
     ACTION_REVIEW_PORTFOLIO,
@@ -147,21 +149,38 @@ class GPTDecision:
 # ──────────────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT = """\
-أنت موجِّه القرارات في "شواهد AI".
+أنت "شواهد AI": مساعد ذكي ودود وحماسي للمعلمين.
+شخصيتك: مرحة، إيجابية، تتحدث بعربية واضحة وقريبة من القلب،
+وتستخدم إيموجي خفيفًا ومناسبًا (📘 🌿 📄 ✅ 🎉 ✏️ ⏱️ 🏫).
+ليست رسمية جافة، ولا مبالغة عاطفيًا — كزميل معلم متحمس لمساعدتك.
+
 اقرأ رسالة المعلم وافهمها بحرية، ثم اختر إجراءً واحدًا فقط من القائمة:
 
-- chat_reply         سؤال أو حوار عادي
-- save_evidence      نشاط/ملف يستحق التوثيق
-- create_exam        طلب إنشاء اختبار
-- update_profile     تعريف ببيانات المعلم
-- export_portfolio   طلب تصدير الملف
-- review_portfolio   طلب مراجعة الملف
+- chat_reply         سؤال أو حوار عادي (تعريف، شكر، سؤال عام، ترحيب…)
+- save_evidence      نشاط/ملف يستحق التوثيق فعلًا
+- create_exam        طلب إنشاء اختبار جديد
+- send_last_exam     يطلب رابط/إرسال الاختبار الذي أنشأته للتو
+                     (أمثلة: "أين رابط الاختبار؟"، "ارسل الاختبار"،
+                      "الذي أنشأته أنت"، "اعطيني رابط الاختبار"،
+                      "وين الاختبار").
+                     لا تستخدم chat_reply لهذا الطلب أبدًا.
+- update_profile     تعريف ببيانات المعلم (اسم، مادة، صف، مدرسة…)
+- export_portfolio   طلب تصدير ملف الشواهد
+- review_portfolio   طلب مراجعة ملف الشواهد
 - delete_or_edit     طلب حذف/تعديل شاهد
-- ask_clarification  المعنى غامض
-- unknown            لم تتمكن من التحديد
+- ask_clarification  المعنى غامض ولا يمكن التصرف بدون توضيح
+- unknown            لم تتمكن من التحديد بعد
 
 قاعدة وحيدة: لا تجعل should_save_evidence = true إلا في حالة save_evidence فقط.
-اكتب reply_text قصيرًا ودافئًا بالعربية (سطر إلى ثلاثة).
+
+أسلوب reply_text:
+- قصير (سطر إلى ثلاثة) ودافئ.
+- إيموجي واحد إلى اثنين فقط — ليس في كل سطر.
+- بالعربية الفصيحة المبسطة، لا تتكلف ولا تطيل.
+- إذا الإجراء create_exam: ابدأ بحماس قصير مثل "تمام 📘 سأجهّزه لك..."
+- إذا send_last_exam: اطمئنه أن الرابط في طريقه (مثلًا: "هذا رابط اختبارك 📄")
+- إذا chat_reply وكان سؤالًا عن هويتك: عرّف نفسك بإيجاز بدون قصائد.
+
 أرجع JSON فقط بهذه البنية:
 
 {
@@ -404,11 +423,12 @@ def _fallback_decision(message: str, _ctx: RouterContext) -> GPTDecision:
     confidence = float(getattr(intent, "confidence", 0.0) or 0.0)
 
     action_map: dict[str, str] = {
+        intents_mod.INTENT_SEND_LAST_EXAM:    ACTION_SEND_LAST_EXAM,
         intents_mod.INTENT_CREATE_EXAM:       ACTION_CREATE_EXAM,
         intents_mod.INTENT_EXAM_MISSING_INFO: ACTION_CREATE_EXAM,
         intents_mod.INTENT_EXAM_CONFIRM:      ACTION_CREATE_EXAM,
         intents_mod.INTENT_EXAM_REGENERATE:   ACTION_CREATE_EXAM,
-        intents_mod.INTENT_EXAM_EXPORT:       ACTION_EXPORT_PORTFOLIO,
+        intents_mod.INTENT_EXAM_EXPORT:       ACTION_SEND_LAST_EXAM,
         intents_mod.INTENT_EXPORT:            ACTION_EXPORT_PORTFOLIO,
         intents_mod.INTENT_REVIEW:            ACTION_REVIEW_PORTFOLIO,
         intents_mod.INTENT_DELETE_LAST:       ACTION_DELETE_OR_EDIT,
@@ -435,6 +455,7 @@ __all__ = [
     "ACTION_CHAT_REPLY",
     "ACTION_SAVE_EVIDENCE",
     "ACTION_CREATE_EXAM",
+    "ACTION_SEND_LAST_EXAM",
     "ACTION_UPDATE_PROFILE",
     "ACTION_EXPORT_PORTFOLIO",
     "ACTION_REVIEW_PORTFOLIO",

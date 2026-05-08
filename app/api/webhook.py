@@ -387,62 +387,116 @@ _FIRST_VOICE_SUCCESS_MSG = (
 )
 
 
-async def _send_exam_pdf(
+async def _send_exam_download_button(
+    *,
+    teacher_phone: str,
+    teacher_id: int,
+    exam_id: str,
+    download_url: str,
+    subject: str | None = None,
+    grade: str | None = None,
+    exam_type: str | None = None,
+    exam=None,
+) -> None:
+    """Phase-13: send a CTA-URL button so the teacher can download the
+    exam from any device.
+
+    Behaviour:
+      1. Try the WhatsApp interactive ``cta_url`` button — same UX
+         the portfolio download / payment links already use.
+      2. If the API call fails (out of session, credentials missing,
+         API error) fall back to a clean text message containing the
+         URL on its own line.
+
+    Never raises; only logs.
+    """
+    from app.exam_engine.messages import (
+        build_exam_download_button_body,
+        build_exam_download_text_fallback,
+    )
+    from app.services.whatsapp import send_whatsapp_button
+
+    body = build_exam_download_button_body(exam)
+    button_label = "تحميل الاختبار 📄"
+
+    sent = False
+    try:
+        sent = await send_whatsapp_button(
+            teacher_phone,
+            body_text=body,
+            button_label=button_label,
+            url=download_url,
+            teacher_id=teacher_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[EXAM DOWNLOAD BUTTON FAILED] teacher_id=%d exam_id=%s err=%s",
+            teacher_id, exam_id, exc,
+        )
+        sent = False
+
+    if sent:
+        logger.info(
+            "[EXAM DOWNLOAD BUTTON SENT] teacher_id=%d exam_id=%s",
+            teacher_id, exam_id,
+        )
+        return
+
+    # Fallback: plain text with the link on its own line so iOS / Android
+    # auto-link it. We deliberately keep it short and friendly.
+    fallback = build_exam_download_text_fallback(
+        download_url=download_url,
+        subject=subject,
+        grade=grade,
+        exam_type=exam_type,
+    )
+    await send_whatsapp_message(
+        teacher_phone,
+        fallback,
+        teacher_id=teacher_id,
+        context="exam_download_fallback",
+    )
+
+
+# Phase-12 compat shim — older call-sites still import this name.
+async def _send_exam_pdf(  # noqa: D401  (kept for backwards-compat)
     *,
     teacher_phone: str,
     teacher_id: int,
     pdf_path: str | None,
     exam,
 ) -> None:
-    """Phase-12: deliver the generated exam PDF to the teacher.
-
-    Best-effort — if WhatsApp document upload isn't wired in this
-    deployment we fall back to a plain text "your exam is ready"
-    message. This never raises; failures only log.
+    """Compatibility wrapper kept for code that hasn't moved to the
+    button-first flow yet. Uses the conversation state to find the
+    download URL the new path stored.
     """
     if not pdf_path:
         return
     try:
-        from pathlib import Path as _P
-        if not _P(pdf_path).exists():
-            logger.warning(
-                "[EXAM FLOW] PDF path missing teacher_id=%d path=%s",
-                teacher_id, pdf_path,
-            )
-            return
+        from app.api.exam_downloads import build_exam_download_url
+        from app.conversation_engine.exam_state import get_exam_state
+        st = get_exam_state(teacher_id)
+        exam_id = (
+            getattr(exam, "exam_id", None)
+            or st.last_exam_id
+            or "unknown"
+        )
+        download_url = (
+            st.last_exam_download_url
+            or build_exam_download_url(teacher_id=teacher_id, exam_id=exam_id)
+        )
+        await _send_exam_download_button(
+            teacher_phone=teacher_phone,
+            teacher_id=teacher_id,
+            exam_id=exam_id,
+            download_url=download_url,
+            subject=st.last_exam_subject,
+            grade=st.last_exam_grade,
+            exam_type=st.last_exam_type,
+            exam=exam,
+        )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[EXAM FLOW] PDF stat failed: %s", exc)
-        return
-
-    # Document-upload helper is optional — fall back to a tiny ack
-    # when the deployment doesn't expose one.
-    sender = None
-    try:
-        from app.services.whatsapp import send_whatsapp_document  # type: ignore
-        sender = send_whatsapp_document
-    except ImportError:
-        sender = None
-
-    if sender is not None:
-        try:
-            await sender(teacher_phone, pdf_path, teacher_id=teacher_id)
-            logger.info(
-                "[EXAM PDF SENT] teacher_id=%d path=%s", teacher_id, pdf_path,
-            )
-            return
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[EXAM PDF SEND FAILED] teacher_id=%d err=%s",
-                teacher_id, exc,
-            )
-
-    # Fallback: tell the teacher the file is ready (without inlining it).
-    await send_whatsapp_message(
-        teacher_phone,
-        "تم تجهيز ملف الاختبار 📎\n"
-        "لتنزيله تواصل مع الدعم أو أعد المحاولة لاحقًا.",
-        teacher_id=teacher_id, context="exam_pdf_fallback",
-    )
+        logger.warning("[EXAM PDF SHIM] err teacher_id=%d: %s", teacher_id, exc)
 
 
 async def _send_welcome_message(phone: str, teacher_id: int) -> None:
@@ -489,6 +543,7 @@ async def _route_via_gpt_router(
         ACTION_DELETE_OR_EDIT,
         ACTION_EXPORT_PORTFOLIO,
         ACTION_REVIEW_PORTFOLIO,
+        ACTION_SEND_LAST_EXAM,
         ACTION_UPDATE_PROFILE,
         RouterContext,
         decide_next_action,
@@ -643,12 +698,30 @@ async def _route_via_gpt_router(
                 send_whatsapp_message, teacher.phone, exam_result.reply_text,
                 teacher_id=teacher.id, context=f"exam_{exam_result.stage}",
             )
-            if exam_result.is_ready and exam_result.pdf_path:
+            if exam_result.is_ready and exam_result.exam is not None:
+                # Build the public download URL and persist it on
+                # ExamConversationState so follow-up "أين الرابط؟"
+                # questions can be answered without regenerating.
+                from app.api.exam_downloads import build_exam_download_url
+                from app.conversation_engine.exam_state import (
+                    update_last_exam_download_url,
+                )
+                exam_id = exam_result.exam.exam_id
+                download_url = build_exam_download_url(
+                    teacher_id=teacher.id, exam_id=exam_id,
+                )
+                update_last_exam_download_url(
+                    teacher.id, download_url=download_url,
+                )
                 background_tasks.add_task(
-                    _send_exam_pdf,
+                    _send_exam_download_button,
                     teacher_phone=teacher.phone,
                     teacher_id=teacher.id,
-                    pdf_path=exam_result.pdf_path,
+                    exam_id=exam_id,
+                    download_url=download_url,
+                    subject=exam_result.exam.profile.subject,
+                    grade=exam_result.exam.profile.grade,
+                    exam_type=exam_result.exam.profile.exam_type,
                     exam=exam_result.exam,
                 )
             return decision, {
@@ -658,6 +731,43 @@ async def _route_via_gpt_router(
             }
         # exam_flow unavailable — let caller fall through.
         return decision, None
+
+    # ── Send the LAST generated exam (no new generation) ──────────────────
+    if decision.action == ACTION_SEND_LAST_EXAM:
+        from app.conversation_engine.exam_state import get_exam_state
+        from app.exam_engine.messages import build_no_last_exam_message
+
+        st = get_exam_state(teacher.id)
+        if st.last_exam_id and st.last_exam_download_url:
+            background_tasks.add_task(
+                _send_exam_download_button,
+                teacher_phone=teacher.phone,
+                teacher_id=teacher.id,
+                exam_id=st.last_exam_id,
+                download_url=st.last_exam_download_url,
+                subject=st.last_exam_subject,
+                grade=st.last_exam_grade,
+                exam_type=st.last_exam_type,
+                exam=None,
+            )
+            return decision, {
+                "ok": True, "teacher_id": teacher.id,
+                "intent": "send_last_exam",
+                "router_action": decision.action,
+                "exam_id": st.last_exam_id,
+            }
+
+        # No cached exam → friendly fallback prompting a new generation.
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone,
+            build_no_last_exam_message(),
+            teacher_id=teacher.id, context="send_last_exam_fallback",
+        )
+        return decision, {
+            "ok": True, "teacher_id": teacher.id,
+            "intent": "send_last_exam_missing",
+            "router_action": decision.action,
+        }
 
     # ── Export portfolio: same shortcut as is_export_command ──────────────
     if decision.action == ACTION_EXPORT_PORTFOLIO:
@@ -1071,13 +1181,30 @@ async def whatsapp_webhook(
                 send_whatsapp_message, teacher.phone, _exam_result.reply_text,
                 teacher_id=teacher.id, context=f"exam_{_exam_result.stage}",
             )
-            # Schedule PDF send (best-effort) when ready.
-            if _exam_result.is_ready and _exam_result.pdf_path:
+            # Phase-13: schedule the download CTA button (with text-link
+            # fallback) and persist the URL on conversation state so
+            # follow-up "أين الرابط؟" questions resolve instantly.
+            if _exam_result.is_ready and _exam_result.exam is not None:
+                from app.api.exam_downloads import build_exam_download_url
+                from app.conversation_engine.exam_state import (
+                    update_last_exam_download_url,
+                )
+                _exam_id = _exam_result.exam.exam_id
+                _download_url = build_exam_download_url(
+                    teacher_id=teacher.id, exam_id=_exam_id,
+                )
+                update_last_exam_download_url(
+                    teacher.id, download_url=_download_url,
+                )
                 background_tasks.add_task(
-                    _send_exam_pdf,
+                    _send_exam_download_button,
                     teacher_phone=teacher.phone,
                     teacher_id=teacher.id,
-                    pdf_path=_exam_result.pdf_path,
+                    exam_id=_exam_id,
+                    download_url=_download_url,
+                    subject=_exam_result.exam.profile.subject,
+                    grade=_exam_result.exam.profile.grade,
+                    exam_type=_exam_result.exam.profile.exam_type,
                     exam=_exam_result.exam,
                 )
             return {

@@ -46,8 +46,13 @@ class ExamConversationState:
     duration_minutes: int | None = None
     source_mode: str | None = None
     pending_fields: tuple[str, ...] = ()
-    last_exam_id: str | None = None      # set after a successful generation
-    last_pdf_path: str | None = None     # set after a successful render
+    # ── Snapshot of the most-recent successful generation ─────────────
+    last_exam_id: str | None = None
+    last_pdf_path: str | None = None
+    last_exam_subject: str | None = None
+    last_exam_grade: str | None = None
+    last_exam_type: str | None = None
+    last_exam_download_url: str | None = None
     updated_at: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc),
     )
@@ -77,11 +82,17 @@ class ExamConversationState:
             "subject", "grade", "stage", "semester", "exam_type",
             "unit", "lesson", "week", "total_questions", "total_marks",
             "duration_minutes", "source_mode", "last_exam_id",
-            "last_pdf_path",
+            "last_pdf_path", "last_exam_subject", "last_exam_grade",
+            "last_exam_type", "last_exam_download_url",
         ):
             setattr(self, key, None)
         self.pending_fields = ()
         self.updated_at = datetime.now(timezone.utc)
+
+    @property
+    def has_last_exam(self) -> bool:
+        """True when a previously-generated exam is still cached."""
+        return bool(self.last_exam_id)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -141,12 +152,46 @@ def record_generated_exam(
     *,
     exam_id: str,
     pdf_path: str | None,
+    subject: str | None = None,
+    grade: str | None = None,
+    exam_type: str | None = None,
+    download_url: str | None = None,
 ) -> ExamConversationState:
+    """Snapshot the last successfully-generated exam.
+
+    The webhook calls this immediately after ``handle_exam_request``
+    returns ``STAGE_READY`` so that follow-up questions like
+    "أين رابط الاختبار؟" can be answered without regenerating.
+    """
     with _LOCK:
         st = get_exam_state(teacher_id)
         st.last_exam_id = exam_id
         st.last_pdf_path = pdf_path
+        if subject:
+            st.last_exam_subject = subject
+        if grade:
+            st.last_exam_grade = grade
+        if exam_type:
+            st.last_exam_type = exam_type
+        if download_url:
+            st.last_exam_download_url = download_url
         st.pending_fields = ()
+        st.updated_at = datetime.now(timezone.utc)
+        return st
+
+
+def update_last_exam_download_url(
+    teacher_id: int, *, download_url: str,
+) -> ExamConversationState:
+    """Late-set the download URL once the webhook has computed it.
+
+    ``record_generated_exam`` runs inside the synchronous exam_flow which
+    has no access to ``settings.effective_base_url`` — the webhook fills
+    it in afterwards.
+    """
+    with _LOCK:
+        st = get_exam_state(teacher_id)
+        st.last_exam_download_url = download_url
         st.updated_at = datetime.now(timezone.utc)
         return st
 
@@ -168,4 +213,5 @@ __all__ = [
     "merge_exam_state",
     "set_pending_fields",
     "record_generated_exam",
+    "update_last_exam_download_url",
 ]

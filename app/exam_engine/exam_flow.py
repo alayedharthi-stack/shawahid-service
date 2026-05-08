@@ -220,13 +220,20 @@ def handle_exam_request(
             flags=["validation_failed"],
         )
 
-    # ── 8. Render to PDF (best-effort — failure does not abort).
+    # ── 8. Render to PDF and persist to teacher's exam folder
+    # (best-effort — failure does not abort the flow; the webhook can
+    # still send the friendly text confirmation back to the teacher).
     pdf_path: str | None = None
     if render_pdf:
-        pdf_path = _render_pdf_safely(exam)
+        pdf_path = _render_pdf_safely(exam, teacher_id=teacher_id)
 
     record_generated_exam(
-        teacher_id, exam_id=exam.exam_id, pdf_path=pdf_path,
+        teacher_id,
+        exam_id=exam.exam_id,
+        pdf_path=pdf_path,
+        subject=exam.profile.subject,
+        grade=exam.profile.grade,
+        exam_type=exam.profile.exam_type,
     )
 
     ready_text = build_exam_ready_message(exam)
@@ -437,15 +444,50 @@ def _build_exam(
 # ──────────────────────────────────────────────────────────────────────
 
 
-def _render_pdf_safely(exam: GeneratedExam) -> str | None:
-    """Best-effort PDF render. Failures (no Playwright, no chromium,
-    etc.) are logged and swallowed — the webhook still has the text
-    confirmation to send back."""
+def _render_pdf_safely(
+    exam: GeneratedExam, *, teacher_id: int,
+) -> str | None:
+    """Best-effort PDF render that PERSISTS the result to disk.
+
+    Layout::
+
+        storage/teachers/{teacher_id}/exams/{exam_id}.pdf       (Playwright)
+        storage/teachers/{teacher_id}/exams/{exam_id}.html      (fallback)
+
+    Failures (no Playwright, no chromium, write errors, etc.) are
+    logged and swallowed — the webhook still has the text
+    confirmation to send back.
+    """
     try:
+        from app.core.config import settings
         from app.exam_engine.exam_export import export_exam_pdf
+
         result = export_exam_pdf(exam)
-        if result and result.path:
-            return str(result.path)
+        if not result:
+            return None
+
+        exams_dir = settings.teacher_storage(teacher_id) / "exams"
+        exams_dir.mkdir(parents=True, exist_ok=True)
+
+        if result.pdf_bytes:
+            pdf_path = exams_dir / f"{exam.exam_id}.pdf"
+            pdf_path.write_bytes(result.pdf_bytes)
+            logger.info(
+                "[EXAM PDF SAVED] teacher_id=%d exam_id=%s path=%s size=%dKB",
+                teacher_id, exam.exam_id, pdf_path,
+                len(result.pdf_bytes) // 1024,
+            )
+            return str(pdf_path)
+
+        # No Playwright available — keep the HTML so the route can
+        # serve a printable page as fallback.
+        html_path = exams_dir / f"{exam.exam_id}.html"
+        html_path.write_text(result.html, encoding="utf-8")
+        logger.info(
+            "[EXAM HTML SAVED] teacher_id=%d exam_id=%s path=%s",
+            teacher_id, exam.exam_id, html_path,
+        )
+        return str(html_path)
     except Exception as exc:  # noqa: BLE001
         logger.info("[EXAM FLOW] PDF render skipped: %s", exc)
     return None
