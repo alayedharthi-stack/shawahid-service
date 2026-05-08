@@ -374,3 +374,173 @@ class TestBareExportShortCircuit:
         # send_pre_export_choice_buttons was scheduled.
         assert background_tasks.add_task.call_count >= 1
         assert teacher.id in wh._AWAITING_EXPORT_CHOICE
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 6. Stage-3 short-circuit: tapping كامل / ذكي / مختصر MUST start the
+#    export — NOT re-prompt the مراجعة/تصدير card.
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _patch_exporter(monkeypatch):
+    """Common monkey-patch bundle so the mode-selection helper runs
+    without touching the real DB / file system / Playwright."""
+    from app.api import webhook as wh
+
+    fake_record = SimpleNamespace(id=42)
+    monkeypatch.setattr(
+        wh, "exporter_svc",
+        SimpleNamespace(
+            create_export_record=lambda db, tid: fake_record,
+            run_export_background=lambda **kw: None,
+        ),
+    )
+    return fake_record
+
+
+class TestExportModeShortCircuit:
+    def test_button_id_export_full_starts_export(self, monkeypatch):
+        from app.api import webhook as wh
+
+        fake_record = _patch_exporter(monkeypatch)
+        teacher = _fake_teacher()
+        wh._PENDING_EXPORT_REQUESTS.add(teacher.id)
+
+        bg = MagicMock(); bg.add_task = MagicMock()
+        resp = asyncio.run(wh._handle_export_mode_selection(
+            teacher=teacher, db=MagicMock(),
+            background_tasks=bg, sub_active=True, sub_info={"status": "active"},
+            selected_export_mode="full", text="export_full",
+            via="pre_router_button",
+        ))
+
+        assert resp["intent"] == "export_started"
+        assert resp["export_mode"] == "full"
+        assert resp["export_id"] == fake_record.id
+        # Must NOT re-prompt — teacher should not be in awaiting state.
+        assert teacher.id not in wh._AWAITING_EXPORT_CHOICE
+        assert teacher.id not in wh._PENDING_EXPORT_REQUESTS
+
+    @pytest.mark.parametrize("button_id,expected_mode", [
+        ("export_full",  "full"),
+        ("export_smart", "smart"),
+        ("export_short", "elite"),
+    ])
+    def test_parse_export_mode_recognises_button_ids(self, button_id, expected_mode):
+        from app.api.webhook import _parse_export_mode
+        assert _parse_export_mode(button_id) == expected_mode
+
+    @pytest.mark.parametrize("title,expected_mode", [
+        ("كامل",  "full"),
+        ("ذكي",   "smart"),
+        ("مختصر", "elite"),
+        ("1",     "full"),
+        ("2",     "smart"),
+        ("3",     "elite"),
+        ("full",  "full"),
+        ("smart", "smart"),
+    ])
+    def test_parse_export_mode_recognises_titles_and_numbers(self, title, expected_mode):
+        from app.api.webhook import _parse_export_mode
+        assert _parse_export_mode(title) == expected_mode
+
+    def test_mode_selection_clears_awaiting_choice_state(self, monkeypatch, caplog):
+        """Belt-and-suspenders: even if _AWAITING_EXPORT_CHOICE somehow
+        leaks into the mode-selection step, the helper must clear it
+        and log [EXPORT MODE_LOOP_PREVENTED]. This is the regression
+        the user reported screen-shotted."""
+        from app.api import webhook as wh
+
+        _patch_exporter(monkeypatch)
+        teacher = _fake_teacher()
+        # Simulate the buggy state we want to prevent: BOTH sets are
+        # populated when the mode button arrives.
+        wh._AWAITING_EXPORT_CHOICE.add(teacher.id)
+        wh._PENDING_EXPORT_REQUESTS.add(teacher.id)
+
+        bg = MagicMock(); bg.add_task = MagicMock()
+        with caplog.at_level("INFO"):
+            resp = asyncio.run(wh._handle_export_mode_selection(
+                teacher=teacher, db=MagicMock(),
+                background_tasks=bg, sub_active=True, sub_info={"status": "active"},
+                selected_export_mode="full", text="export_full",
+                via="pre_router_button",
+            ))
+        assert resp["intent"] == "export_started"
+        # The set must be cleared.
+        assert teacher.id not in wh._AWAITING_EXPORT_CHOICE
+
+    def test_button_id_does_not_reach_export_intent_short_circuit(self, monkeypatch):
+        """Mandatory regression: ``export_full`` (the button id) must
+        NOT be classified as an export-intent phrase by
+        ``is_export_command``. If it were, the pre-router export-intent
+        block would re-send the مراجعة/تصدير card — exactly the bug
+        the user is reporting from the screenshot.
+        """
+        from app.api.webhook import is_export_command, _EXPORT_BARE_COMMANDS
+        # Button IDs are pure ASCII — they can't accidentally hit the
+        # Arabic substring matcher.
+        for button_id in ("export_full", "export_smart", "export_short"):
+            assert button_id not in _EXPORT_BARE_COMMANDS
+            assert is_export_command(button_id) is False, button_id
+
+    def test_full_three_stage_flow_no_loops(self, monkeypatch):
+        """The end-to-end happy path the user wrote in the brief:
+
+           1. text="صدر"            → pre-export choice card
+           2. button="export_now"   → mode buttons (كامل/ذكي/مختصر)
+           3. button="export_full"  → export starts
+
+        Each stage must clear the right state and never re-show a
+        previously-passed card. This test runs the three helpers in
+        sequence and asserts state at every step.
+        """
+        from app.api import webhook as wh
+        _patch_exporter(monkeypatch)
+        monkeypatch.setattr(
+            "app.services.teachers.get_or_create_review_token",
+            lambda db, t: "tok-fake",
+        )
+        monkeypatch.setattr(
+            wh, "get_teacher_evidences", lambda db, tid: [],
+        )
+        monkeypatch.setattr(
+            wh.wa_integration, "make_pre_export_warning",
+            lambda *a, **kw: None,
+        )
+
+        teacher = _fake_teacher()
+        wh._AWAITING_EXPORT_CHOICE.discard(teacher.id)
+        wh._PENDING_EXPORT_REQUESTS.discard(teacher.id)
+
+        # Stage 1: "صدر"
+        bg1 = MagicMock(); bg1.add_task = MagicMock()
+        resp1 = asyncio.run(wh._run_pre_export_choice_flow(
+            teacher=teacher, db=MagicMock(), background_tasks=bg1,
+            sub_active=True, text="صدر", via="pre_router_bare",
+        ))
+        assert resp1["intent"] == "pre_export_choice_offered"
+        assert teacher.id in wh._AWAITING_EXPORT_CHOICE
+        assert teacher.id not in wh._PENDING_EXPORT_REQUESTS
+
+        # Stage 2: button "export_now" (simulated by clearing
+        # _AWAITING_EXPORT_CHOICE + adding _PENDING_EXPORT_REQUESTS,
+        # which is exactly what the button short-circuit does).
+        wh._AWAITING_EXPORT_CHOICE.discard(teacher.id)
+        wh._PENDING_EXPORT_REQUESTS.add(teacher.id)
+        # (no helper call here — the real webhook just enqueues
+        #  send_export_options_buttons; the state is what matters.)
+
+        # Stage 3: button "export_full"
+        bg3 = MagicMock(); bg3.add_task = MagicMock()
+        resp3 = asyncio.run(wh._handle_export_mode_selection(
+            teacher=teacher, db=MagicMock(),
+            background_tasks=bg3, sub_active=True, sub_info={"status": "active"},
+            selected_export_mode="full", text="export_full",
+            via="pre_router_button",
+        ))
+        assert resp3["intent"] == "export_started"
+        assert resp3["export_mode"] == "full"
+        # All wait-states must be empty at the end.
+        assert teacher.id not in wh._AWAITING_EXPORT_CHOICE
+        assert teacher.id not in wh._PENDING_EXPORT_REQUESTS

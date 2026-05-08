@@ -528,6 +528,102 @@ async def _send_welcome_message(phone: str, teacher_id: int) -> None:
         logger.warning("[ONBOARDING] failed teacher_id=%d: %s", teacher_id, exc)
 
 
+# ─── Export-mode selection: shared helper ────────────────────────────────────
+#
+# Stage 3 of the export flow: teacher picked كامل / ذكي / مختصر. The
+# helper runs the actual export (paywall check, create export record,
+# kick off the background generator) and returns the response dict the
+# webhook ``return``s.
+#
+# Both the deterministic pre-router short-circuit and the legacy
+# ``selected_export_mode`` block call this so the behaviour stays
+# identical regardless of how the mode was matched.
+
+async def _handle_export_mode_selection(
+    *,
+    teacher,
+    db: Session,
+    background_tasks: BackgroundTasks,
+    sub_active: bool,
+    sub_info: dict | None,
+    selected_export_mode: str,
+    text: str | None,
+    via: str,
+) -> dict:
+    """Start the export run for ``selected_export_mode`` (full/smart/elite).
+
+    ``via`` is logged so we can tell whether the trigger came from
+    the pre-router short-circuit or the legacy backstop.
+    """
+    if teacher.id not in _PENDING_EXPORT_REQUESTS:
+        # The teacher tapped a mode button without going through the
+        # 2-button card first (or a previous request silently reset
+        # state). Treat it as an instant export-and-mode in one step.
+        logger.info(
+            "[EXPORT MODE DIRECT] teacher_id=%d mode=%s via=%s",
+            teacher.id, selected_export_mode, via,
+        )
+        _PENDING_EXPORT_REQUESTS.add(teacher.id)
+
+    # Critical: pressing a mode button must NEVER re-prompt the
+    # مراجعة/تصدير card. We clear both wait-states up-front.
+    _AWAITING_EXPORT_CHOICE.discard(teacher.id)
+
+    logger.info(
+        "[EXPORT MODE_SELECTED] teacher_id=%d mode=%s via=%s sub_status=%s",
+        teacher.id, selected_export_mode, via,
+        (sub_info or {}).get("status", "unknown"),
+    )
+    _PENDING_EXPORT_REQUESTS.discard(teacher.id)
+
+    if not sub_active:
+        try:
+            payment_url = await _create_moyasar_link(
+                db, teacher.id, teacher.name or "", teacher.phone or "",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Moyasar invoice creation failed: %s", exc)
+            payment_url = get_payment_link(teacher.id)
+        background_tasks.add_task(
+            send_whatsapp_message,
+            teacher.phone,
+            build_payment_link_message(payment_url, teacher.name or ""),
+            teacher_id=teacher.id,
+            context="payment_link",
+        )
+        return {
+            "ok": False, "teacher_id": teacher.id,
+            "reason": "subscription_required",
+        }
+
+    export_record = exporter_svc.create_export_record(db, teacher.id)
+    logger.info(
+        "[EXPORT STARTED] teacher_id=%d mode=%s export_id=%d via=%s",
+        teacher.id, selected_export_mode, export_record.id, via,
+    )
+    background_tasks.add_task(
+        send_whatsapp_message,
+        teacher.phone,
+        _export_start_message(teacher.name),
+        teacher_id=teacher.id,
+        context="export_started",
+    )
+    background_tasks.add_task(
+        exporter_svc.run_export_background,
+        teacher_id=teacher.id,
+        export_id=export_record.id,
+        export_mode=selected_export_mode,
+    )
+    return {
+        "ok": True,
+        "teacher_id": teacher.id,
+        "intent": "export_started",
+        "export_id": export_record.id,
+        "export_mode": selected_export_mode,
+        "via": via,
+    }
+
+
 # ─── Pre-export choice card: shared helper ───────────────────────────────────
 #
 # Both the high-priority deterministic short-circuit (run BEFORE the
@@ -1289,6 +1385,56 @@ async def whatsapp_webhook(
             "via": "button",
         }
 
+    # ── Stage-3 short-circuit: export-mode buttons (كامل / ذكي / مختصر) ─────
+    # When the teacher taps one of the three mode reply-buttons,
+    # WhatsApp delivers ``button_reply.id`` ∈ {export_full, export_smart,
+    # export_short}. Without this short-circuit those IDs would reach
+    # the GPT router, which sees the substring "export" and routes
+    # them as another export-portfolio request — re-sending the
+    # مراجعة/تصدير card and stranding the teacher one step before the
+    # actual generation.
+    #
+    # Rules:
+    #   • Button IDs (``export_full`` / ``export_smart`` / ``export_short``)
+    #     ALWAYS short-circuit — those IDs are unambiguous.
+    #   • Arabic / English plain text ("كامل" / "ذكي" / "smart" / "1") only
+    #     short-circuits when the teacher is currently in
+    #     ``_PENDING_EXPORT_REQUESTS`` (i.e. we just asked them to pick
+    #     a mode). This keeps random "كامل" messages out of the export
+    #     pipeline.
+    _BUTTON_MODE_IDS = {"export_full", "export_smart", "export_short"}
+    if text and not media_id:
+        _norm = _normalized_text
+        _is_mode_button = _norm in _BUTTON_MODE_IDS
+        _selected_mode = _parse_export_mode(text)
+        if _selected_mode and (
+            _is_mode_button or teacher.id in _PENDING_EXPORT_REQUESTS
+        ):
+            # Belt-and-suspenders: if the teacher is somehow STILL in the
+            # awaiting-choice set when they pick a mode (shouldn't happen
+            # — the button short-circuit above clears it — but log it so
+            # we'd notice), force-clear and continue with the export.
+            if teacher.id in _AWAITING_EXPORT_CHOICE:
+                logger.info(
+                    "[EXPORT MODE_LOOP_PREVENTED] teacher_id=%d "
+                    "mode=%s msg=%r forcing_clear_awaiting=True",
+                    teacher.id, _selected_mode, (text or "")[:40],
+                )
+                _AWAITING_EXPORT_CHOICE.discard(teacher.id)
+
+            _resp = await _handle_export_mode_selection(
+                teacher=teacher,
+                db=db,
+                background_tasks=background_tasks,
+                sub_active=sub_active,
+                sub_info=sub_info,
+                selected_export_mode=_selected_mode,
+                text=text,
+                via="pre_router_button" if _is_mode_button else "pre_router_text",
+            )
+            db.commit()
+            return _resp
+
     # ── High-priority deterministic export-intent short-circuit ──────────────
     # GPT, given a single bare word like "صدر", will reasonably ask
     # "ما الذي تقصده؟" — but in a teacher-portfolio bot that word
@@ -1552,63 +1698,22 @@ async def whatsapp_webhook(
         )
 
     # ── Export mode selection shortcut ────────────────────────────────────────
-    # After the user is asked "كيف تحب ملفك؟", their next message may be "1/2/3/كامل/ذكي".
-    # Also handle when user specifies mode directly (e.g. types "ذكي" or "كامل" on their own).
+    # Backstop for cases the pre-router short-circuit didn't catch
+    # (e.g. teacher types "ذكي" without a button when not in
+    # _PENDING_EXPORT_REQUESTS and the GPT router routes it here).
+    # The helper handles all paywall + start logic uniformly.
     selected_export_mode = _parse_export_mode(text)
     if selected_export_mode and not media_id:
-        if teacher.id not in _PENDING_EXPORT_REQUESTS:
-            # User chose a mode directly without going through the options flow.
-            # Treat this as if they issued an export command and selected the mode in one step.
-            logger.info(
-                "[EXPORT MODE DIRECT] teacher_id=%d mode=%s (not in pending — auto-adding)",
-                teacher.id, selected_export_mode,
-            )
-            _PENDING_EXPORT_REQUESTS.add(teacher.id)
-
-        logger.info(
-            "[EXPORT MODE SELECTED] teacher_id=%d mode=%s sub_status=%s",
-            teacher.id, selected_export_mode, sub_info["status"],
+        return await _handle_export_mode_selection(
+            teacher=teacher,
+            db=db,
+            background_tasks=background_tasks,
+            sub_active=sub_active,
+            sub_info=sub_info,
+            selected_export_mode=selected_export_mode,
+            text=text,
+            via="legacy_mode_selection",
         )
-        _PENDING_EXPORT_REQUESTS.discard(teacher.id)
-        if not sub_active:
-            try:
-                payment_url = await _create_moyasar_link(
-                    db, teacher.id, teacher.name or "", teacher.phone or ""
-                )
-            except Exception as exc:
-                logger.error("Moyasar invoice creation failed: %s", exc)
-                payment_url = get_payment_link(teacher.id)
-
-            background_tasks.add_task(
-                send_whatsapp_message,
-                teacher.phone,
-                build_payment_link_message(payment_url, teacher.name or ""),
-                teacher_id=teacher.id,
-                context="payment_link",
-            )
-            return {"ok": False, "teacher_id": teacher.id, "reason": "subscription_required"}
-
-        export_record = exporter_svc.create_export_record(db, teacher.id)
-        background_tasks.add_task(
-            send_whatsapp_message,
-            teacher.phone,
-            _export_start_message(teacher.name),
-            teacher_id=teacher.id,
-            context="export_started",
-        )
-        background_tasks.add_task(
-            exporter_svc.run_export_background,
-            teacher_id=teacher.id,
-            export_id=export_record.id,
-            export_mode=selected_export_mode,
-        )
-        return {
-            "ok": True,
-            "teacher_id": teacher.id,
-            "intent": "payment",
-            "export_id": export_record.id,
-            "export_mode": selected_export_mode,
-        }
 
     # ── PDF: send immediate acknowledgment before any processing ─────────────
     # PDFs are critical (خطط / سجلات / اختبارات). Never stay silent.
