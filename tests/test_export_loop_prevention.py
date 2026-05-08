@@ -248,3 +248,129 @@ class TestSendPreExportButtonsContract:
         # The two button IDs the webhook deterministically dispatches:
         assert '"id": "review_file"' in src
         assert '"id": "export_now"' in src
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 5. Bare export commands ("صدر" / "تصدير" / …) MUST short-circuit
+#    BEFORE the GPT router so GPT never gets a chance to ask
+#    "ما الذي تقصده؟". This is the regression the user reported.
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestBareExportShortCircuit:
+    @pytest.mark.parametrize("text", [
+        "صدر",
+        "صدّر",                 # with shadda
+        "صدّر الآن",            # with shadda + الآن
+        "تصدير",
+        "اصدر",
+        "أصدر",                 # hamza on alef
+        "تصدير الملف",
+        "أرسل الملف",
+        "ارسل الملف",
+        "جهز الملف",
+        "اطلع الملف",
+        "حمل الملف",
+        "أنشئ الملف",
+        "ابغى الملف",
+        "ابي الملف",
+    ])
+    def test_export_command_recognised_after_normalisation(self, text):
+        """All export trigger phrases the user listed (and a few extras)
+        must be recognised by ``is_export_command`` so the high-priority
+        short-circuit fires.
+
+        The function is the contract the webhook checks against — if it
+        returns False here, the teacher will get stuck on a clarification
+        loop in production.
+        """
+        from app.api.webhook import is_export_command
+        assert is_export_command(text) is True, text
+
+    @pytest.mark.parametrize("text", [
+        "صدر",
+        "صدّر",
+        "تصدير",
+        "اصدر",
+    ])
+    def test_bare_command_in_dedicated_set(self, text):
+        """The bare single-word commands have a dedicated frozenset
+        so the pre-router short-circuit can hit them in O(1) without
+        running the full substring matcher."""
+        from app.api.webhook import _EXPORT_BARE_COMMANDS, _normalize_arabic
+        assert _normalize_arabic(text) in _EXPORT_BARE_COMMANDS, text
+
+    def test_short_circuit_bypasses_gpt_router(self, monkeypatch):
+        """Mandatory regression: the user reported that typing "صدر"
+        was reaching GPT and being answered with a clarification
+        question. This test forces the GPT router to ask_clarification
+        and asserts the webhook's pre-router short-circuit still wins
+        (i.e., decide_next_action is never called for export commands).
+        """
+        from app.api import webhook as wh
+        from app.services.gpt_router import (
+            ACTION_ASK_CLARIFICATION,
+            GPTDecision,
+            SOURCE_GPT,
+        )
+
+        called_with: list[str] = []
+
+        async def _spy_decide(message, ctx):
+            # If this runs, the bug is back.
+            called_with.append(message)
+            return GPTDecision(
+                action=ACTION_ASK_CLARIFICATION,
+                confidence=0.3,
+                reply_text="ما الذي تقصده؟",
+                should_save_evidence=False,
+                clarification_question="ما الذي تقصده بكلمة صدر؟",
+                source=SOURCE_GPT,
+            )
+
+        monkeypatch.setattr(
+            "app.services.gpt_router.decide_next_action", _spy_decide,
+        )
+
+        # Drive ``_run_pre_export_choice_flow`` directly with a fake
+        # teacher — same path the high-priority short-circuit uses.
+        teacher = _fake_teacher()
+        background_tasks = MagicMock()
+        background_tasks.add_task = MagicMock()
+
+        wh._AWAITING_EXPORT_CHOICE.discard(teacher.id)
+
+        # Patch the heavy helpers so the helper runs without DB / WA.
+        monkeypatch.setattr(
+            "app.api.webhook.get_or_create_review_token",
+            lambda db, t: "tok-fake",
+            raising=False,
+        )
+        monkeypatch.setattr(
+            "app.services.teachers.get_or_create_review_token",
+            lambda db, t: "tok-fake",
+        )
+        monkeypatch.setattr(
+            "app.api.webhook.get_teacher_evidences",
+            lambda db, tid: [],
+        )
+        monkeypatch.setattr(
+            "app.api.webhook.wa_integration.make_pre_export_warning",
+            lambda *a, **kw: None,
+        )
+
+        resp = asyncio.run(wh._run_pre_export_choice_flow(
+            teacher=teacher,
+            db=MagicMock(),
+            background_tasks=background_tasks,
+            sub_active=True,
+            text="صدر",
+            via="pre_router_bare",
+        ))
+
+        # Helper must enqueue the 2-button send and never call GPT.
+        assert resp["intent"] == "pre_export_choice_offered"
+        assert called_with == [], "GPT was called for an export command"
+        # send_pre_export_choice_buttons was scheduled.
+        assert background_tasks.add_task.call_count >= 1
+        assert teacher.id in wh._AWAITING_EXPORT_CHOICE

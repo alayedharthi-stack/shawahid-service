@@ -107,10 +107,13 @@ _EXPORT_TRIGGERS: frozenset[str] = frozenset({
     "ابي ملف الشواهد", "ابغى ملف الشواهد",
     "اريد الملف", "اريد اصدر", "اريد تصدير",
     # فعل + ملف
-    "طلع الملف", "جهز الملف", "ارسل الملف",
+    "طلع الملف", "اطلع الملف", "اطلع لي الملف",
+    "جهز الملف", "جهز لي الملف", "ارسل الملف",
     "ارسل ملف الشواهد", "ارسلي الملف",
     "حمل الملف", "اخرج الملف", "ابعث الملف",
     "اعطني الرابط", "اعطني الملف",
+    "انشئ الملف", "انشي الملف", "انشئ لي الملف", "انشي لي الملف",
+    "اعمل الملف", "اعمل لي الملف", "سو الملف", "سو لي الملف",
     # خلاص / تمام + صدر
     "خلاص صدر", "تمام صدر", "جاهز صدر",
     "انتهينا صدر", "لا تراجع صدر",
@@ -140,6 +143,21 @@ def is_export_command(text: str | None) -> bool:
         if sub in normalized:
             return True
     return False
+
+
+# Deterministic, single-token export commands that MUST short-circuit
+# the GPT router. These are the bare verbs the teacher reaches for
+# without thinking — "صدر" / "تصدير" / "اصدر" — where GPT, without
+# domain context, would naturally reply "ما الذي تقصده؟". In a
+# teacher-portfolio bot they always mean "export my portfolio".
+#
+# The list is intentionally narrow: only commands whose normalised form
+# is unambiguous in any reasonable conversation. Multi-word phrases
+# already match through ``is_export_command`` further down.
+_EXPORT_BARE_COMMANDS: frozenset[str] = frozenset({
+    "صدر", "اصدر", "تصدير", "اصدار",
+    "صدر الان", "اصدر الان", "تصدير الان",
+})
 
 
 def _is_positive_confirmation(text: str | None) -> bool:
@@ -508,6 +526,91 @@ async def _send_welcome_message(phone: str, teacher_id: int) -> None:
         logger.info("[ONBOARDING] short welcome sent teacher_id=%d", teacher_id)
     except Exception as exc:
         logger.warning("[ONBOARDING] failed teacher_id=%d: %s", teacher_id, exc)
+
+
+# ─── Pre-export choice card: shared helper ───────────────────────────────────
+#
+# Both the high-priority deterministic short-circuit (run BEFORE the
+# GPT router) and the legacy ``is_export_command`` block call this so
+# the behaviour stays identical regardless of which path detects the
+# intent. Returns the response dict the webhook should ``return``.
+
+async def _run_pre_export_choice_flow(
+    *,
+    teacher,
+    db: Session,
+    background_tasks: BackgroundTasks,
+    sub_active: bool,
+    text: str | None,
+    via: str,
+) -> dict:
+    """Show the مراجعة الملف / تصدير الآن 2-button card.
+
+    ``via`` goes into log lines so we can tell whether the trigger was
+    a single-word bare command, the substring matcher, or the GPT
+    router (kept here as a single source of truth).
+    """
+    if teacher.id in _AWAITING_EXPORT_CHOICE:
+        logger.info(
+            "[EXPORT LOOP_PREVENTED] teacher_id=%d "
+            "msg=%r already_awaiting=True via=%s",
+            teacher.id, (text or "")[:40], via,
+        )
+        return {
+            "ok": True, "teacher_id": teacher.id,
+            "intent": "pre_export_choice_already_pending",
+        }
+
+    if not sub_active:
+        try:
+            payment_url = await _create_moyasar_link(
+                db, teacher.id, teacher.name or "", teacher.phone or "",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Moyasar invoice creation failed: %s", exc)
+            payment_url = get_payment_link(teacher.id)
+        background_tasks.add_task(
+            send_whatsapp_message,
+            teacher.phone,
+            build_payment_link_message(payment_url, teacher.name or ""),
+            teacher_id=teacher.id,
+            context="payment_link",
+        )
+        return {
+            "ok": False, "teacher_id": teacher.id,
+            "reason": "subscription_required",
+        }
+
+    from app.services.teachers import get_or_create_review_token
+    review_token = get_or_create_review_token(db, teacher)
+    review_url = f"{settings.effective_base_url}/review/{review_token}"
+
+    warning = wa_integration.make_pre_export_warning(
+        get_teacher_evidences(db, teacher.id),
+        teacher_id=teacher.id,
+        teacher_name=teacher.name,
+        base_url=settings.effective_base_url,
+    )
+    if warning:
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone, warning,
+            teacher_id=teacher.id, context="pre_export_warning",
+        )
+
+    _AWAITING_EXPORT_CHOICE.add(teacher.id)
+    logger.info(
+        "[EXPORT DECISION PROMPTED] teacher_id=%d via=%s",
+        teacher.id, via,
+    )
+    background_tasks.add_task(
+        send_pre_export_choice_buttons,
+        teacher.phone, review_url, teacher_id=teacher.id,
+    )
+    return {
+        "ok": True, "teacher_id": teacher.id,
+        "intent": "pre_export_choice_offered",
+        "via": via,
+    }
 
 
 # ─── Phase-13: GPT-First Router dispatcher ────────────────────────────────────
@@ -1186,6 +1289,39 @@ async def whatsapp_webhook(
             "via": "button",
         }
 
+    # ── High-priority deterministic export-intent short-circuit ──────────────
+    # GPT, given a single bare word like "صدر", will reasonably ask
+    # "ما الذي تقصده؟" — but in a teacher-portfolio bot that word
+    # *always* means "export my portfolio". We must therefore detect
+    # export intent BEFORE the GPT router runs, otherwise the teacher
+    # gets stuck on a clarification loop.
+    #
+    # Two paths:
+    #   1. Bare single-token export commands ("صدر", "تصدير", …) —
+    #      checked against ``_EXPORT_BARE_COMMANDS`` after Arabic
+    #      normalisation.
+    #   2. Multi-word phrases like "أرسل الملف" / "جهز الملف" — caught
+    #      by ``is_export_command`` (which already handles diacritics,
+    #      hamza variants, and shadda).
+    if text and not media_id:
+        _is_bare_export = _normalized_text in _EXPORT_BARE_COMMANDS
+        if _is_bare_export or is_export_command(text):
+            logger.info(
+                "[EXPORT INTENT DETECTED] teacher_id=%d msg=%r "
+                "via=%s pre_router=True",
+                teacher.id, (text or "")[:40],
+                "bare_command" if _is_bare_export else "phrase",
+            )
+            _resp = await _run_pre_export_choice_flow(
+                teacher=teacher, db=db,
+                background_tasks=background_tasks,
+                sub_active=sub_active,
+                text=text,
+                via="pre_router_bare" if _is_bare_export else "pre_router_phrase",
+            )
+            db.commit()
+            return _resp
+
     # ── Phase-13: GPT-First Router (text-only path) ──────────────────────────
     # GPT decides ONE action for plain-text messages BEFORE any save/dispatch.
     # The router handles chat_reply / ask_clarification / delete_or_edit /
@@ -1404,60 +1540,16 @@ async def whatsapp_webhook(
 
     # ── Direct export shortcut: show 2-button choice card ────────────────────
     # Catches any Arabic export variant: صدر / اصدر / ارسل الملف / خلاص صدر …
+    # Now a thin backstop — the high-priority short-circuit above already
+    # caught most cases, but we keep this so legacy flows that bypass
+    # the router (e.g. some downstream rewrites) still work.
     if is_export_command(text) and not media_id:
-        if teacher.id in _AWAITING_EXPORT_CHOICE:
-            # Already waiting for their مراجعة/تصدير choice — don't send another card.
-            logger.info(
-                "[EXPORT LOOP_PREVENTED] teacher_id=%d "
-                "msg=%r already_awaiting=True",
-                teacher.id, (text or "")[:40],
-            )
-            return {"ok": True, "teacher_id": teacher.id, "intent": "pre_export_choice_already_pending"}
-        if not sub_active:
-            try:
-                payment_url = await _create_moyasar_link(
-                    db, teacher.id, teacher.name or "", teacher.phone or ""
-                )
-            except Exception as exc:
-                logger.error("Moyasar invoice creation failed: %s", exc)
-                payment_url = get_payment_link(teacher.id)
-            background_tasks.add_task(
-                send_whatsapp_message,
-                teacher.phone,
-                build_payment_link_message(payment_url, teacher.name or ""),
-                teacher_id=teacher.id,
-                context="payment_link",
-            )
-            return {"ok": False, "teacher_id": teacher.id, "reason": "subscription_required"}
-
-        from app.services.teachers import get_or_create_review_token
-        _review_token = get_or_create_review_token(db, teacher)
-        _review_url   = f"{settings.effective_base_url}/review/{_review_token}"
-        # Phase-6: send a smart warning if there are duplicates / low-confidence items
-        # before showing the مراجعة / تصدير 2-button card.
-        _export_warning = wa_integration.make_pre_export_warning(
-            get_teacher_evidences(db, teacher.id),
-            teacher_id=teacher.id,
-            teacher_name=teacher.name,
-            base_url=settings.effective_base_url,
+        return await _run_pre_export_choice_flow(
+            teacher=teacher, db=db,
+            background_tasks=background_tasks,
+            sub_active=sub_active,
+            text=text, via="legacy_export_phrase",
         )
-        if _export_warning:
-            background_tasks.add_task(
-                send_whatsapp_message, teacher.phone, _export_warning,
-                teacher_id=teacher.id, context="pre_export_warning",
-            )
-        _AWAITING_EXPORT_CHOICE.add(teacher.id)
-        logger.info(
-            "[EXPORT DECISION PROMPTED] teacher_id=%d via=text",
-            teacher.id,
-        )
-        background_tasks.add_task(
-            send_pre_export_choice_buttons,
-            teacher.phone,
-            _review_url,
-            teacher_id=teacher.id,
-        )
-        return {"ok": True, "teacher_id": teacher.id, "intent": "pre_export_choice_offered"}
 
     # ── Export mode selection shortcut ────────────────────────────────────────
     # After the user is asked "كيف تحب ملفك؟", their next message may be "1/2/3/كامل/ذكي".
