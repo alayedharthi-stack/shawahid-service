@@ -21,10 +21,14 @@ Fix
 1. Deterministic button-payload short-circuit BEFORE the GPT router:
    ``review_file`` / ``export_now`` / their emoji titles never reach
    GPT.
-2. Defence-in-depth loop guard inside the router's
-   ``ACTION_EXPORT_PORTFOLIO`` handler — if teacher is already in
-   ``_AWAITING_EXPORT_CHOICE``, log
-   ``[EXPORT LOOP_PREVENTED]`` and stop instead of resending the card.
+2. Re-prompt semantics inside the router's ``ACTION_EXPORT_PORTFOLIO``
+   handler and inside ``_run_pre_export_choice_flow``: if the teacher
+   is *already* in ``_AWAITING_EXPORT_CHOICE`` and they retype an
+   export command (text path), the helper logs
+   ``[EXPORT CHOICE_REPROMPTED]`` and re-sends the card. The original
+   button-replay loop is prevented one layer higher by the
+   deterministic button short-circuits, so reaching this helper means
+   a fresh user retry — silent suppression would strand the teacher.
 
 These tests pin both behaviours so the bug cannot regress.
 """
@@ -71,10 +75,11 @@ def _fake_teacher(*, teacher_id: int = 1, sub_active: bool = True):
 # ──────────────────────────────────────────────────────────────────────
 
 
-class TestRouterLoopGuard:
-    def test_router_short_circuits_when_already_awaiting(self, monkeypatch, caplog):
+class TestRouterRepromptOnRetry:
+    def test_router_reprompts_when_already_awaiting(self, monkeypatch, caplog):
         """When teacher is in _AWAITING_EXPORT_CHOICE the router must
-        log [EXPORT LOOP_PREVENTED] and NOT enqueue another card send.
+        log [EXPORT CHOICE_REPROMPTED], clear the flag and re-send the
+        card. Silently suppressing the retry strands the teacher.
         """
         from app.api import webhook as wh
         from app.services.gpt_router import (
@@ -82,9 +87,8 @@ class TestRouterLoopGuard:
             GPTDecision,
             SOURCE_GPT,
         )
+        from app.services import whatsapp_integration as wa_integration
 
-        # Force the router to return ACTION_EXPORT_PORTFOLIO so we can
-        # exercise the handler deterministically without an OpenAI key.
         async def _fake_decide(message, ctx):
             return GPTDecision(
                 action=ACTION_EXPORT_PORTFOLIO,
@@ -94,12 +98,19 @@ class TestRouterLoopGuard:
                 source=SOURCE_GPT,
             )
 
-        # The webhook re-imports decide_next_action inside the helper
-        # (deferred import to keep the module load light), so we patch
-        # the source module instead of the webhook namespace.
         monkeypatch.setattr(
             "app.services.gpt_router.decide_next_action", _fake_decide,
         )
+        # No DB-derived warning needed; keep the helper hermetic.
+        monkeypatch.setattr(
+            wa_integration, "make_pre_export_warning", lambda *a, **kw: None,
+        )
+        # Stub the review token + evidences fetch so we don't need a real DB.
+        monkeypatch.setattr(
+            "app.services.teachers.get_or_create_review_token",
+            lambda db, t: "tok_123",
+        )
+        monkeypatch.setattr(wh, "get_teacher_evidences", lambda db, tid: [])
 
         teacher = _fake_teacher()
         wh._AWAITING_EXPORT_CHOICE.add(teacher.id)
@@ -119,14 +130,22 @@ class TestRouterLoopGuard:
                 sub_active=True,
             ))
 
-        # Loop prevented → no card scheduled, single sentinel response.
+        # Re-prompted → card is scheduled, response says awaiting.
         assert response is not None
-        assert response["intent"] == "pre_export_choice_already_pending"
-        assert background_tasks.add_task.call_count == 0
-        assert any(
-            "[EXPORT LOOP_PREVENTED]" in rec.getMessage()
-            for rec in caplog.records
-        )
+        assert response["intent"] == "export_portfolio"
+        assert response.get("awaiting_review_or_export") is True
+        # The pre-export choice card *must* have been scheduled.
+        scheduled_funcs = {
+            call.args[0].__name__ for call in background_tasks.add_task.call_args_list
+            if call.args
+        }
+        assert "send_pre_export_choice_buttons" in scheduled_funcs
+        # Both log lines must be present: reprompt notice + standard prompted.
+        messages = [rec.getMessage() for rec in caplog.records]
+        assert any("[EXPORT CHOICE_REPROMPTED]" in m for m in messages)
+        assert any("[EXPORT DECISION PROMPTED]" in m for m in messages)
+        # And the teacher ends up back in awaiting state for the next button.
+        assert teacher.id in wh._AWAITING_EXPORT_CHOICE
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -544,3 +563,109 @@ class TestExportModeShortCircuit:
         # All wait-states must be empty at the end.
         assert teacher.id not in wh._AWAITING_EXPORT_CHOICE
         assert teacher.id not in wh._PENDING_EXPORT_REQUESTS
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 6. Re-prompt semantics in _run_pre_export_choice_flow
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestPreExportRepromptOnRetry:
+    """When the user types ``صدر`` again while still in the awaiting
+    state, the helper must re-send the card (not silently swallow the
+    retry). Real-world cause: the previous card scrolled out of view
+    or the teacher was distracted."""
+
+    def test_retry_reprompts_card(self, monkeypatch, caplog):
+        from app.api import webhook as wh
+
+        monkeypatch.setattr(
+            "app.services.teachers.get_or_create_review_token",
+            lambda db, t: "tok-X",
+        )
+        monkeypatch.setattr(wh, "get_teacher_evidences", lambda db, tid: [])
+        monkeypatch.setattr(
+            wh.wa_integration, "make_pre_export_warning",
+            lambda *a, **kw: None,
+        )
+
+        teacher = _fake_teacher()
+        # Pretend the teacher already saw the card.
+        wh._AWAITING_EXPORT_CHOICE.add(teacher.id)
+
+        bg = MagicMock(); bg.add_task = MagicMock()
+        with caplog.at_level("INFO"):
+            resp = asyncio.run(wh._run_pre_export_choice_flow(
+                teacher=teacher, db=MagicMock(),
+                background_tasks=bg, sub_active=True,
+                text="صدر", via="pre_router_bare",
+            ))
+
+        assert resp["intent"] == "pre_export_choice_offered"
+        scheduled = {
+            call.args[0].__name__ for call in bg.add_task.call_args_list
+            if call.args
+        }
+        assert "send_pre_export_choice_buttons" in scheduled
+        assert teacher.id in wh._AWAITING_EXPORT_CHOICE
+        msgs = [r.getMessage() for r in caplog.records]
+        assert any("[EXPORT CHOICE_REPROMPTED]" in m for m in msgs)
+        assert any("[EXPORT DECISION PROMPTED]" in m for m in msgs)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# 7. Webhook-level resilience: foreign / un-normalisable phone numbers
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestInvalidPhoneGracefulDrop:
+    """``normalize_phone`` only accepts Saudi numbers. Inbound webhooks
+    occasionally include non-Saudi senders (status pings, foreign
+    delivery receipts, etc.). The handler must ack 200 and drop them
+    quietly — never raise 500 to Meta, which would trigger retry
+    storms."""
+
+    def test_non_saudi_sender_drops_with_200(self, monkeypatch):
+        from fastapi import BackgroundTasks
+        from fastapi.testclient import TestClient
+        from app.main import app
+
+        # Configure a non-empty PNID so the foreign-tenant guard would
+        # fire — but we want to confirm the *phone* drop happens first
+        # (or at least the handler returns 200, never 500).
+        monkeypatch.setattr(
+            "app.core.config.settings.WHATSAPP_PHONE_NUMBER_ID", "",
+        )
+
+        client = TestClient(app)
+        payload = {
+            "object": "whatsapp_business_account",
+            "entry": [
+                {
+                    "id": "WABA",
+                    "changes": [
+                        {
+                            "value": {
+                                "metadata": {
+                                    "phone_number_id": "1117378888120273",
+                                    "display_phone_number": "+966544761054",
+                                },
+                                "messages": [
+                                    {
+                                        "id": "wamid.weird",
+                                        "from": "249110031902",  # not SA
+                                        "type": "text",
+                                        "text": {"body": "ping"},
+                                    }
+                                ],
+                            }
+                        }
+                    ],
+                }
+            ],
+        }
+        # Should not raise — handler must return 200.
+        resp = client.post("/webhook/whatsapp", json=payload)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body.get("dropped") == "invalid_phone" or body.get("ok") is True

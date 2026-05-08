@@ -677,17 +677,25 @@ async def _run_pre_export_choice_flow(
     ``via`` goes into log lines so we can tell whether the trigger was
     a single-word bare command, the substring matcher, or the GPT
     router (kept here as a single source of truth).
+
+    Re-prompt semantics
+    -------------------
+    Reaching this helper means the user *intentionally* re-typed an
+    export command (button presses for the card are handled higher up
+    by deterministic short-circuits and never call this helper). If
+    the teacher is already in ``_AWAITING_EXPORT_CHOICE``, that almost
+    always means they didn't see the previous card or it scrolled
+    away — silently swallowing the retry leaves them stranded. We log
+    ``[EXPORT CHOICE_REPROMPTED]`` and re-send the card instead.
     """
     if teacher.id in _AWAITING_EXPORT_CHOICE:
         logger.info(
-            "[EXPORT LOOP_PREVENTED] teacher_id=%d "
+            "[EXPORT CHOICE_REPROMPTED] teacher_id=%d "
             "msg=%r already_awaiting=True via=%s",
             teacher.id, (text or "")[:40], via,
         )
-        return {
-            "ok": True, "teacher_id": teacher.id,
-            "intent": "pre_export_choice_already_pending",
-        }
+        # Clear and fall through; the helper will re-add it below.
+        _AWAITING_EXPORT_CHOICE.discard(teacher.id)
 
     if not sub_active:
         try:
@@ -1002,23 +1010,18 @@ async def _route_via_gpt_router(
 
     # ── Export portfolio: same shortcut as is_export_command ──────────────
     if decision.action == ACTION_EXPORT_PORTFOLIO:
-        # Loop guard: if the teacher is *already* in the مراجعة/تصدير
-        # awaiting state, do NOT re-send the same card. This shields us
-        # from any case where GPT misclassifies a button-id like
-        # "export_now" as another export request (the deterministic
-        # button short-circuit higher up should already have caught it,
-        # this is just defence-in-depth).
+        # Re-prompt (not block) when teacher is already in the
+        # مراجعة/تصدير awaiting state. The deterministic button
+        # short-circuits higher up handle button-id replays, so any
+        # path that reaches here is a fresh user-typed export
+        # request — re-sending the card is what the user expects.
         if teacher.id in _AWAITING_EXPORT_CHOICE:
             logger.info(
-                "[EXPORT LOOP_PREVENTED] teacher_id=%d "
-                "msg=%r already_awaiting=True",
+                "[EXPORT CHOICE_REPROMPTED] teacher_id=%d "
+                "msg=%r already_awaiting=True via=router",
                 teacher.id, (message or "")[:40],
             )
-            return decision, {
-                "ok": True, "teacher_id": teacher.id,
-                "intent": "pre_export_choice_already_pending",
-                "router_action": decision.action,
-            }
+            _AWAITING_EXPORT_CHOICE.discard(teacher.id)
 
         if not sub_active:
             try:
@@ -1233,7 +1236,22 @@ async def whatsapp_webhook(
     if parsed is None:
         return {"ok": True, "skipped": True}
 
-    from_phone: str = normalize_phone(parsed["from_phone"])
+    # Some inbound webhooks come from non-Saudi senders (status pings,
+    # forwarded calls, foreign delivery receipts, etc.). The Saudi
+    # normalizer raises on those — turn that into a quiet 200 OK drop
+    # so the whole handler doesn't return 500 to Meta and trigger
+    # retry storms. The original raw phone is logged for diagnostics.
+    raw_from_phone = parsed.get("from_phone") or ""
+    try:
+        from_phone: str = normalize_phone(raw_from_phone)
+    except (ValueError, TypeError) as exc:
+        logger.warning(
+            "[WA INBOUND DROPPED] reason=invalid_phone raw=%r incoming_pnid=%s detail=%s",
+            raw_from_phone[:32],
+            parsed.get("phone_number_id"),
+            str(exc)[:120],
+        )
+        return {"ok": True, "dropped": "invalid_phone"}
     msg_type:   str        = parsed.get("msg_type") or "text"
     text:       str | None = parsed.get("text")
     media_id:   str | None = parsed.get("media_id")
