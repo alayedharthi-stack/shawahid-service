@@ -771,6 +771,24 @@ async def _route_via_gpt_router(
 
     # ── Export portfolio: same shortcut as is_export_command ──────────────
     if decision.action == ACTION_EXPORT_PORTFOLIO:
+        # Loop guard: if the teacher is *already* in the مراجعة/تصدير
+        # awaiting state, do NOT re-send the same card. This shields us
+        # from any case where GPT misclassifies a button-id like
+        # "export_now" as another export request (the deterministic
+        # button short-circuit higher up should already have caught it,
+        # this is just defence-in-depth).
+        if teacher.id in _AWAITING_EXPORT_CHOICE:
+            logger.info(
+                "[EXPORT LOOP_PREVENTED] teacher_id=%d "
+                "msg=%r already_awaiting=True",
+                teacher.id, (message or "")[:40],
+            )
+            return decision, {
+                "ok": True, "teacher_id": teacher.id,
+                "intent": "pre_export_choice_already_pending",
+                "router_action": decision.action,
+            }
+
         if not sub_active:
             try:
                 payment_url = await _create_moyasar_link(
@@ -805,6 +823,9 @@ async def _route_via_gpt_router(
                 teacher_id=teacher.id, context="pre_export_warning",
             )
         _AWAITING_EXPORT_CHOICE.add(teacher.id)
+        logger.info(
+            "[EXPORT DECISION PROMPTED] teacher_id=%d via=router", teacher.id,
+        )
         background_tasks.add_task(
             send_pre_export_choice_buttons,
             teacher.phone, review_url, teacher_id=teacher.id,
@@ -1084,6 +1105,87 @@ async def whatsapp_webhook(
     # ── Pre-export button replies: مراجعة الملف / تصدير الآن ─────────────────
     _normalized_text = _normalize_arabic(text or "")
 
+    # ── Deterministic button-payload short-circuit (MUST run before the
+    # GPT router). When the teacher taps an interactive WhatsApp button,
+    # the parser stores ``interactive.button_reply.id`` in ``text`` (e.g.
+    # "export_now", "review_file", "export_full"). These IDs must NEVER
+    # be classified by GPT — otherwise GPT sees "export_now" and routes
+    # the user back to the export-portfolio handler, which re-sends the
+    # same مراجعة/تصدير card → infinite loop.
+    #
+    # We handle the two pre-export buttons here directly. The export-mode
+    # buttons (export_full / export_smart / export_short) are caught by
+    # ``_parse_export_mode`` further down — that path is already loop-safe.
+    _BUTTON_REVIEW_FILE = {"review_file", "🔍 مراجعه الملف", "🔍 مراجعة الملف"}
+    _BUTTON_EXPORT_NOW = {"export_now", "📤 تصدير الان", "📤 تصدير الآن"}
+
+    if text and not media_id and _normalized_text in _BUTTON_REVIEW_FILE:
+        _AWAITING_EXPORT_CHOICE.discard(teacher.id)
+        logger.info(
+            "[EXPORT DECISION_SELECTED] teacher_id=%d action=review_file",
+            teacher.id,
+        )
+        from app.services.teachers import get_or_create_review_token
+        _rt = get_or_create_review_token(db, teacher)
+        _rv = f"{settings.effective_base_url}/review/{_rt}"
+        _all_evidences = get_teacher_evidences(db, teacher.id)
+        _review_reply = wa_integration.make_review_link_reply(
+            _all_evidences,
+            teacher_id=teacher.id,
+            teacher_name=teacher.name,
+            base_url=settings.effective_base_url,
+            review_url=_rv,
+        )
+        background_tasks.add_task(
+            send_whatsapp_message, teacher.phone, _review_reply,
+            teacher_id=teacher.id, context="review_link_sent",
+        )
+        db.commit()
+        return {
+            "ok": True, "teacher_id": teacher.id,
+            "intent": "review_requested", "via": "button",
+        }
+
+    if text and not media_id and _normalized_text in _BUTTON_EXPORT_NOW:
+        _AWAITING_EXPORT_CHOICE.discard(teacher.id)
+        logger.info(
+            "[EXPORT DECISION_SELECTED] teacher_id=%d action=export_now",
+            teacher.id,
+        )
+        if not sub_active:
+            try:
+                payment_url = await _create_moyasar_link(
+                    db, teacher.id, teacher.name or "", teacher.phone or "",
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Moyasar invoice creation failed: %s", exc)
+                payment_url = get_payment_link(teacher.id)
+            background_tasks.add_task(
+                send_whatsapp_message, teacher.phone,
+                build_payment_link_message(payment_url, teacher.name or ""),
+                teacher_id=teacher.id, context="payment_link",
+            )
+            db.commit()
+            return {
+                "ok": False, "teacher_id": teacher.id,
+                "reason": "subscription_required",
+            }
+        _PENDING_EXPORT_REQUESTS.add(teacher.id)
+        logger.info(
+            "[EXPORT MODE_PROMPTED] teacher_id=%d via=button", teacher.id,
+        )
+        background_tasks.add_task(
+            send_export_options_buttons,
+            teacher.phone, teacher_id=teacher.id,
+        )
+        db.commit()
+        return {
+            "ok": True, "teacher_id": teacher.id,
+            "intent": "export_mode_offered",
+            "awaiting_export_mode": True,
+            "via": "button",
+        }
+
     # ── Phase-13: GPT-First Router (text-only path) ──────────────────────────
     # GPT decides ONE action for plain-text messages BEFORE any save/dispatch.
     # The router handles chat_reply / ask_clarification / delete_or_edit /
@@ -1268,7 +1370,11 @@ async def whatsapp_webhook(
     )
     if _is_export_now and not media_id:
         _AWAITING_EXPORT_CHOICE.discard(teacher.id)
-        logger.info("[EXPORT NOW SELECTED] teacher_id=%d", teacher.id)
+        logger.info(
+            "[EXPORT DECISION_SELECTED] teacher_id=%d "
+            "action=export_now via=text",
+            teacher.id,
+        )
         if not sub_active:
             try:
                 payment_url = await _create_moyasar_link(
@@ -1286,6 +1392,9 @@ async def whatsapp_webhook(
             )
             return {"ok": False, "teacher_id": teacher.id, "reason": "subscription_required"}
         _PENDING_EXPORT_REQUESTS.add(teacher.id)
+        logger.info(
+            "[EXPORT MODE_PROMPTED] teacher_id=%d via=text", teacher.id,
+        )
         background_tasks.add_task(
             send_export_options_buttons,
             teacher.phone,
@@ -1298,6 +1407,11 @@ async def whatsapp_webhook(
     if is_export_command(text) and not media_id:
         if teacher.id in _AWAITING_EXPORT_CHOICE:
             # Already waiting for their مراجعة/تصدير choice — don't send another card.
+            logger.info(
+                "[EXPORT LOOP_PREVENTED] teacher_id=%d "
+                "msg=%r already_awaiting=True",
+                teacher.id, (text or "")[:40],
+            )
             return {"ok": True, "teacher_id": teacher.id, "intent": "pre_export_choice_already_pending"}
         if not sub_active:
             try:
@@ -1333,6 +1447,10 @@ async def whatsapp_webhook(
                 teacher_id=teacher.id, context="pre_export_warning",
             )
         _AWAITING_EXPORT_CHOICE.add(teacher.id)
+        logger.info(
+            "[EXPORT DECISION PROMPTED] teacher_id=%d via=text",
+            teacher.id,
+        )
         background_tasks.add_task(
             send_pre_export_choice_buttons,
             teacher.phone,
