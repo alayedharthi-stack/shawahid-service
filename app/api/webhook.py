@@ -21,6 +21,10 @@ from app.db.base import get_db
 from app.services.teachers import get_or_create_teacher, get_teacher_by_id, update_teacher
 from app.services.evidences import create_evidence, get_teacher_evidences, set_enrichment_teacher_context, verify_evidence_in_export
 from app.services.storage import download_and_save, detect_evidence_type, extract_urls, extract_pdf_text, extract_pdf_smart, generate_pdf_preview
+from app.services.pdf_kind_classifier import classify_pdf_kind
+from app.services import exam_rewrite_messages as _exam_rewrite_msgs
+from app.conversation_engine import exam_rewrite_choice as _exam_choice
+from app.exam_rewrite import analyze_exam_pdf as _analyze_exam_pdf
 from app.services.deduplication import (
     is_exact_duplicate, find_near_duplicate_text,
     hash_text, hash_url,
@@ -1205,6 +1209,234 @@ def _infer_pdf_category_from_name(filename: str) -> str:
     return "ملف إداري"
 
 
+def _handle_exam_choice_save(
+    *,
+    db: Session,
+    teacher,
+    background_tasks: BackgroundTasks,
+) -> None:
+    """Resume the evidence-save path for a teacher who chose option 1.
+
+    Phase 2 contract: keep the existing save path semantics — we still
+    persist a real ``Evidence`` row via ``create_evidence``, hash for
+    deduplication and confirm with the teacher. The only difference
+    vs. the GPT-driven path is that we already know the file is an
+    exam / worksheet, so the category/title come from the classifier
+    output instead of a second GPT round-trip.
+
+    Errors here NEVER escape: any failure becomes a polite WhatsApp
+    apology message — the teacher already saw the choice prompt and
+    we owe them a definitive reply.
+    """
+    pending = _exam_choice.get_pending(teacher.id)
+    if pending is None:
+        # State expired between has_pending and get_pending — race.
+        logger.info(
+            "[EXAM CHOICE → SAVE] teacher_id=%d aborted — state expired",
+            teacher.id,
+        )
+        background_tasks.add_task(
+            send_whatsapp_message,
+            teacher.phone,
+            "انتهت مهلة الانتظار. أرسل الملف مرة أخرى من فضلك.",
+            teacher_id=teacher.id,
+            context="exam_choice_expired",
+        )
+        return
+
+    _exam_choice.clear_pending(teacher.id)
+    logger.info(
+        "[EXAM CHOICE → SAVE] teacher_id=%d detected_type=%s conf=%.2f",
+        teacher.id, pending.detected_type, pending.confidence,
+    )
+
+    category = _exam_rewrite_msgs.category_from_detected_type(pending.detected_type)
+    title = _exam_rewrite_msgs.title_from_filename(
+        pending.file_name or pending.safe_filename,
+        fallback=category,
+    )
+    snippet = (pending.first_lines or pending.extracted_text or "").strip()
+    description = (
+        snippet[:300]
+        if snippet
+        else f"{category} تم حفظه كشاهد بطلب المعلم."
+    )
+
+    # Honour the existing media deduplication rules (same source of
+    # truth as the normal PDF save path).
+    if pending.media_hash and is_exact_duplicate(db, teacher.id, pending.media_hash):
+        logger.info(
+            "[EXAM CHOICE → SAVE] duplicate teacher_id=%d hash=%s",
+            teacher.id, (pending.media_hash or "")[:12],
+        )
+        _dup_ev = get_evidence_by_hash(db, teacher.id, pending.media_hash)
+        dup_reply = wa_integration.make_save_reply(
+            ev_type="pdf",
+            category=(_dup_ev.category if _dup_ev else category),
+            title=(_dup_ev.title if _dup_ev else title),
+            is_duplicate=True,
+        )
+        background_tasks.add_task(
+            send_whatsapp_message,
+            teacher.phone,
+            dup_reply,
+            teacher_id=teacher.id,
+            context="exam_choice_save_duplicate",
+        )
+        return
+
+    set_enrichment_teacher_context(
+        name=teacher.name,
+        subject=teacher.subject,
+        stage=teacher.stage,
+        grades=teacher.grades,
+        school_name=teacher.school_name,
+    )
+
+    try:
+        evidence = create_evidence(
+            db=db,
+            teacher_id=teacher.id,
+            source_phone=teacher.phone,
+            evidence_type="pdf",
+            message_text=None,
+            media_url=pending.media_url,
+            storage_path=pending.storage_path,
+            file_name=pending.safe_filename or pending.file_name,
+            mime_type=pending.mime_type or "application/pdf",
+            category=category,
+            title=title,
+            description=description,
+            content_hash=pending.media_hash,
+            ai_status="completed",
+            ai_raw={
+                "source": "exam_rewrite_choice",
+                "detected_type": pending.detected_type,
+                "confidence_score": pending.confidence,
+                "classifier_reason": pending.classifier_reason,
+            },
+        )
+    except Exception as save_exc:
+        logger.error(
+            "[EXAM CHOICE → SAVE FAILED] teacher_id=%d err=%s",
+            teacher.id, save_exc, exc_info=True,
+        )
+        background_tasks.add_task(
+            send_whatsapp_message,
+            teacher.phone,
+            "تعذّر حفظ الملف الآن. حاول مرة أخرى من فضلك.",
+            teacher_id=teacher.id,
+            context="exam_choice_save_failed",
+        )
+        return
+
+    if pending.storage_path:
+        background_tasks.add_task(generate_pdf_preview, pending.storage_path)
+
+    reply = wa_integration.make_save_reply(
+        ev_type="pdf",
+        category=category,
+        title=title,
+        confidence=pending.confidence,
+        ai_raw={"confidence_score": pending.confidence},
+    )
+    background_tasks.add_task(
+        send_whatsapp_message,
+        teacher.phone,
+        reply,
+        teacher_id=teacher.id,
+        context="exam_choice_save",
+    )
+    logger.info(
+        "[EXAM CHOICE → SAVED] teacher_id=%d evidence_id=%d category=%r title=%r",
+        teacher.id, evidence.id, category, title,
+    )
+
+
+def _handle_exam_choice_rewrite(
+    *,
+    teacher,
+    background_tasks: BackgroundTasks,
+    storage_path: str | None,
+    extracted_text: str | None,
+    detected_type: str | None,
+    log_context: str,
+) -> None:
+    """Run the Phase-3 exam analysis and reply to the teacher.
+
+    ``storage_path`` is the on-disk PDF, ``extracted_text`` is whatever
+    raw text we already had from Phase 1 (used as a fallback when the
+    PDF can't be re-read — e.g. expired tmp file). The helper never
+    raises: any analysis failure is reported via the failure reply
+    rather than an unhandled exception.
+
+    Phase-3 contract: the analyser produces a structured JSON object
+    only. We DO NOT generate a PDF / HTML, and we DO NOT save anything
+    as evidence here.
+    """
+    try:
+        structured = _analyze_exam_pdf(
+            storage_path=storage_path,
+            detected_type_hint=detected_type,
+            teacher_subject=teacher.subject,
+            teacher_grades=teacher.grades,
+            fallback_text=extracted_text,
+        )
+    except Exception as exc:  # pragma: no cover — defensive only
+        logger.error(
+            "[EXAM REWRITE ANALYSIS FAILED] teacher_id=%d ctx=%s err=%s",
+            teacher.id, log_context, exc, exc_info=True,
+        )
+        background_tasks.add_task(
+            send_whatsapp_message,
+            teacher.phone,
+            _exam_rewrite_msgs.build_rewrite_analysis_failure_message(),
+            teacher_id=teacher.id,
+            context=f"{log_context}_failure",
+        )
+        return
+
+    if structured.is_usable():
+        reply = _exam_rewrite_msgs.build_rewrite_analysis_success_message(
+            structured,
+        )
+        logger.info(
+            "[EXAM REWRITE ANALYSIS] teacher_id=%d ctx=%s subject=%r grade=%r "
+            "type=%s questions=%d warnings=%d → success",
+            teacher.id,
+            log_context,
+            structured.subject,
+            structured.grade,
+            structured.exam_type,
+            structured.total_questions,
+            len(structured.warnings),
+        )
+        background_tasks.add_task(
+            send_whatsapp_message,
+            teacher.phone,
+            reply,
+            teacher_id=teacher.id,
+            context=f"{log_context}_success",
+        )
+        return
+
+    logger.info(
+        "[EXAM REWRITE ANALYSIS] teacher_id=%d ctx=%s — not usable, "
+        "questions=%d warnings=%s",
+        teacher.id,
+        log_context,
+        structured.total_questions,
+        list(structured.warnings),
+    )
+    background_tasks.add_task(
+        send_whatsapp_message,
+        teacher.phone,
+        _exam_rewrite_msgs.build_rewrite_analysis_failure_message(),
+        teacher_id=teacher.id,
+        context=f"{log_context}_failure",
+    )
+
+
 # ─── Main Webhook (POST) ─────────────────────────────────────────────────────
 
 @router.post("/webhook/whatsapp")
@@ -1387,6 +1619,68 @@ async def whatsapp_webhook(
             return {"ok": True, "teacher_id": teacher.id, "intent": "name_rejected"}
         # If neither yes nor no, fall through to normal GPT processing
         # (teacher might be sending new evidence while confirmation is pending)
+
+    # ── Pending exam-rewrite choice (Phase 2) ─────────────────────────────────
+    # When the previous PDF was identified as an exam / worksheet we asked the
+    # teacher "1️⃣ save as evidence  /  2️⃣ rewrite on school template". A text
+    # reply (no media) is the answer to that question, so we must short-circuit
+    # before the GPT router sees it — GPT would otherwise classify "1" as
+    # gibberish and lose context.
+    if (
+        text
+        and not media_id
+        and _exam_choice.has_pending(teacher.id)
+    ):
+        _choice = _exam_choice.parse_exam_choice(text)
+        if _choice == "save":
+            _handle_exam_choice_save(
+                db=db,
+                teacher=teacher,
+                background_tasks=background_tasks,
+            )
+            return {
+                "ok": True,
+                "teacher_id": teacher.id,
+                "intent": "exam_choice_save",
+            }
+        if _choice == "rewrite":
+            pending = _exam_choice.get_pending(teacher.id)
+            _exam_choice.clear_pending(teacher.id)
+            logger.info(
+                "[EXAM CHOICE → REWRITE] teacher_id=%d — running analysis",
+                teacher.id,
+            )
+            _handle_exam_choice_rewrite(
+                teacher=teacher,
+                background_tasks=background_tasks,
+                storage_path=(pending.storage_path if pending else None),
+                extracted_text=(pending.extracted_text if pending else None),
+                detected_type=(pending.detected_type if pending else None),
+                log_context="exam_choice_rewrite",
+            )
+            return {
+                "ok": True,
+                "teacher_id": teacher.id,
+                "intent": "exam_choice_rewrite_analysis",
+            }
+        # Unclear reply — send a short clarification but keep the pending
+        # state so the teacher's next message can still answer the prompt.
+        logger.info(
+            "[EXAM CHOICE → UNCLEAR] teacher_id=%d text=%r",
+            teacher.id, (text or "")[:60],
+        )
+        background_tasks.add_task(
+            send_whatsapp_message,
+            teacher.phone,
+            _exam_rewrite_msgs.build_choice_clarification_message(),
+            teacher_id=teacher.id,
+            context="exam_choice_unclear",
+        )
+        return {
+            "ok": True,
+            "teacher_id": teacher.id,
+            "intent": "exam_choice_unclear",
+        }
 
     # ── Pre-export button replies: مراجعة الملف / تصدير الآن ─────────────────
     _normalized_text = _normalize_arabic(text or "")
@@ -1961,6 +2255,113 @@ async def whatsapp_webhook(
                 _pdf_extract.detected_keywords or "none",
             )
 
+            # ── Phase 2: PDF kind classifier + stash-and-ask gate ────────
+            # When the classifier says this PDF is an exam / worksheet
+            # with high confidence we MUST NOT save it as evidence
+            # automatically. Instead we ask the teacher to choose:
+            #   1️⃣ save as evidence
+            #   2️⃣ rewrite on the school template
+            # When the teacher's caption already explicitly asks to
+            # rewrite, we skip the question and go straight to the
+            # rewrite-pending placeholder (the rewrite engine itself
+            # is being built in later phases).
+            try:
+                _pdf_kind_result = classify_pdf_kind(
+                    extracted_text=_pdf_text,
+                    filename=file_name or safe_filename,
+                    first_lines=_pdf_extract.first_lines,
+                    has_questions=_pdf_extract.has_questions,
+                    has_grades_table=_pdf_extract.has_grades_table,
+                    has_objectives=_pdf_extract.has_objectives,
+                    detected_keywords=_pdf_extract.detected_keywords,
+                )
+                logger.info(
+                    "[PDF KIND CLASSIFIER] teacher_id=%d kind=%s conf=%.2f "
+                    "detected_type=%s reason=%s",
+                    teacher.id,
+                    _pdf_kind_result.get("pdf_kind"),
+                    float(_pdf_kind_result.get("confidence", 0.0)),
+                    _pdf_kind_result.get("detected_type"),
+                    _pdf_kind_result.get("reason"),
+                )
+            except Exception as _cls_exc:
+                logger.warning(
+                    "[PDF KIND CLASSIFIER] teacher_id=%d skipped — error: %s",
+                    teacher.id, _cls_exc,
+                )
+                _pdf_kind_result = None
+
+            if _pdf_kind_result:
+                _kind = _pdf_kind_result.get("pdf_kind")
+                _conf = float(_pdf_kind_result.get("confidence", 0.0))
+                _detected = _pdf_kind_result.get("detected_type")
+                _explicit_rewrite = (
+                    _exam_choice.parse_exam_choice(text or "") == "rewrite"
+                )
+
+                # 1) Strong exam/worksheet signal → ask the teacher.
+                if (
+                    _kind == "exam_or_worksheet"
+                    and _conf >= 0.70
+                    and not _explicit_rewrite
+                ):
+                    _exam_choice.set_pending(
+                        teacher.id,
+                        storage_path=storage_path,
+                        file_name=file_name,
+                        safe_filename=safe_filename,
+                        mime_type=mime_type,
+                        media_url=media_url,
+                        media_id=media_id,
+                        media_hash=media_hash,
+                        detected_type=_detected,
+                        confidence=_conf,
+                        classifier_reason=_pdf_kind_result.get("reason", ""),
+                        extracted_text=_pdf_text,
+                        first_lines=_pdf_extract.first_lines,
+                    )
+                    logger.info(
+                        "[EXAM CHOICE STASHED] teacher_id=%d detected_type=%s conf=%.2f",
+                        teacher.id, _detected, _conf,
+                    )
+                    background_tasks.add_task(
+                        send_whatsapp_message,
+                        teacher.phone,
+                        _exam_rewrite_msgs.build_choice_prompt(),
+                        teacher_id=teacher.id,
+                        context="exam_rewrite_choice_prompt",
+                    )
+                    return {
+                        "ok": True,
+                        "teacher_id": teacher.id,
+                        "intent": "exam_rewrite_choice_pending",
+                    }
+
+                # 2) Teacher already asked explicitly to rewrite this
+                # file in their caption → no question, go straight to
+                # the rewrite analysis path (Phase 3).
+                if _explicit_rewrite:
+                    logger.info(
+                        "[EXAM REWRITE DIRECT] teacher_id=%d kind=%s conf=%.2f "
+                        "— explicit rewrite signal in caption",
+                        teacher.id, _kind, _conf,
+                    )
+                    _handle_exam_choice_rewrite(
+                        teacher=teacher,
+                        background_tasks=background_tasks,
+                        storage_path=storage_path,
+                        extracted_text=_pdf_text,
+                        detected_type=_detected,
+                        log_context="exam_rewrite_direct",
+                    )
+                    return {
+                        "ok": True,
+                        "teacher_id": teacher.id,
+                        "intent": "exam_rewrite_direct_analysis",
+                    }
+                # 3) evidence / unknown without rewrite signal — fall
+                # through to the normal save pipeline unchanged.
+
             # ── Deep document analysis via GPT ───────────────────────────────
             # Run synchronously (we're already inside a background-safe path).
             # This gives us: document_type, category, title, description, keywords.
@@ -2023,6 +2424,103 @@ async def whatsapp_webhook(
                 "[PDF NO TEXT] teacher_id=%d — scanned/empty PDF, using filename hint",
                 teacher.id,
             )
+
+            # ── Phase 2: PDF kind classifier (filename-only path) ────────
+            # Scanned/empty PDFs only carry filename signal. Confidence
+            # is therefore low almost always, so the choice question
+            # will rarely fire — but the explicit-rewrite-in-caption
+            # shortcut still applies.
+            try:
+                _pdf_kind_result = classify_pdf_kind(
+                    extracted_text=None,
+                    filename=file_name or safe_filename,
+                    first_lines=None,
+                    has_questions=False,
+                    has_grades_table=False,
+                    has_objectives=False,
+                    detected_keywords=None,
+                )
+                logger.info(
+                    "[PDF KIND CLASSIFIER] teacher_id=%d kind=%s conf=%.2f "
+                    "detected_type=%s reason=%s (filename-only)",
+                    teacher.id,
+                    _pdf_kind_result.get("pdf_kind"),
+                    float(_pdf_kind_result.get("confidence", 0.0)),
+                    _pdf_kind_result.get("detected_type"),
+                    _pdf_kind_result.get("reason"),
+                )
+            except Exception as _cls_exc:
+                logger.warning(
+                    "[PDF KIND CLASSIFIER] teacher_id=%d skipped — error: %s",
+                    teacher.id, _cls_exc,
+                )
+                _pdf_kind_result = None
+
+            if _pdf_kind_result:
+                _kind = _pdf_kind_result.get("pdf_kind")
+                _conf = float(_pdf_kind_result.get("confidence", 0.0))
+                _detected = _pdf_kind_result.get("detected_type")
+                _explicit_rewrite = (
+                    _exam_choice.parse_exam_choice(text or "") == "rewrite"
+                )
+
+                if (
+                    _kind == "exam_or_worksheet"
+                    and _conf >= 0.70
+                    and not _explicit_rewrite
+                ):
+                    _exam_choice.set_pending(
+                        teacher.id,
+                        storage_path=storage_path,
+                        file_name=file_name,
+                        safe_filename=safe_filename,
+                        mime_type=mime_type,
+                        media_url=media_url,
+                        media_id=media_id,
+                        media_hash=media_hash,
+                        detected_type=_detected,
+                        confidence=_conf,
+                        classifier_reason=_pdf_kind_result.get("reason", ""),
+                        extracted_text=None,
+                        first_lines=None,
+                    )
+                    logger.info(
+                        "[EXAM CHOICE STASHED] teacher_id=%d detected_type=%s conf=%.2f "
+                        "(filename-only)",
+                        teacher.id, _detected, _conf,
+                    )
+                    background_tasks.add_task(
+                        send_whatsapp_message,
+                        teacher.phone,
+                        _exam_rewrite_msgs.build_choice_prompt(),
+                        teacher_id=teacher.id,
+                        context="exam_rewrite_choice_prompt",
+                    )
+                    return {
+                        "ok": True,
+                        "teacher_id": teacher.id,
+                        "intent": "exam_rewrite_choice_pending",
+                    }
+
+                if _explicit_rewrite:
+                    logger.info(
+                        "[EXAM REWRITE DIRECT] teacher_id=%d kind=%s conf=%.2f "
+                        "— explicit rewrite signal in caption (filename-only)",
+                        teacher.id, _kind, _conf,
+                    )
+                    _handle_exam_choice_rewrite(
+                        teacher=teacher,
+                        background_tasks=background_tasks,
+                        storage_path=storage_path,
+                        extracted_text=None,
+                        detected_type=_detected,
+                        log_context="exam_rewrite_direct",
+                    )
+                    return {
+                        "ok": True,
+                        "teacher_id": teacher.id,
+                        "intent": "exam_rewrite_direct_analysis",
+                    }
 
     # ── Transcription failure: notify user before calling GPT ────────────────
     # We do NOT call GPT when we have no content to classify (no text, no transcript,
