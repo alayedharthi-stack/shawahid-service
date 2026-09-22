@@ -1,0 +1,43 @@
+name: Original migration recovery checks
+on:
+  pull_request:
+  push:
+    branches: [codex/restore-original-migration-011]
+permissions:
+  contents: read
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: shawahid_migration_test
+          POSTGRES_USER: synthetic
+          POSTGRES_PASSWORD: synthetic-test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql://synthetic:synthetic-test-only@127.0.0.1:5432/shawahid_migration_test
+      SHAWAHID_MIGRATION_TESTS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Verify original bytes and actual PostgreSQL upgrades
+        run: python -m unittest discover -s tests/migrations -v
+      - name: Verify synthetic backup restoration (not a production backup)
+        env:
+          PGPASSWORD: synthetic-test-only
+        run: |
+          pg_dump -h 127.0.0.1 -U synthetic -Fc shawahid_migration_test > /tmp/synthetic.dump
+          createdb -h 127.0.0.1 -U synthetic shawahid_restore_test
+          pg_restore -h 127.0.0.1 -U synthetic -d shawahid_restore_test --exit-on-error /tmp/synthetic.dump
+          test "$(psql -h 127.0.0.1 -U synthetic -d shawahid_restore_test -Atc 'SELECT version_num FROM alembic_version')" = 011
+          test "$(psql -h 127.0.0.1 -U synthetic -d shawahid_restore_test -Atc 'SELECT count(*) FROM bank_questions')" = 1

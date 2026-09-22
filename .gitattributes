@@ -9,3 +9,5 @@
 *.css text eol=lf
 *.json text eol=lf
 *.mako text eol=lf
+# Preserve recovered production migration byte-for-byte (original uses CRLF).
+alembic/versions/011_teacher_knowledge_question_bank.py -text
