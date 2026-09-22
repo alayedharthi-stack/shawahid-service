@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from app.core.private_storage import PublicStorageFiles
 
 from app.api import webhook, teachers, evidences, admin, downloads, review, media, exam_downloads
 from app.core.config import settings
@@ -25,6 +26,18 @@ async def lifespan(app: FastAPI):
     storage_root = settings.storage_path
     storage_root.mkdir(parents=True, exist_ok=True)
     (storage_root / "teachers").mkdir(exist_ok=True)
+    # Prepare the reserved durable directory while delivery is still disabled.
+    # Never silently fall back to ephemeral storage in production.
+    if settings.WORKSHEET_PILOT_PRIVATE_DIR == str(storage_root / ".worksheet-private"):
+        from app.core.private_storage import worksheet_private_root
+        from app.worksheet_pilot.service import Store
+        private = worksheet_private_root(settings)
+        store = Store(private)
+        marker = private / "storage-probe.txt"
+        marker.write_text("private-storage-probe", encoding="utf-8")
+        with store.db() as db:
+            retained = db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+        logger.info("[WORKSHEET STORAGE] persistent_private_ready=true retained_jobs=%d", retained)
     logger.info(
         "Shawahid service started | env=%s | port=%s | storage=%s",
         settings.APP_ENV,
@@ -73,7 +86,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # level, so we create it here too (idempotent).
 _storage_path = settings.storage_path
 _storage_path.mkdir(parents=True, exist_ok=True)
-app.mount("/files", StaticFiles(directory=str(_storage_path)), name="files")
+app.mount("/files", PublicStorageFiles(directory=str(_storage_path)), name="files")
 
 # ── Routers ────────────────────────────────────────────────────────────────────
 app.include_router(webhook.router)
@@ -96,7 +109,8 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "service": "shawahid-service"}
+    return {"status": "healthy", "service": "shawahid-service",
+            "revision": os.environ.get("RAILWAY_GIT_COMMIT_SHA", "local")}
 
 
 @app.get("/internal/identity")
