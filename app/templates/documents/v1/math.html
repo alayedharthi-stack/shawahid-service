@@ -1,0 +1,3 @@
+{% macro equation(tokens) -%}
+{% if tokens %}<div class="equation" dir="ltr"><math xmlns="http://www.w3.org/1998/Math/MathML" dir="ltr" displaystyle="true"><mrow>{% for token in tokens %}{% if token is mapping %}<mfrac><mi mathvariant="normal">{{ token.numerator }}</mi><mi mathvariant="normal">{{ token.denominator }}</mi></mfrac>{% elif token in ['+', '−', '=', '×', '÷', '<', '>'] %}<mo>{{ token }}</mo>{% else %}<mi mathvariant="normal">{{ token }}</mi>{% endif %}{% endfor %}</mrow></math></div>{% endif %}
+{%- endmacro %}

@@ -1,0 +1,22 @@
+{
+  "exam-answers.pdf": {
+    "pages": 1,
+    "sha256": "44591b2f562a8385a81c96e9d102ace06870dfdcde8c295130b5e1939dd9aeca"
+  },
+  "exam.pdf": {
+    "pages": 2,
+    "sha256": "b22b6bceeaaaae674fce2f5e3e5b0d9c183ddca2d4859d966e742f5fdff543fe"
+  },
+  "weekly-plan.pdf": {
+    "pages": 1,
+    "sha256": "d1d9201108e18302a89443eb11203ed08bae01c22fb82f6544ca6e6fde215059"
+  },
+  "worksheet-answers.pdf": {
+    "pages": 1,
+    "sha256": "65b0ac5bf1ee1eb4b5455692965711ca45445412ff4abd8fbba43f9637025e98"
+  },
+  "worksheet.pdf": {
+    "pages": 1,
+    "sha256": "78573c8d0d42c52db84e807381dafd830c361e636a34688cbf5af39de9b51285"
+  }
+}

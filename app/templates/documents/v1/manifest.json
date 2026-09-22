@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "renderer": "app.document_templates.render_document",
+  "exporter": "app.document_templates.export_pdf",
+  "entry": "template.html",
+  "templates": {
+    "worksheet": {"page": "A4 portrait", "margin_mm": 14, "columns": 2, "marks": "optional; hidden by default"},
+    "exam": {"page": "A4 portrait", "margin_mm": 14, "columns": 1, "marks": "required; total equals item sum"},
+    "weekly_plan": {"page": "A4 landscape", "margin_mm": 14, "columns": 6, "marks": "not applicable"}
+  },
+  "profile_fields": ["teacher", "school", "education_admin", "subject", "grade", "semester", "academic_year", "date", "title", "week", "curriculum_edition"],
+  "required_profile_fields": ["subject", "grade", "title"],
+  "document_fields": ["version", "kind", "profile", "instructions", "attribution", "duration_minutes", "show_marks", "total_marks", "questions", "days"],
+  "question_fields": ["id", "text", "equation", "choices", "answer_lines", "marks", "table", "image"],
+  "math_tokens": "Text tokens and simple numerator/denominator objects; escaped native MathML with LTR isolation",
+  "image_policy": "Inline PNG only; alt and attribution fields required; no source logo; external fetch disabled",
+  "solutions": "Separate question-ID keyed JSON; never supplied to student rendering",
+  "editable_formats": ["JSON source", "Jinja HTML/CSS template", "generated standalone HTML"],
+  "print_format": "PDF",
+  "docx_support": false,
+  "official_approval": false,
+  "default_route_enabled": false
+}

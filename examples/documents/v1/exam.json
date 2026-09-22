@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "kind": "exam",
+  "profile": {
+    "teacher": "تركي عايد الحارثي",
+    "school": "",
+    "education_admin": "",
+    "subject": "الرياضيات",
+    "grade": "السادس الابتدائي",
+    "semester": "",
+    "date": "",
+    "title": "اختبار تدريبي: المعادلات ذات الخطوة الواحدة",
+    "week": "",
+    "curriculum_edition": ""
+  },
+  "instructions": "أجب عن جميع البنود. اكتب خطوات الحل في المساحة المخصصة. مجموع الدرجات ١٠.",
+  "show_marks": true,
+  "attribution": "أسئلة ورسمة أصلية لشواهد",
+  "questions": [
+    {
+      "id": "q1",
+      "text": "أوجد قيمة س.",
+      "equation": [
+        "س",
+        "+",
+        "٨",
+        "=",
+        "١٩"
+      ],
+      "answer_lines": 2,
+      "marks": 1
+    },
+    {
+      "id": "q2",
+      "text": "أوجد قيمة س.",
+      "equation": [
+        "س",
+        "−",
+        "٦",
+        "=",
+        "١٤"
+      ],
+      "answer_lines": 2,
+      "marks": 1
+    },
+    {
+      "id": "q3",
+      "text": "أوجد قيمة س.",
+      "equation": [
+        "٤",
+        "×",
+        "س",
+        "=",
+        "٢٨"
+      ],
+      "answer_lines": 2,
+      "marks": 1
+    },
+    {
+      "id": "q4",
+      "text": "حل المعادلة الآتية.",
+      "equation": [
+        {
+          "numerator": "س",
+          "denominator": "٥"
+        },
+        "=",
+        "٦"
+      ],
+      "answer_lines": 2,
+      "marks": 1
+    },
+    {
+      "id": "q5",
+      "text": "اختر قيمة س التي تحقق المعادلة.",
+      "equation": [
+        "س",
+        "+",
+        "٩",
+        "=",
+        "٢٢"
+      ],
+      "choices": [
+        "١١",
+        "١٢",
+        "١٣",
+        "١٤"
+      ],
+      "answer_lines": 1,
+      "marks": 1
+    },
+    {
+      "id": "q6",
+      "text": "يقول سامي إن العدد ٦ هو حل المعادلة الآتية. هل توافقه؟ فسّر.",
+      "equation": [
+        "٢",
+        "×",
+        "س",
+        "=",
+        "١٨"
+      ],
+      "answer_lines": 3,
+      "marks": 1
+    },
+    {
+      "id": "q7",
+      "text": "أكمل الجدول، ثم حدد قيمة س التي تجعل الناتج ١٢.",
+      "table": {
+        "headers": [
+          "س",
+          "٣",
+          "٥",
+          "٨"
+        ],
+        "rows": [
+          [
+            "س + ٤",
+            "",
+            "",
+            ""
+          ]
+        ]
+      },
+      "answer_lines": 2,
+      "marks": 2
+    },
+    {
+      "id": "q8",
+      "text": "ثلاث علب فيها العدد نفسه من الأقلام، ومجموعها ٢٧ قلمًا. اكتب معادلة ثم أوجد عدد الأقلام في كل علبة.",
+      "image": {
+        "data": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAtAAAAB4CAYAAADbh8U2AAAAAXNSR0IArs4c6QAAD85JREFUeJzt3X9wVWV+x/HP996bHyBRNCEQiGbUAg0SIAZkQVEsONPd0da2s13QabvVarvt7HStdauzO1qVVrtjFevYTndn163tsrZbxx9trZ12le0qP1aTGKKhwIJGowGM/BASzE3uffrHTe5JIJCc5J6cc7nv118898d5vkP43Pnm4bnPkQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgCDZZE9WvX7/CmX3ZnNXKtEBS+WTNXaA+kVObpLaUSz2145lntoddEDzkYdKRhwgjD5OOPAATFHgDveCLXywuThRvkOlOk2JBz4cROJdyct9K9vf/eduPfpQMu5xCRh4igDxEBnmIAPIAjEsi6AmKi4pfM2lZ0PPgDMziJrunuKhojaTlYZdTyMhDBJCHyCAPEUAegHGJB3nxJetv3mCmdUHOgbEz2ZyZCxfFDrzdujnsWgoReYgW8hAu8hAt5AHwJ7AtHItvuumKmGzYvqprLr9cv3PD9bp0TrXKzpka1NSQdKy7R3s/7ND3XnhRr7311rDn+uWWtm7a1BhacQWIPISLPEQLeQgXeQAmLrAV6Kq6ug0mWzI4XlW/RBv/9E7NKi9XSXFRUNNiQElxkWaVl+vzV67U23v36oMDB7LPmaT9ra3/HmqBBYY8hIs8RAt5CBd5ACYusC9tmNP8oeNbb7wxqKkwitt+/deGP3DSzwbBIw/RQR7CRx6igzwA4xNYA+2kuqHjX6iuDmoqjKJm1qzhD5jVhlVLoSIP0UEewkceooM8AOMT3Aq02bSh46mlpUFNhVGcN23Yj0ImVYZWTIEiD9FBHsJHHqKDPADjw7mbAAAAgA800AAAAIAPNNAAAACADzTQAAAAgA800AAAAIAPNNAAAACADzTQAAAAgA800AAAAIAPNNAAAACADzTQAAAAgA800AAAAIAPNNAAAACADzTQAAAAgA800AAAAIAPNNAAAACADzTQAAAAgA800AAAAIAPNNAAAACADzTQAAAAgA800AAAAIAPNNAAAACAD4mwC4gq55z2trfr5Vc3a/OWbWp6+2119/To0poaLV28SGtXXaVrV65Q2bRpYZdaUOpvutkNHTdv+oGFV03hIA/RRB7CQR6QV2Y3TJ1RkXrcZL834Ws5/f3Bwx/foY6OE5I0vba+pjjhNslspSSlne7sam1+TJIb9VojqKitrYolSp6W2dqB+R482Np8v6TUhGvPMRroERzs6tJfPvGkfvj8C6c8t7e9XXvb2/XPL/6bLq2p0Z1/cLuuX7tGJcXFodQKBI08AB7ygLzzUWOPK1/cZpb736+PWG9npYq3S1opSWa6rmxew9PHdjd2jed6rqh0gXNuuWV+UT1maf1XFJtnsYXjVD9/7z3dcuddI344nmxve7v+8J5v6J6HHlZ3T8+k1AdMJvIAeMgD8lXM2duBXLitLSmn/8yOnbuyuDS9eJxXi8fk1phZmSSZ9D+9sVRbrkrNNRroIT7+5BM9+NjjeuOtFl/v+3D/AfUmk4HVBYSBPAAe8oB8lo6l33dO/v7xjvXaffaOc26zJJlZWdzpGklxv9eZXltfbZn3Zq4re+1oa+uRXNebK2zhGNCbTOrJ7/+DXt78k+xjl9bU6JZ1X9L1a9eosqJcsVhMyb4+dR48qG2NTfrBc89re1NzqHUDQSAPgIc8RMPJe/7Dlk/fOUgdL9qfOCe1R7LM6rBzjx1MJe9WW9uEf7vr2tV8oLKu/qeSVmcecSsqamsru3bu7PRznUSRFkuZvdTOqdOl0q+Ndy/1ZKCBHvDOrt169qWXs+NfXn2NHv7GPaqqrBz2uuKiItXMmaOaOXP0G1/4vF7dslXPvPBiCBUDwSEPgIc8IN8d3td4fMaiJXsGx06ad148fs5RKRf/PZJKmX4Sc+5rZlbmpOWuqHSBpLE30AsWFMecW63sPm33evqzxK4c1BYYGuiBb1Rv3rpVB7sye97nXnyx/uyPvnLKh+PJEomErrt6lZYsvExTSksnqVogWOQB8JAHnCVSJvu/wYHJLkpIMyUdzsXFre+zNkuUbJe01szKYnJrJG0e6xcAp7uSKsktHxw7uS2H9zUezUVtQWEPtKTunh7ta38/O17RcLkuvuiiMb9/xgUX8AGJswZ5ADzkAWeLfqV2O+eOSZJMdXEXvzBX1+7aufOgZFsHx+a0rKK29sy/ZQ6RKNLiwaPwnFOnlP7fXNUWFFagJSX7+vTxoUPZ8azKSj7wULDIA+AhD9GRT3uOoyieSnQp5nZLapCktLmFkv47R5cf/zaOEbZvpLqLf56jugLDCvQIjn76qZJ9fWGXAUQCeQA85AH5qv+EfSy5dwfHMdmFWrAgZ4eUW692SmqUz9M4KlIlFU6qHxznw/YN0UBnlJaUas6smdnxW21t6hqy4gAUEvIAeMgDzhaHS0+cMOmDwfHgFwlzdf2uXc0HZMpu43CmZWXzGs4f7X2xIneZma1W9vQNvZ6rmoJEAy1p6pRSNdQtyo63NzXr2f94Sf39/aHWBYSBPAAe8oCzRltbMi33gfeAzSpOF5XncIaUpfVqduTclVOKUvNHeY858748aHLb+uPpPWd+SzTQQA9YtfwKLVvi3Tzn+//yr9ra1CTnInsEIRAY8gB4yAPOFub00ZDhbBfrOy+X10+mbLec26KBbRzpmLviTK8vm9dQLotdOTh2ck1RvnnKUDTQAy6aM1u3rlunc6ZOlSR1dHbqa/fer62NTWGXBkw68gB4yAPOFuasI/tnU1XMxS/I5fWPWG+npO3ZOWQrz7+k4bRNeklJskZOi5U5MvKYpe3VKN88ZShO4RjihuvWqKPzI214/Alp4EPyq9+8VxsfuE9XLVsmM74AnCu5uqPUeK/Dt7lHRx4mD3mIPvKAs0E6nu4yF28xyzStadOYj5obk7a2pBYufk1md0iSTIuLpvbWSNox8htiS81UlXmptqfTvftyWk+AWIEeIpFI6Cu//Vu6944/PmWl4aUfv8J/16GgkAfAQx5wNujvi39mct3eI3ZJrudIx9w7zqlFmRXouWlL1I30uor588tiQ7dvmN7InCedH2igTzL4Ibnx/vtUXVUlDXxI3vvIo3rl9S18SKKgkAfAQx6Q71LuxHFndmxwHDMXzyz+5k7XoUPvm7QtO4fUMOJxeSUls51T9hu6TrZtrHcujAIa6BHEYjHdcN1abXxg+IfkfY88qp178uLLoUDOkAfAQx6Qz0qcS5rkrfI6m6Xq6tzeGaij40Ra6ebsFFJ9Raqk4tQXxucPbiWRc1v6+zKr1vmCPdCnYWZadcUVemLDA/rqN+9VR2en9rz7rv726X/SQ3d/XWXTpoVdYl4b757Lk/d4sndzcpCHYJGH/EIekK+6urv7K4un9uR2zXkk6Tedi3WaqcrMVluRu0wadgJI3OQ+5y1+W+uRYx/nzfYNsQI9uuX1S3TLut/Mjl/68Sva1tR8xvcAZyvyAHjIA/Kdk6s+7/zzc35v+sytuF32higDZz1n2/bMDVbMu/ug0xvq6DiR6zqCRAM9ing8ruuvW6vL6xZKkrp7evTT7T/jVq4oSOQB8JAH5J2OjhNp6cPs2CyR7uvLeS94eF/jp5LLbskwi82rmD8/+18zw46vk9tj6nsj1zUEjQZ6DCrLy7VwvncznUNHjiiZTIZaExAW8gB4yAMwImfOsudBO6dFKimZ7T3tHV8np5a+npL2UKqcABrocTh89Kj6U3nzRVEgUOQB8JAHIGP4XQm1WIpnftOsrp4SU6zee6VryaxY5xca6HGYPXOmSopPPZEFKETkAfCQByDj1LsSus9Jik8vm1EpuezZ0AMr1Xl3BiSncIxBX1+/Dh3xbs1eWVGu0pKSUGsCwkIeAA95mDy5umNnrnDqzSja2pLpuiWN2ZVap0Xn1dWdW+zcPJmtzDzmtiRTtjvMMseLBnoM0i6tK5ct1ZLLFkiSVixt4LatKFjkAfCQB+D0Yq6/1Vlij8nmyjSvJO0udNJSLyH5d3zdIBroMZh+7rm6Zd2Xwi4DiATyAHjIA3B6fT0l7YlzUi0yzTXZXMUSV5msdvD5tNLN+XZ83SD2QAMAACDnTj7Ozjm7XdLVmT+rU0q/GWqBE8AKNAAAiDz2HOelzHF2Az+57K27JcnU0vtZcd4dXzeIFegxeHPHDv3K796q+atW66+e/Dsd7+4OuyQgNOQB8JAH4MyGHmc3nGs+trvxcBg15QIN9Cg6Oju1YePfaHtTs458+qke/fZ39I/PPifnIvVlYGBSkAfAQx6A0SXSPYdktvfkx51sm6S8PTSdBnoUH+0/oK2NTcMe29fers96e0OrCQgLeQA85AEYXdeuXcfSLt089DHn1CKldoVX1cSxB3oUs2fN1IqGy4d9SM695GLO+QwJe+DCRR6ihTyEizwAYxNL289czB0zs7LMI25P6njR/rDrmghWoEdRXVWlDV+/S1/4pWs1/dxz9Se336abbvxVzvlEQSIPgIc8AGOT7rd3JTV6j+Tn7buHYgV6DBb+4nw99dhfh10GEAnkAfCQB+SbrtbmByU9OKlz7mr+SNK1kzln0FiBBgAAAHyggQYAAAB8oIEGAAAAfKCBBgAAAHyggQYAAAB8oIEGAAAAfKCBBgAAAHyggQYAAAB8oIEGAAAAfKCBBgAAAHyggQYAAAB8oIEGAAAAfKCBBgAAAHyggQYAAAB8oIEGAAAAfKCBBgAAAHyggQYAAAB8oIEGAAAAfKCBBgAAAHwIroF22j90ePT48cCmwpmd8nd/0s8Gk4A8RAZ5iADyEBnkARif4BpoU/PQYXtnZ2BT4cxO/rt3UmNoxRQq8hAZ5CECyENkkAdgfIJcgW4ZOvzuCy8ENhXO7NvPPTdsbOaaT/tiBIM8RMZ3nnt+2Jg8hIA8RAZ5AMYnHtSFZyyqezcm+31JCUl6f/9+vbNvn2bPqNC0KVNUXFQU1NSQdOT4ce167z39xXe/py0tO7wnnDuR6o/fdqBtx5Ew6ys05CFcQ/PwesuQ3o08hII8hIs8ABNnQV68fv3Nd8v0UJBzwB8nd9dbmzY9EnYdhYg8RA95CA95iB7yAIxdoA20JC1Zf/M2My0Peh6MgXNbm3+4aWXYZRQy8hAh5CF05CFCyAPgS+DH2CX7k1c7p285KR30XDgN51Jyeri3v2912KUUOvIQAeQhMshDBJAHYFwCX4EeVL9+/Qpn9mVzVivTAknlkzV3gfpETm2S2lIu9dSOZ57ZHnZB8JCHSUceIow8TLpPJPeOnO0kDwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARMn/A9gL6KoM5SMOAAAAAElFTkSuQmCC",
+        "alt": "ثلاث علب متساوية المحتوى مجموعها سبعة وعشرون قلمًا",
+        "attribution": ""
+      },
+      "answer_lines": 3,
+      "marks": 2
+    }
+  ],
+  "total_marks": 10,
+  "duration_minutes": 30
+}

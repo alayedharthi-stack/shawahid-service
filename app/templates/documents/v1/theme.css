@@ -1,0 +1,60 @@
+/* Original Shawahid design. Reuses default_v1's RTL header, student strip,
+   numbered question and keep-together concepts; no source logos or artwork. */
+@page { size:A4 portrait; margin:14mm; }
+*{box-sizing:border-box}
+body{font-family:ShawahidArabic,Arial,sans-serif;margin:0;color:#202a2d;font-size:11pt;line-height:1.55;background:white}
+body{width:182mm;margin-inline:auto}
+.identity{display:flex;justify-content:space-between;color:#315a5b;font-weight:700;font-size:10pt;margin-bottom:1mm}
+.school-meta{display:flex;justify-content:space-between;gap:8mm;font-size:9pt}
+h1{font-size:20pt;font-weight:700;line-height:1.35;margin:3mm 0 2mm;color:#162e31}
+.meta{display:grid;grid-template-columns:1fr 1fr;gap:0 5mm;font-size:9pt}
+.edition{font-size:8pt;color:#536368;margin:1mm 0}
+.student{display:flex;justify-content:space-between;gap:3mm;border:1px solid #a9b9bb;padding:2.2mm;margin-top:2mm;font-size:9pt}
+.instructions{font-size:9pt;margin:3mm 0;color:#35474b}
+.question-row{display:grid;grid-template-columns:1fr 1fr;gap:5mm;break-inside:avoid;page-break-inside:avoid;margin-bottom:3mm}
+.question{border:1px solid #c6d1d2;padding:3mm 3.5mm;min-width:0;border-radius:2mm;overflow-wrap:anywhere}
+.question-top{display:flex;align-items:baseline;gap:2mm;font-size:10pt}
+.question-top strong{font-weight:600;flex:1}
+.number{font-weight:700;color:#315a5b;white-space:nowrap}
+.marks{font-size:8pt;white-space:nowrap}
+.equation{text-align:center;direction:ltr;unicode-bidi:isolate;margin:2mm 0;font-size:15pt;line-height:1.7}
+math{font-family:Arial,sans-serif}
+.answer-line{height:7mm;border-bottom:1px dotted #839598}
+.choices{list-style:none;display:grid;grid-template-columns:1fr 1fr;padding:0;margin:2mm 0;gap:1mm;font-size:10pt}
+.choices span{font-weight:600}
+table{border-collapse:collapse;width:100%;table-layout:fixed}
+th,td{border:1px solid #a9b9bb;padding:2mm;overflow-wrap:anywhere;vertical-align:top}
+th{background:#eff4f4;font-weight:600}
+.question-table{font-size:9pt;margin:2mm 0;text-align:center}
+.question-table th,.question-table td{padding:1mm 2mm}
+figure{margin:1mm 0;text-align:center}
+figure img{max-width:100%;height:auto;max-height:20mm;object-fit:contain}
+figcaption{font-size:7pt;color:#56676a}
+footer{display:flex;justify-content:space-between;gap:4mm;font-size:7.5pt;color:#4d6063;margin-top:4mm}
+.keep{break-inside:avoid;page-break-inside:avoid}
+thead{display:table-header-group}
+.solutions{font-size:11pt}
+.solutions > thead > tr > th:first-child{width:14mm}
+.exam .solutions > thead > tr > th:last-child{width:18mm}
+.solutions .equation{display:block;margin:1mm 0;font-size:13pt}
+.solutions > tbody > tr > td{padding:3mm}
+.score-grid{font-size:9pt;margin-top:4mm;text-align:center}
+.exam .question-row{display:block}
+.exam .question{margin-bottom:3mm;border-radius:0;padding:3mm}
+.exam .question-top{font-size:11pt}
+.exam .answer-line{height:7mm}
+.exam .choices{grid-template-columns:repeat(4,1fr)}
+.exam h1{text-align:center;font-size:18pt}
+.exam .score-grid th,.exam .score-grid td{padding:1.5mm}
+.exam.answer-key .solutions{font-size:10pt;line-height:1.4}
+.exam.answer-key .solutions > tbody > tr > td{padding:1.6mm 2mm}
+.exam.answer-key .solutions .equation{margin:0;font-size:12pt}
+.weekly_plan{width:269mm}
+.weekly_plan .plan-table{font-size:10pt;margin-top:5mm}
+.weekly_plan .plan-table td{height:18mm;padding:2mm}
+.weekly_plan .plan-table th:first-child{width:23mm}
+.plan-notes{margin-top:3mm;font-size:9pt}
+.weekly_plan .answer-line{height:5mm}
+@media screen{body{padding:10mm 0} }
+@media print{body{padding:0}header{break-after:avoid}.weekly_plan{page:landscape}}
+@page landscape {size:A4 landscape;margin:14mm}

@@ -1,0 +1,9 @@
+<header class="keep">
+  <div class="identity"><span>شواهد</span><span>{{ 'نموذج الإجابة' if answers is not none else {'worksheet':'ورقة عمل أسبوعية','exam':'اختبار','weekly_plan':'خطة أسبوعية'}[d.kind] }}</span></div>
+  <div class="school-meta"><span>إدارة التعليم: {{ d.profile.education_admin or '................................' }}</span><span>المدرسة: {{ d.profile.school or '................................' }}</span></div>
+  <h1>{{ d.profile.title }}</h1>
+  <div class="meta"><span><b>المادة:</b> {{ d.profile.subject }}</span><span><b>الصف:</b> {{ d.profile.grade }}</span><span><b>الفصل الدراسي:</b> {{ d.profile.semester or '................' }}</span><span><b>التاريخ:</b> <bdi>{{ d.profile.date or '................' }}</bdi></span><span><b>المعلم:</b> {{ d.profile.teacher or '................................' }}</span><span><b>الأسبوع:</b> {{ d.profile.week or '................' }}</span></div>
+  {% if d.profile.curriculum_edition %}<p class="edition">{{ d.profile.curriculum_edition }}</p>{% endif %}
+  {% if d.profile.academic_year or d.duration_minutes %}<p class="edition">{% if d.profile.academic_year %}العام الدراسي: {{ d.profile.academic_year }}{% endif %}{% if d.duration_minutes %} · الزمن: {{ d.duration_minutes|ar }} دقيقة{% endif %}</p>{% endif %}
+  {% if d.kind == 'exam' %}<table class="score-grid"><tr><th>عدد البنود</th><th>الدرجة النهائية</th><th>المصحح</th><th>المراجع</th></tr><tr><td>{{ d.questions|length|ar }}</td><td>{{ d.total_marks|ar }}</td><td>................</td><td>................</td></tr></table>{% endif %}
+</header>
