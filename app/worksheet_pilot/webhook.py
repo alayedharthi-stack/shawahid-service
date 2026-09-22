@@ -9,14 +9,11 @@ from fastapi import HTTPException
 
 from .service import Store, command, run_job
 from .transport import MetaTransport
+from app.core.private_storage import worksheet_private_root
 
 
 def private_root(settings):
-    root = Path(settings.WORKSHEET_PILOT_PRIVATE_DIR).resolve()
-    for public in (settings.storage_path.resolve(), Path("app/static").resolve()):
-        if root == public or public in root.parents or root in public.parents:
-            raise ValueError("pilot_storage_must_be_private")
-    return root
+    return worksheet_private_root(settings)
 
 
 async def handle_payload(body, raw, signature, background_tasks, settings):

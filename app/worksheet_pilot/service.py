@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ from pathlib import Path
 from app.document_templates.renderer import export_pdf, render_document
 
 CONTENT = Path(__file__).parent / "content"
+logger = logging.getLogger(__name__)
 REQUEST = "ورقة المعادلات"
 SCHOOL = "مدرسة ورقة المعادلات:"
 
@@ -93,6 +95,7 @@ class Store:
     def state(self, job, state, error=None):
         with self.db() as db:
             db.execute("UPDATE jobs SET state=?,error=? WHERE id=?", (state, error, job))
+        logger.info("[WORKSHEET JOB] job=%s state=%s", job, state)
 
     def receipt(self, phone, status):
         owner = hashlib.sha256(phone.encode()).hexdigest()
@@ -115,6 +118,7 @@ class Store:
                 db.execute("UPDATE deliveries SET state='sent',sent_at=COALESCE(sent_at,?) WHERE message_id=?", (now(), status["id"]))
             elif state == "failed" and not row["delivered_at"]:
                 db.execute("UPDATE deliveries SET state='failed' WHERE message_id=?", (status["id"],))
+            logger.info("[WORKSHEET RECEIPT] job=%s role=%s observed=%s", row["job"], row["role"], state)
 
 
 async def run_job(store, job, phone, transport, exporter=export_pdf):
