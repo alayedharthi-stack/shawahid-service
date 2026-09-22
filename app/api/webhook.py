@@ -1462,6 +1462,15 @@ async def whatsapp_webhook(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
+    # Opt-in trial intercepts only its explicit commands/receipts. No LLM call,
+    # shared evidence record or classroom-use inference belongs to this pilot.
+    if settings.WORKSHEET_PILOT_ENABLED:
+        from app.worksheet_pilot.webhook import handle_payload
+        body = await handle_payload(
+            body, await request.body(), request.headers.get("X-Hub-Signature-256", ""),
+            background_tasks, settings,
+        )
+
     parsed = _parse_meta_payload(body)
     if parsed is None:
         parsed = _parse_simple_payload(body)

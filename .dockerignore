@@ -25,3 +25,5 @@ __pycache__/
 # Docs (not needed in container)
 DEPLOY.md
 README.md
+.git
+private-worksheet-pilot/

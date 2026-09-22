@@ -1,0 +1,61 @@
+name: Worksheet pilot isolated checks
+on:
+  pull_request:
+  push:
+    branches: [codex/worksheet-whatsapp-pilot]
+permissions:
+  contents: read
+jobs:
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record exact head and build production image
+        run: |
+          git rev-parse HEAD
+          docker build -t shawahid-check .
+      - name: Isolated startup and health (no credentials or external network)
+        run: |
+          docker run -d --name shawahid-smoke --network none -e STORAGE_DIR=/tmp/public shawahid-check
+          for i in $(seq 1 30); do
+            if docker exec shawahid-smoke python -c "import urllib.request,json; r=json.load(urllib.request.urlopen('http://127.0.0.1:8010/health')); assert r['status']=='healthy' and r['service']=='shawahid-service'"; then exit 0; fi
+            sleep 2
+          done
+          docker logs shawahid-smoke
+          exit 1
+      - name: Template and real webhook PDF tests without outbound network
+        run: |
+          docker run --rm --network none -e SHAWAHID_PDF_TESTS=1 -e DATABASE_URL=sqlite:// -e STORAGE_DIR=/tmp/public shawahid-check python -m unittest discover -s tests/document_templates -v
+          docker run --rm --network none -e SHAWAHID_PDF_TESTS=1 -e DATABASE_URL=sqlite:// -e STORAGE_DIR=/tmp/public shawahid-check python -m unittest discover -s tests/worksheet_pilot -v
+      - name: Existing exam engine regression
+        run: |
+          printf 'FROM shawahid-check\nRUN pip install pytest==8.4.2\n' | docker build -t shawahid-test -
+          docker run --rm --network none -e DATABASE_URL=sqlite:// -e STORAGE_DIR=/tmp/public shawahid-test python -m pytest --noconftest tests/test_exam_engine.py -q
+      - name: Private volume survives replacement without public access
+        run: |
+          docker volume create worksheet-private-check
+          trap 'docker volume rm worksheet-private-check' EXIT
+          docker run --rm --network none -v worksheet-private-check:/app/storage shawahid-check python -c "from pathlib import Path; from app.worksheet_pilot.service import Store; s=Store(Path('/app/storage/.worksheet-private')); assert s.claim('966500000001','synthetic-only','Test')"
+          docker run --rm --network none -v worksheet-private-check:/app/storage -e APP_ENV=production -e STORAGE_DIR=/app/storage -e WORKSHEET_PILOT_PRIVATE_DIR=/app/storage/.worksheet-private -e DATABASE_URL=sqlite:// shawahid-check python -c "from fastapi.testclient import TestClient; from app.main import app; from pathlib import Path; from app.worksheet_pilot.service import Store; c=TestClient(app); c.__enter__(); assert c.get('/health').status_code==200; assert c.get('/files/.worksheet-private/storage-probe.txt').status_code==404; assert c.get('/files/%2eworksheet-private/pilot.sqlite3').status_code==404; assert Store(Path('/app/storage/.worksheet-private')).claim('966500000001','synthetic-only','Test') is None; c.__exit__(None,None,None)"
+      - name: Cleanup isolated runtime
+        if: always()
+        run: docker rm -f shawahid-smoke || true
+      - name: PR 1 exact-head container and regression gates
+        run: |
+          git worktree add --detach /tmp/shawahid-pr1 a2399c7c5ecf3f328cb06d5182fdfb12d5fd8cf5
+          docker build -t shawahid-pr1 /tmp/shawahid-pr1
+          docker run -d --name shawahid-pr1-smoke --network none -e STORAGE_DIR=/tmp/public shawahid-pr1
+          trap 'docker rm -f shawahid-pr1-smoke' EXIT
+          healthy=0
+          for i in $(seq 1 30); do
+            if docker exec shawahid-pr1-smoke python -c "import urllib.request,json; assert json.load(urllib.request.urlopen('http://127.0.0.1:8010/health'))['status']=='healthy'"; then healthy=1; break; fi
+            sleep 2
+          done
+          test "$healthy" = 1
+          docker run --rm --network none -e SHAWAHID_PDF_TESTS=1 -e STORAGE_DIR=/tmp/public shawahid-pr1 python -m unittest discover -s tests/document_templates -v
+          printf 'FROM shawahid-pr1\nRUN pip install pytest==8.4.2\n' | docker build -t shawahid-pr1-test -
+          docker run --rm --network none shawahid-pr1-test python -m pytest --noconftest tests/test_exam_engine.py -q

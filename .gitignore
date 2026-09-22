@@ -28,3 +28,6 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Private single-recipient worksheet pilot; never publish generated artifacts.
+private-worksheet-pilot/

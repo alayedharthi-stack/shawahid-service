@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     WHATSAPP_ACCESS_TOKEN: str = ""
     WHATSAPP_PHONE_NUMBER_ID: str = ""
     WHATSAPP_API_VERSION: str = "v20.0"
+    # Closed by default; no recipient inferred from SUPPORT_PHONE or teacher names.
+    WORKSHEET_PILOT_ENABLED: bool = False
+    WORKSHEET_PILOT_PHONE: str = ""
+    WORKSHEET_PILOT_VERIFICATION_REF: str = ""
+    WORKSHEET_PILOT_VERIFIED_AT: str = ""
+    WORKSHEET_PILOT_PRIVATE_DIR: str = "./private-worksheet-pilot"
+    WHATSAPP_APP_SECRET: str = ""
     # Legacy stubs (kept for backward compat — no longer used by send_whatsapp_message)
     WHATSAPP_SEND_URL: str = ""
     WHATSAPP_API_TOKEN: str = ""
