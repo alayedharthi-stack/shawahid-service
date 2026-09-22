@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'">
+  <title>{{ d.profile.title }}{% if answers is not none %} — نموذج الإجابة{% endif %}</title>
+  <style>@font-face {font-family:ShawahidArabic;src:url(data:font/ttf;base64,{{ font }}) format('truetype');font-weight:100 900;}</style>
+  <style>{% include "theme.css" %}</style>
+</head>
+<body class="{{ d.kind }}{% if answers is not none %} answer-key{% endif %}">
+{% from "math.html" import equation %}
+{% include "header.html" %}
+<main>
+{% if d.kind == 'weekly_plan' %}
+  {% include "plan.html" %}
+{% elif answers is not none %}
+  <p class="instructions">نموذج الإجابة وخطوات التحقق</p>
+  <table class="solutions"><thead><tr><th>البند</th><th>الإجابة والتحقق</th>{% if d.show_marks %}<th>الدرجة</th>{% endif %}</tr></thead><tbody>
+  {% for q in d.questions %}<tr class="keep" data-qid="{{ q.id }}"><td>{{ loop.index|ar }}</td><td>{{ answers[q.id].text }}{{ equation(answers[q.id].equation) }}{% if answers[q.id].table is defined %}{% set table = answers[q.id].table %}{% include 'table.html' %}{% endif %}{% if answers[q.id].result is defined %}<div class="result">{{ answers[q.id].result }}</div>{% endif %}</td>{% if d.show_marks %}<td>{{ q.marks|ar }}</td>{% endif %}</tr>{% endfor %}
+  </tbody></table>
+{% else %}
+  <div class="student keep"><span>اسم الطالب: ........................................</span><span>الشعبة: ............</span>{% if d.show_marks %}<span>الدرجة: ........ / {{ d.total_marks|ar }}</span>{% endif %}</div>
+  {% if d.instructions %}<p class="instructions">{{ d.instructions }}</p>{% endif %}
+  {% for pair in d.questions|batch(1 if d.kind == 'exam' else 2) %}
+  {% if d.kind != 'exam' %}<div class="question-row">{% endif %}
+  {% for q in pair %}
+    <article class="question keep" data-qid="{{ q.id }}">
+      <div class="question-top"><span class="number">{{ (d.questions.index(q) + 1)|ar }}</span><strong>{{ q.text }}</strong>{% if d.show_marks %}<span class="marks">{{ q.marks|ar }} درجة</span>{% endif %}</div>
+      {{ equation(q.equation) }}
+      {% if q.image %}<figure><img src="{{ q.image.data }}" alt="{{ q.image.alt }}">{% if q.image.attribution %}<figcaption>{{ q.image.attribution }}</figcaption>{% endif %}</figure>{% endif %}
+      {% if q.table %}{% set table = q.table %}{% include 'table.html' %}{% endif %}
+      {% if q.choices %}<ol class="choices">{% for choice in q.choices %}<li><span>{{ ['أ','ب','ج','د','هـ','و'][loop.index0] }})</span> {{ choice }}</li>{% endfor %}</ol>{% endif %}
+      {% for line in range(q.answer_lines) %}<div class="answer-line"></div>{% endfor %}
+    </article>
+  {% endfor %}
+  {% if d.kind != 'exam' %}</div>{% endif %}
+  {% endfor %}
+{% endif %}
+</main>
+<footer class="keep"><span>شواهد · {{ 'نموذج الإجابة' if answers is not none else ('خطة أسبوعية' if d.kind == 'weekly_plan' else 'مستند تعليمي') }}</span>{% if d.attribution %}<span>{{ d.attribution }}</span>{% endif %}</footer>
+</body>
+</html>

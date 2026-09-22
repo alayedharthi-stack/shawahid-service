@@ -1,0 +1,4 @@
+<table class="plan-table"><thead><tr><th>اليوم والتاريخ</th><th>الدرس</th><th>هدف التعلم</th><th>النشاط</th><th>التقويم</th><th>الواجب</th></tr></thead><tbody>
+{% for day in d.days %}<tr class="keep"><td>{{ day.day }}<br><bdi>{{ day.date or '.... / .... / ....' }}</bdi></td><td>{{ day.lesson }}</td><td>{{ day.objective }}</td><td>{{ day.activity }}</td><td>{{ day.assessment }}</td><td>{{ day.homework }}</td></tr>{% endfor %}
+</tbody></table>
+<div class="plan-notes keep">ملاحظات المعلم<div class="answer-line"></div><div class="answer-line"></div></div>
