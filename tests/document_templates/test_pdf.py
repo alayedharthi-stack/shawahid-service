@@ -6,10 +6,13 @@ Install the requirements' Playwright Chromium first.
 import copy
 import json
 import os
+import re
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from app.document_templates import export_pdf
+from app.document_templates.renderer import render_document
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES = ROOT / 'examples/documents/v1'
@@ -40,7 +43,7 @@ class PdfIntegrationTest(unittest.TestCase):
                     if not key and name != 'weekly-plan':
                         self.assertEqual(sum(len(page.get_images()) for page in pdf), 1)
 
-    def test_many_questions_survive_pagination_without_splitting(self):
+    def test_many_questions_keep_last_answer_line_with_question(self):
         import fitz
         for kind in ('worksheet', 'exam'):
             with self.subTest(kind=kind):
@@ -51,17 +54,42 @@ class PdfIntegrationTest(unittest.TestCase):
                 for n in range(24):
                     q = copy.deepcopy(source[n % len(source)])
                     q.update(id=f'case{n:02}', text=f'BEGIN_{n:02} ' + q['text'],
-                             choices=[f'END_{n:02}'], answer_lines=3)
+                             answer_lines=3)
                     document['questions'].append(q)
                 document['total_marks'] = sum(q['marks'] for q in document['questions'])
-                with fitz.open(stream=export_pdf(document), filetype='pdf') as pdf:
+                # Instrument only the test HTML. Position a tiny visible marker
+                # at the bottom of the FINAL answer line, without adding height
+                # or changing the production template's pagination rules.
+                html = render_document(document)
+                def mark_answer_end(match):
+                    article = match.group(0)
+                    qid = re.search(r'data-qid="case(\d+)"', article).group(1)
+                    line = '<div class="answer-line"></div>'
+                    last = article.rfind(line)
+                    self.assertGreaterEqual(last, 0)
+                    marker = ('<div class="answer-line" style="position:relative">'
+                              '<span style="position:absolute;bottom:0;left:0;'
+                              'font:1pt Arial;line-height:1;direction:ltr">'
+                              f'ANSWER_END_{qid}</span></div>')
+                    return article[:last] + article[last:].replace(line, marker, 1)
+                html, count = re.subn(r'<article\b.*?</article>', mark_answer_end,
+                                      html, flags=re.DOTALL)
+                self.assertEqual(count, 24)
+                with patch('app.document_templates.renderer.render_document', return_value=html):
+                    data = export_pdf(document)
+                with fitz.open(stream=data, filetype='pdf') as pdf:
                     self.assertGreater(len(pdf), 2)
                     texts = [page.get_text() for page in pdf]
                     for n in range(24):
                         starts = [i for i, text in enumerate(texts) if f'BEGIN_{n:02}' in text]
-                        ends = [i for i, text in enumerate(texts) if f'END_{n:02}' in text]
+                        ends = [i for i, text in enumerate(texts) if f'ANSWER_END_{n:02}' in text]
                         self.assertEqual(len(starts), 1)
+                        self.assertEqual(len(ends), 1)
                         self.assertEqual(starts, ends)
+                        start_rect = pdf[starts[0]].search_for(f'BEGIN_{n:02}')[0]
+                        end_rect = pdf[ends[0]].search_for(f'ANSWER_END_{n:02}')[0]
+                        self.assertGreater(end_rect.y0, start_rect.y1)
+                        self.assertLess(end_rect.y1, pdf[ends[0]].rect.height - 14 * 72 / 25.4)
 
     def test_oversized_card_requires_manual_review(self):
         document = fixture('worksheet.json')
