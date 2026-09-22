@@ -30,29 +30,30 @@ async def handle_payload(body, raw, signature, background_tasks, settings):
                  and settings.WHATSAPP_APP_SECRET
                  and settings.WHATSAPP_PHONE_NUMBER_ID
                  and settings.WHATSAPP_ACCESS_TOKEN)
+    if not ready:
+        return body
     result = copy.deepcopy(body)
     store = None
     signature_checked = False
     for entry in result.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value", {})
-            messages = value.get("messages", [])
-            relevant = [m for m in messages if m.get("type") == "text" and command(m.get("text", {}).get("body", ""))]
-            statuses = value.get("statuses", [])
-            if not relevant and not statuses:
-                continue
-            # Recognised pilot commands cannot leak to GPT/legacy generation when
-            # the feature is enabled but its operator configuration is incomplete.
-            value["messages"] = [m for m in messages if m not in relevant]
-            if not ready:
-                continue
             if value.get("metadata", {}).get("phone_number_id") != settings.WHATSAPP_PHONE_NUMBER_ID:
+                continue
+            messages = value.get("messages", [])
+            relevant = [m for m in messages if m.get("from") == settings.WORKSHEET_PILOT_PHONE
+                        and m.get("type") == "text" and command(m.get("text", {}).get("body", ""))]
+            statuses = [s for s in value.get("statuses", []) if s.get("recipient_id") == settings.WORKSHEET_PILOT_PHONE]
+            if not relevant and not statuses:
                 continue
             if not signature_checked:
                 expected = "sha256=" + hmac.new(settings.WHATSAPP_APP_SECRET.encode(), raw, hashlib.sha256).hexdigest()
                 if not hmac.compare_digest(expected, signature):
                     raise HTTPException(status_code=403, detail="Invalid pilot webhook signature")
                 signature_checked = True
+            # Only this verified participant's commands are consumed. All other
+            # teachers and business numbers retain their original legacy route.
+            value["messages"] = [m for m in messages if m not in relevant]
             if store is None:
                 store = Store(private_root(settings))
             for status in statuses:

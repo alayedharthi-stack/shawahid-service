@@ -118,9 +118,10 @@ class Store:
 
 
 async def run_job(store, job, phone, transport, exporter=export_pdf):
-    # Atomic worker claim also prevents duplicate background scheduling.
+    # Ownership belongs at the worker boundary too, not only at ingress.
+    owner = hashlib.sha256(phone.encode()).hexdigest()
     with store.db() as db:
-        if db.execute("UPDATE jobs SET state='working' WHERE id=? AND state='queued'", (job,)).rowcount != 1:
+        if db.execute("UPDATE jobs SET state='working' WHERE id=? AND owner=? AND state='queued'", (job, owner)).rowcount != 1:
             return
     d = json.loads(store.job(job)["document"])
     answers = json.loads((CONTENT / "answers.json").read_text(encoding="utf-8"))
