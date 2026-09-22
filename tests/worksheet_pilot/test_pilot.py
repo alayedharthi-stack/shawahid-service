@@ -153,17 +153,38 @@ class PilotTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_verification_reference_fails_closed(self):
         self.settings.WORKSHEET_PILOT_VERIFICATION_REF = ""
-        result, tasks = await self.ingest(self.payload())
+        body = self.payload()
+        result, tasks = await self.ingest(body)
         self.assertEqual(tasks.tasks, [])
-        self.assertEqual(result["entry"][0]["changes"][0]["value"]["messages"], [])
+        self.assertIs(result, body)
 
     async def test_wrong_recipient_or_business_cannot_generate(self):
-        _, tasks = await self.ingest(self.payload(phone=OTHER))
+        body = self.payload(phone=OTHER)
+        result, tasks = await self.ingest(body, "not-needed-for-nonparticipant")
         self.assertFalse(tasks.tasks)
+        self.assertEqual(result, body)
         body = self.payload()
         body["entry"][0]["changes"][0]["value"]["metadata"]["phone_number_id"] = "foreign"
-        _, tasks = await self.ingest(body)
+        result, tasks = await self.ingest(body)
         self.assertFalse(tasks.tasks)
+        self.assertEqual(result, body)
+
+    async def test_worker_rejects_foreign_recipient_without_mutating_job(self):
+        job = self.store.claim(PHONE, "owned-by-a", "معلم أ")
+        before = self.store.job(job)
+        await run_job(self.store, job, OTHER, self.transport, fake_export)
+        self.assertEqual(self.store.job(job), before)
+        self.assertFalse(self.transport.uploads)
+        self.assertFalse(self.transport.sends)
+        self.assertFalse((self.store.root / "artifacts").exists())
+
+    async def test_same_command_in_mixed_batch_preserves_nonparticipant(self):
+        body = self.payload()
+        nonparticipant = self.payload(phone=OTHER, mid="other-in")["entry"][0]["changes"][0]["value"]["messages"][0]
+        body["entry"][0]["changes"][0]["value"]["messages"].insert(0, nonparticipant)
+        result, tasks = await self.ingest(body)
+        self.assertEqual(len(tasks.tasks), 1)
+        self.assertEqual(result["entry"][0]["changes"][0]["value"]["messages"], [nonparticipant])
 
     async def test_bad_signature_rejected(self):
         with self.assertRaises(HTTPException) as caught:
